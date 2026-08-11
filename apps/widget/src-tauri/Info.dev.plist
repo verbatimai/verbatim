@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Required so macOS shows the microphone permission prompt (WKWebView getUserMedia
+       is silently denied without this). Merged into the app's Info.plist by Tauri. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Open Dictation uses the microphone to transcribe your speech into text on this device.</string>
+</dict>
+</plist>

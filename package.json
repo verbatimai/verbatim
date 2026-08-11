@@ -16,7 +16,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "pipeline": "npm run pipeline --workspace @open-dictation/core --",
     "backend": "npm run start --workspace @open-dictation/backend",
-    "web": "npm run dev --workspace @open-dictation/web"
+    "web": "npm run dev --workspace @open-dictation/web",
+    "widget": "node scripts/widget.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.47.0"

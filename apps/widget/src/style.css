@@ -1,0 +1,125 @@
+/* Open Dictation widget — M2 visual language, refined for a floating macOS panel.
+   The Tauri window is transparent; the .card is the widget surface. */
+:root{
+  --ink:#eef2f7; --dim:#8b95a5; --active:#aab4c4; --faint:#6b7480;
+  --line:rgba(255,255,255,.09); --line-2:rgba(255,255,255,.06);
+  --accent:#4c9df0; --accent-2:#3b7fd4;
+  --filler:#e3b341; --repetition:#4c9df0; --false_start:#a371f7;
+  --self_correction:#f87171; --grammar:#3fb0a3;
+}
+*{box-sizing:border-box}
+/* the `hidden` attribute must win over element display rules (e.g. .banner-actions{display:flex}) */
+[hidden]{display:none!important}
+html,body{margin:0;height:100%;background:transparent;overflow:hidden;
+  font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+  color:var(--ink);-webkit-font-smoothing:antialiased}
+body{padding:11px}
+
+.card{
+  height:calc(100% - 22px);display:flex;flex-direction:column;
+  background:linear-gradient(180deg,rgba(28,33,44,.97),rgba(18,21,29,.98));
+  -webkit-backdrop-filter:blur(20px) saturate(1.4);backdrop-filter:blur(20px) saturate(1.4);
+  border:1px solid var(--line);border-radius:16px;
+  box-shadow:0 18px 44px rgba(0,0,0,.5),0 2px 8px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.06);
+  overflow:hidden;
+}
+
+/* ── title bar (drag handle) ── */
+.titlebar{display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:grab;user-select:none;
+  border-bottom:1px solid var(--line-2);background:rgba(255,255,255,.015)}
+.titlebar:active{cursor:grabbing}
+/* children pass clicks through so the whole bar is a drag handle (nothing here is interactive) */
+.titlebar > *{pointer-events:none}
+.glyph{width:22px;height:22px;flex:none;display:grid;place-items:center;border-radius:7px;color:#eaf3ff;
+  background:linear-gradient(180deg,var(--accent),var(--accent-2));box-shadow:0 1px 3px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.35)}
+.brand{font-weight:640;font-size:13px;letter-spacing:-.01em}
+.drag-hint{font-size:10.5px;color:var(--faint);opacity:.7}
+.statuspill{margin-left:auto;display:flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;
+  background:rgba(255,255,255,.05);border:1px solid var(--line-2);
+  font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;max-width:200px}
+.statuspill #statusText{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;background:#4a5464;flex:none}
+.dot.live{background:#f87171;animation:pulse 1.1s infinite}
+.dot.fix{background:var(--accent);animation:pulse 1.1s infinite}
+.dot.done{background:var(--grammar)}
+.dot.err{background:#f87171}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
+
+/* ── body ── */
+.body{flex:1;min-height:0;display:flex;flex-direction:column;gap:11px;padding:12px 14px 14px}
+
+.transcript{flex:1;min-height:40px;overflow:auto;font-size:15.5px;line-height:1.6;letter-spacing:-.006em;padding-right:2px}
+.hint{color:var(--dim);font-size:13px}
+.hint b{color:var(--active);font-weight:600}
+.stable{color:var(--ink)}
+.active{color:var(--active);opacity:.7}
+.caret{display:inline-block;width:2px;height:1.05em;background:var(--accent);vertical-align:-3px;margin-left:1px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+
+.typing{display:inline-block;vertical-align:middle}
+.typing i{display:inline-block;width:5px;height:5px;margin:0 2px;border-radius:50%;background:var(--accent);opacity:.35;animation:blinkdot 1.1s infinite}
+.typing i:nth-child(2){animation-delay:.18s}
+.typing i:nth-child(3){animation-delay:.36s}
+@keyframes blinkdot{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-2px)}}
+
+.op{transition:opacity .5s ease,max-width .5s ease,color .35s ease;white-space:pre;display:inline}
+.op.rm{border-radius:4px;padding:0 1px}
+.op.striking{text-decoration:line-through;text-decoration-thickness:2px}
+.op.faded{opacity:.34}
+.op.collapsed{opacity:0;font-size:0;letter-spacing:-1em}
+.repl-new{color:var(--grammar)}
+.repl-new.hidden{opacity:0}
+.repl-new.show{opacity:1;transition:opacity .5s ease}
+.r-filler{background:rgba(227,179,65,.16);text-decoration-color:var(--filler);color:var(--filler)}
+.r-repetition{background:rgba(76,157,240,.16);text-decoration-color:var(--repetition);color:var(--repetition)}
+.r-false_start{background:rgba(163,113,247,.16);text-decoration-color:var(--false_start);color:var(--false_start)}
+.r-self_correction{background:rgba(248,113,113,.16);text-decoration-color:var(--self_correction);color:var(--self_correction)}
+.r-grammar{text-decoration-color:var(--grammar)}
+
+.final{flex:none;background:rgba(10,13,19,.6);border:1px solid var(--line-2);border-radius:11px;padding:9px 12px}
+.final .lbl{display:flex;align-items:center;gap:8px;font-size:9.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--faint);margin-bottom:5px}
+.final .lbl > span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.copy-btn{flex:none;text-transform:none;letter-spacing:0;font-size:11px;font-weight:600;padding:3px 10px;border-radius:7px;
+  border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);cursor:pointer;transition:background .12s ease,color .12s ease}
+.copy-btn:hover:not(:disabled){background:rgba(255,255,255,.11)}
+.copy-btn:disabled{opacity:.38;cursor:default}
+.copy-btn.copied{background:rgba(63,176,163,.22);border-color:rgba(63,176,163,.5);color:#83e3d5}
+.final .txt{font-size:14px;color:#fff;min-height:19px;max-height:60px;overflow:auto;white-space:pre-wrap;line-height:1.5}
+
+.controls{flex:none;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button{border:0;border-radius:9px;padding:8px 13px;font-size:12.5px;font-weight:620;cursor:pointer;
+  transition:filter .12s ease,transform .06s ease,background .12s ease}
+button:active{transform:translateY(.5px)}
+button:disabled{opacity:.4;cursor:default;filter:none;transform:none}
+button.primary{color:#04121f;background:linear-gradient(180deg,#5aa6f2,var(--accent-2));
+  box-shadow:0 2px 8px rgba(59,127,212,.4),inset 0 1px 0 rgba(255,255,255,.4)}
+button.primary:hover{filter:brightness(1.06)}
+button.ghost{background:rgba(255,255,255,.05);color:var(--ink);border:1px solid var(--line);font-weight:560}
+button.ghost:hover:not(:disabled){background:rgba(255,255,255,.09)}
+button.small{padding:6px 10px;font-size:11.5px}
+.toggle{margin-left:auto;color:var(--dim);font-size:11.5px;display:flex;align-items:center;gap:6px;user-select:none}
+.toggle input{accent-color:var(--accent)}
+
+/* ── notification banner (under the title bar) ── */
+.banner{flex:none;padding:9px 12px;display:flex;flex-direction:column;gap:8px;
+  border-bottom:1px solid var(--line-2);background:rgba(248,113,113,.13)}
+.banner.warn{background:rgba(227,179,65,.13)}
+.banner.info{background:rgba(76,157,240,.13)}
+.banner-row{display:flex;align-items:flex-start;gap:8px}
+.banner-dot{width:7px;height:7px;border-radius:50%;flex:none;margin-top:5px;background:#f87171}
+.banner.warn .banner-dot{background:var(--filler)}
+.banner.info .banner-dot{background:var(--accent)}
+.banner-msg{flex:1;font-size:11.5px;line-height:1.45;color:rgba(255,255,255,.86)}
+.banner-x{margin-left:auto;flex:none;background:transparent;border:0;color:var(--dim);font-size:13px;cursor:pointer;padding:4px 8px;margin:-2px -4px -2px 0;border-radius:6px;line-height:1}
+.banner-x:hover{background:rgba(255,255,255,.08);color:var(--ink)}
+.banner-actions{display:flex;gap:8px;padding-left:15px}
+.banner-btn{padding:6px 11px;font-size:11.5px;font-weight:620;border:0;border-radius:8px;cursor:pointer;
+  background:linear-gradient(180deg,#f98d8d,#e46464);color:#2a0b0b}
+.banner-btn.ghost{background:rgba(255,255,255,.06);color:var(--ink);border:1px solid var(--line);font-weight:560}
+.banner-btn.ghost:hover{background:rgba(255,255,255,.1)}
+
+/* thin scrollbars */
+::-webkit-scrollbar{width:7px;height:7px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.13);border-radius:6px}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.22)}
+::-webkit-scrollbar-track{background:transparent}

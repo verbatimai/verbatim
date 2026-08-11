@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "macOS dictation widget (Tauri). Phase 3.0 spike: global hotkey + text injection.",
+  "description": "macOS dictation widget (Tauri). M3: non-activating overlay + M2 pipeline UI + focused-field injection.",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit",
     "tauri": "tauri",
     "start": "tauri dev"
   },

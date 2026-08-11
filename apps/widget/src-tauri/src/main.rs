@@ -9,6 +9,34 @@ fn inject_text(text: String) -> Result<(), String> {
     inject::paste_text(&text)
 }
 
+// Copy text to the clipboard (no paste, no restore) — the reliable fallback when no
+// editable field is focused to receive an injected paste.
+#[tauri::command]
+fn copy_text(text: String) -> Result<(), String> {
+    use arboard::Clipboard;
+    Clipboard::new()
+        .and_then(|mut cb| cb.set_text(text))
+        .map_err(|e| e.to_string())
+}
+
+// Open System Settings → Privacy & Security → Microphone, so the user can grant
+// mic access after a denial. macOS only; no-op elsewhere.
+#[tauri::command]
+fn open_mic_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(())
+    }
+}
+
 // ── Spike A: reclass the "main" window into a non-activating, NON-KEY NSPanel ────
 //
 // A plain Tauri window is an NSWindow; even with `focus:false` it activates the app
@@ -114,7 +142,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![inject_text])
+        .invoke_handler(tauri::generate_handler![inject_text, open_mic_settings, copy_text])
         .run(tauri::generate_context!())
         .expect("error while running the Open Dictation widget");
 }

@@ -21,10 +21,10 @@ The two things that can sink M3. Prove them in isolation before building the rea
 
 ---
 
-## Phase 3.1 — App scaffold
-- [ ] Create `apps/widget` (Tauri v2 + React + Vite, TypeScript). Add to the npm workspace.
-- [ ] Import `@open-dictation/core`; render the M2 transcript/diff/final-output UI inside the widget window.
-- [ ] Dev script `npm run widget` (tauri dev). CI: `cargo build` + `tsc` for the widget.
+## Phase 3.1 — App scaffold ✅ (11 Aug 2026)
+- [x] `apps/widget` is a Tauri v2 + Vite + TypeScript app in the npm workspace. **Deviation:** vanilla TS, **not** React — M2 shipped its UI in vanilla TS, so the widget reuses it verbatim (the "reuse everything" principle) rather than forking it into React.
+- [x] Render the M2 transcript/diff/final-output UI inside the widget window (ported from `apps/web`: streaming transcript, "what was removed" diff animation, final-output box + loading indicator). **Widget seam:** on the backend's `formatted` message the webview calls the Rust `inject_text` command → the finalized text lands in the focused field. **Scope note:** the pipeline is reused **via the M2 backend WS** (`ws://127.0.0.1:8787`), not by bundling `@open-dictation/core` in the browser — core is Node-side (`ws`/`node:fs`). The client-side `core` import (direct PyAI, no backend) is Phase **3.5** (BYOK/keychain); that's the correct sequencing.
+- [x] Dev script **`npm run widget`** (root → `scripts/widget.mjs`: backend + `tauri dev`). Widget `typecheck` script added (covered by root `npm run typecheck`); frontend typechecks clean. CI wiring (`cargo build` on a macOS runner + `typecheck`) still TODO — tracked in STATUS next-steps.
 
 ## Phase 3.2 — Global hotkey / push-to-talk
 - [ ] `tauri-plugin-global-shortcut`: register a configurable hotkey (default a chord, e.g. ⌥Space) that toggles the widget; wire `Pressed`/`Released` for optional push-to-talk.
