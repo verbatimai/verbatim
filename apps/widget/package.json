@@ -1,0 +1,21 @@
+{
+  "name": "@open-dictation/widget",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "macOS dictation widget (Tauri). Phase 3.0 spike: global hotkey + text injection.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "tauri": "tauri",
+    "start": "tauri dev"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0"
+  }
+}

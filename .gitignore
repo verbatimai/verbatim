@@ -1,0 +1,54 @@
+# ---- Secrets & keys (NEVER commit) ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.keychain
+secrets/
+**/credentials.json
+*.local
+
+# ---- Node ----
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# ---- Python (optional backend / experiments) ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# ---- Tauri / Rust ----
+target/
+apps/widget/src-tauri/target/
+
+# ---- Playwright e2e ----
+test-results/
+playwright-report/
+blob-report/
+.e2e-backend.pid
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# ---- Scratch ----
+.archive/
+
+# ---- Audio: ignore stray recordings, but keep committed test fixtures ----
+*.wav
+!experiments/fixtures/*.wav

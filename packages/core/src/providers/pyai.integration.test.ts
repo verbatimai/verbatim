@@ -1,0 +1,184 @@
+import { describe, it, expect, afterEach } from "vitest";
+import { WebSocketServer, WebSocket } from "ws";
+import { createServer, type Server } from "node:http";
+import { AddressInfo } from "node:net";
+import { PyAiSTT } from "./pyai.stt";
+import { PyAiCorrection } from "../correction/pyai";
+import { Pipeline } from "../pipeline";
+import type { TranscriptEvent } from "./types";
+
+// A mock that speaks PyAI Hear's real streaming wire format (session.created +
+// transcript.partial with stable_text/active_text + transcript.final). Lets us
+// exercise the REAL PyAiSTT adapter's connection/auth/parse/mapping/finalize
+// without pyai.com.
+function mockHearServer(finalText: string) {
+  const wss = new WebSocketServer({ port: 0 });
+  const received: string[] = [];
+  wss.on("connection", (ws: WebSocket, req) => {
+    received.push("AUTH:" + (req.headers["authorization"] ?? ""));
+    ws.send(JSON.stringify({ type: "session.created", model: "hear-realtime-1", session_id: "s1" }));
+    const partials = [
+      { stable_text: "let's schedule", active_text: "a meeting" },
+      { stable_text: "let's schedule a meeting at", active_text: "eightpm no no" },
+    ];
+    partials.forEach((p, i) =>
+      setTimeout(
+        () =>
+          ws.send(
+            JSON.stringify({
+              type: "transcript.partial",
+              utterance_id: "u1",
+              stable_text: p.stable_text,
+              active_text: p.active_text,
+              text: `${p.stable_text} ${p.active_text}`.trim(),
+              t_ms: (i + 1) * 100,
+            }),
+          ),
+        (i + 1) * 15,
+      ),
+    );
+    setTimeout(() => {
+      ws.send(
+        JSON.stringify({
+          type: "transcript.final",
+          utterance_id: "u1",
+          stable_text: finalText,
+          active_text: "",
+          text: finalText,
+          t_ms: 500,
+        }),
+      );
+      setTimeout(() => ws.close(), 30);
+    }, 60);
+    ws.on("message", (d, isBinary) => {
+      if (!isBinary) received.push("CTRL:" + d.toString());
+    });
+  });
+  const port = (wss.address() as AddressInfo).port;
+  return { url: `ws://localhost:${port}`, received, close: () => wss.close() };
+}
+
+const cleanup: Array<() => void> = [];
+afterEach(() => {
+  cleanup.splice(0).forEach((f) => f());
+  delete process.env.PYAI_STT_WS_URL;
+  delete process.env.PYAI_BASE;
+});
+
+describe("PyAiSTT adapter (against a faithful mock Hear server)", () => {
+  it("connects with a Bearer header and maps stable/active/final", async () => {
+    const finalText = "let's schedule a meeting at eightpm no no make it ninepm r i think that that works for me";
+    const mock = mockHearServer(finalText);
+    cleanup.push(mock.close);
+    process.env.PYAI_STT_WS_URL = mock.url;
+
+    const events: TranscriptEvent[] = [];
+    const stt = new PyAiSTT();
+    const session = await stt.startSession({ apiKey: "test-key-123" });
+    await new Promise<void>((resolve) => {
+      session.onTranscript((e) => events.push(e));
+      session.onClose(() => resolve());
+    });
+
+    const partials = events.filter((e) => e.type === "partial");
+    const finals = events.filter((e) => e.type === "final");
+    expect(partials.length).toBeGreaterThanOrEqual(2);
+    expect(partials[0].stableText).toBe("let's schedule");
+    expect(partials[0].activeText).toBe("a meeting");
+    expect(finals.length).toBe(1);
+    expect(finals[0].text).toBe(finalText);
+    // the adapter forwarded the Bearer auth header on the WS upgrade
+    expect(mock.received.some((r) => r.startsWith("AUTH:Bearer test-key-123"))).toBe(true);
+  });
+
+  it("drives the full Pipeline (STT -> segmenter -> correction) to a clean result", async () => {
+    const finalText = "let's schedule a meeting at eightpm no no make it ninepm r i think that that works for me";
+    const mock = mockHearServer(finalText);
+    cleanup.push(mock.close);
+    process.env.PYAI_STT_WS_URL = mock.url;
+
+    const { MockCorrection } = await import("../correction/mock");
+    let correction: any = null;
+    const pipeline = new Pipeline(new PyAiSTT(), new MockCorrection(), {
+      onCorrection: (u) => (correction = u),
+    });
+    await pipeline.run(); // mock self-drives + closes
+
+    expect(correction).not.toBeNull();
+    expect(correction.result.valid).toBe(true);
+    expect(correction.result.cleanText).toBe("let's schedule a meeting at 9 pm i think that works for me");
+  });
+});
+
+// A mock that returns PyAI's Anthropic-Messages shape so the REAL PyAiCorrection
+// adapter's request/parse/reconstruct path is exercised without pyai.com.
+function mockMessagesServer(): Promise<{ base: string; server: Server }> {
+  return new Promise((resolve) => {
+    const server = createServer((req, res) => {
+      let raw = "";
+      req.on("data", (c) => (raw += c));
+      req.on("end", () => {
+        const editsJson = JSON.stringify({
+          clean_text: "The total is 55 dollars",
+          edits: [
+            { raw: "The the", replacement: "The", reason: "repetition" },
+            { raw: "like ", replacement: "", reason: "filler" },
+            { raw: "fifty, ", replacement: "", reason: "false_start" },
+            { raw: "umm, ", replacement: "", reason: "filler" },
+            { raw: "fifty five", replacement: "55", reason: "grammar" },
+            { raw: " ahh", replacement: "", reason: "filler" },
+            { raw: " yeah", replacement: "", reason: "filler" },
+            { raw: " fifty five", replacement: "", reason: "repetition" },
+          ],
+        });
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ role: "assistant", content: [{ type: "text", text: editsJson }], stop_reason: "end_turn" }));
+      });
+    });
+    server.listen(0, () => {
+      const port = (server.address() as AddressInfo).port;
+      resolve({ base: `http://localhost:${port}`, server });
+    });
+  });
+}
+
+describe("PyAiSTT.transcribeBatch (against a mock /v1/audio/transcriptions)", () => {
+  it("posts the WAV and returns the clean transcript", async () => {
+    let gotContentType = "";
+    const server = await new Promise<{ base: string; server: Server }>((resolve) => {
+      const s = createServer((req, res) => {
+        gotContentType = String(req.headers["content-type"] ?? "");
+        let bytes = 0;
+        req.on("data", (c) => (bytes += c.length));
+        req.on("end", () => {
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify({ text: "the clean batch transcript" }));
+        });
+      });
+      s.listen(0, () => resolve({ base: `http://localhost:${(s.address() as AddressInfo).port}`, server: s }));
+    });
+    cleanup.push(() => server.server.close());
+    process.env.PYAI_BASE = server.base;
+
+    const pcm = new Uint8Array(3200); // 100ms @16k
+    const text = await new PyAiSTT().transcribeBatch!(pcm, { apiKey: "test-key" });
+    expect(text).toBe("the clean batch transcript");
+    expect(gotContentType).toContain("multipart/form-data"); // sent as a file upload
+  });
+});
+
+describe("PyAiCorrection adapter (against a mock /v1/messages)", () => {
+  it("posts, parses the Anthropic body, and reconstructs the clean text", async () => {
+    const { base, server } = await mockMessagesServer();
+    cleanup.push(() => server.close());
+    process.env.PYAI_BASE = base;
+
+    const result = await new PyAiCorrection("test-key").correct(
+      "The the total is like fifty, umm, fifty five dollars ahh yeah fifty five",
+    );
+    expect(result.valid).toBe(true);
+    expect(result.cleanText).toBe("The total is 55 dollars");
+    expect(result.edits.length).toBe(8);
+    expect(result.ops.some((o) => o.type === "replace" && o.replacement === "55")).toBe(true);
+  });
+});

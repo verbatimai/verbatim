@@ -1,0 +1,22 @@
+{
+  "name": "@open-dictation/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Dev bridge: browser audio <-> core pipeline <-> vendor APIs. Keeps keys server-side.",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "dev": "tsx watch src/server.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@open-dictation/core": "*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

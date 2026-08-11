@@ -1,0 +1,23 @@
+{
+  "name": "open-dictation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Real-time, vendor-agnostic dictation with visible corrections.",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "test": "npm run test --workspace @open-dictation/core",
+    "test:e2e": "playwright test",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "pipeline": "npm run pipeline --workspace @open-dictation/core --",
+    "backend": "npm run start --workspace @open-dictation/backend",
+    "web": "npm run dev --workspace @open-dictation/web"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.0"
+  }
+}

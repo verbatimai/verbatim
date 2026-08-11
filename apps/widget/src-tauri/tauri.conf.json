@@ -1,0 +1,34 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "open-dictation-widget",
+  "version": "0.1.0",
+  "identifier": "co.saaslabs.opendictation.widget",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5175",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Open Dictation",
+        "width": 440,
+        "height": 240,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "decorations": true,
+        "transparent": false,
+        "visible": true
+      }
+    ],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "app",
+    "category": "public.app-category.productivity"
+  }
+}

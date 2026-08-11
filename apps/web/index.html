@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Open Dictation — live demo</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h1>Open Dictation — live demo</h1>
+    <p class="sub">Speak, and watch it transcribe live and correct itself — showing exactly what was removed.
+      Keys stay on the dev server. <b>Demo</b> mode needs no mic or key.</p>
+
+    <div class="card">
+      <div class="status"><span class="dot" id="dot"></span><span id="statusText">Idle</span></div>
+      <div class="transcript" id="transcript">
+        <span class="hint">Press “Demo” to replay a real sample, or “Start dictation” to use your mic.</span>
+      </div>
+      <div class="final">
+        <div class="lbl">Final output — would be inserted into the focused field</div>
+        <div class="txt" id="finalOut"></div>
+      </div>
+      <div class="controls">
+        <button id="demo">▶ Demo (no mic)</button>
+        <button id="start" class="ghost">🎙 Start dictation</button>
+        <button id="stop" class="ghost" disabled>■ Stop</button>
+        <label class="toggle"><input type="checkbox" id="showRemoved" checked /> show what was removed</label>
+      </div>
+      <div class="legend">
+        <span><i class="chip r-filler"></i>filler</span>
+        <span><i class="chip r-repetition"></i>repetition</span>
+        <span><i class="chip r-false_start"></i>false start</span>
+        <span><i class="chip r-self_correction"></i>self-correction</span>
+        <span><i class="chip r-grammar"></i>grammar / formatting</span>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
