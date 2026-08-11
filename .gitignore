@@ -48,7 +48,10 @@ Thumbs.db
 
 # ---- Scratch ----
 .archive/
+hear-stream.log
 
 # ---- Audio: ignore stray recordings, but keep committed test fixtures ----
 *.wav
 !experiments/fixtures/*.wav
+# ---- Tauri generated ----
+apps/widget/src-tauri/gen/

@@ -87,28 +87,120 @@ export function mergeOverlap(base: string, add: string): string {
 }
 
 /**
- * Accumulates Hear's streaming events into one clean transcript. Uses `stableText`
- * (the locked, non-revising prefix) as the source of truth, folds the volatile
- * `activeText` in on finalize, and merges overlapping windows via mergeOverlap.
+ * Stitch `add` onto `base` collapsing ONLY an exact overlapping run at the seam
+ * (plus a repeated-tail guard). Unlike `mergeOverlap`, there is NO fuzzy
+ * matching — two distinct utterances that merely share a suffix (e.g. "first
+ * thing i said" / "second thing i said") must NOT be collapsed into one. This is
+ * what the accumulator uses to fold sliding windows within an utterance and to
+ * dedupe a seam between two consecutive finals.
+ */
+export function stitch(base: string, add: string): string {
+  const a = norm(add);
+  if (!a) return norm(base);
+  const b = norm(base);
+  if (!b) return collapseRepeats(a);
+  if (b.includes(a)) return b; // `add` already present
+  const B = b.split(" ");
+  const A = a.split(" ");
+  const max = Math.min(B.length, A.length);
+  let k = 0;
+  for (let n = max; n >= 1; n--) {
+    if (matchCount(B, A, n) === n) { k = n; break; }
+  }
+  const tail = A.slice(k);
+  if (!tail.length) return b;
+  return collapseRepeats(b + " " + tail.join(" "));
+}
+
+/**
+ * Accumulates Hear's streaming events into one clean, growing transcript.
+ *
+ * The design follows how Hear actually streams (confirmed from a captured raw
+ * `[hear]` stream):
+ *  - Each utterance has its own `utterance_id`. While it's in progress, Hear
+ *    emits `transcript.partial` events whose `text` is the FULL best hypothesis
+ *    for THAT utterance so far. (`stable_text`/`active_text` are a low-latency
+ *    SLIDING WINDOW view of the same text — `stable_text` drops words off the
+ *    FRONT as it advances — so they are NOT a reliable running prefix.)
+ *  - When an utterance ends (VAD endpoint or the ~30s max-utterance cap), Hear
+ *    emits a `transcript.final` carrying the full utterance text, then starts a
+ *    NEW `utterance_id` from scratch.
+ *
+ * So the correct model is utterance-scoped, not whole-session window merging:
+ *  committed utterances (from finals) + the current utterance's live text.
+ * Each utterance contributes exactly once, so overlapping partial windows can
+ * never stack/duplicate across the session — the old failure mode.
+ *
+ * `mergeOverlap`/`collapseRepeats` are still used, but only in BOUNDED spots: to
+ * fold a provider's sliding windows WITHIN one utterance, and to dedupe a tiny
+ * seam if two consecutive finals happen to overlap. They never run across the
+ * whole session anymore.
  */
 export class TranscriptAccumulator {
-  private transcript = "";
-  private active = "";
+  private committed = "";       // completed utterances, joined (seam-deduped)
+  private curId: string | null = null; // utterance_id currently in progress
+  private curText = "";         // full hypothesis for the in-progress utterance
+  private curActive = "";       // volatile tail (rendered dim)
 
-  push(e: TranscriptEvent): { transcript: string; active: string } {
-    if (e.stableText) this.transcript = mergeOverlap(this.transcript, e.stableText);
-    else if (e.text && !e.activeText) this.transcript = mergeOverlap(this.transcript, e.text);
-    this.active = norm(e.activeText || "");
-    if ((e.type === "final" || e.endpoint) && this.active) {
-      this.transcript = mergeOverlap(this.transcript, this.active);
-      this.active = "";
-    }
-    return { transcript: this.transcript, active: this.active };
+  /** Best full text for an event: prefer `text`; else reconstruct from the window. */
+  private derive(e: TranscriptEvent): string {
+    const t = norm(e.text || "");
+    if (t) return t;
+    return norm([norm(e.stableText || ""), norm(e.activeText || "")].filter(Boolean).join(" "));
   }
 
-  /** The finished transcript (folds any remaining active tail, collapses repeats). */
+  private commit(text: string): void {
+    const t = norm(text);
+    if (!t) return;
+    this.committed = this.committed ? stitch(this.committed, t) : collapseRepeats(t);
+  }
+
+  push(e: TranscriptEvent): { transcript: string; active: string } {
+    // A new utterance_id appeared while the previous one was never finalized
+    // (rollover): commit what we had for it before switching.
+    if (e.utteranceId && this.curId !== null && e.utteranceId !== this.curId) {
+      this.commit(this.curText);
+      this.curText = "";
+      this.curActive = "";
+    }
+    if (e.utteranceId) this.curId = e.utteranceId;
+
+    const hasText = norm(e.text || "") !== "";
+    const derived = this.derive(e);
+    // With a real `text` field, it's the FULL current-utterance hypothesis and may
+    // REVISE earlier words (e.g. a mis-heard "okay" gets dropped) — so replace.
+    // Window-only providers (no `text`) stream a sliding window we must stitch.
+    const foldInto = (prev: string) => (hasText ? derived : stitch(prev, derived));
+
+    if (e.type === "final" || e.endpoint) {
+      // Completed utterance -> commit it exactly once.
+      this.commit(foldInto(this.curText) || this.curText);
+      this.curId = null;
+      this.curText = "";
+      this.curActive = "";
+    } else if (derived) {
+      // In-progress utterance: keep the fullest hypothesis for it.
+      this.curText = foldInto(this.curText);
+      this.curActive = norm(e.activeText || "");
+    } else {
+      this.curActive = norm(e.activeText || "");
+    }
+    return this.view();
+  }
+
+  private view(): { transcript: string; active: string } {
+    // Split the current utterance into a solid part + the dim volatile tail.
+    const solidCurrent =
+      this.curActive && this.curText.endsWith(this.curActive)
+        ? norm(this.curText.slice(0, this.curText.length - this.curActive.length))
+        : this.curText;
+    const transcript = norm([this.committed, solidCurrent].filter(Boolean).join(" "));
+    return { transcript, active: this.curActive };
+  }
+
+  /** The finished transcript (fallback for demo/no-batch; batch is authoritative live). */
   final(): string {
-    return collapseRepeats(mergeOverlap(this.transcript, this.active));
+    return norm(this.curText ? stitch(this.committed, this.curText) : this.committed);
   }
 }
 

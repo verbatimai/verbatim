@@ -15,6 +15,14 @@ serde_json = "1"
 enigo = "0.2"
 arboard = "3"
 
+# Spike A — non-activating NSPanel overlay. macOS-only; keep it target-gated so the
+# widget still compiles on other platforms (which no-op the panel code below).
+# v2.1 branch: adds the `tauri_panel!` macro whose `config` block can set
+# `can_become_key_window: false` — the key ingredient so the overlay never steals
+# the keyboard from the app underneath.
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
+
 # Keep the binary name stable for tauri.
 [[bin]]
 name = "open-dictation-widget"

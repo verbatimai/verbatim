@@ -1,9 +1,14 @@
 import type { CorrectionProvider, CorrectionResult, CorrectionContext } from "./types";
 import { SYSTEM_PROMPT, userMessage, parseJson, reconstruct, validate, FORMAT_PROMPT, formatMessage } from "./prompt";
 
+const TRANSIENT = new Set([408, 425, 429, 500, 502, 503, 504]);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 // PyAI correction adapter. PyAI's text LLM is Anthropic-Messages-style at
 // POST /v1/messages (model gpt-5.6-sol). NOTE (finding F1): forced tool-use
 // currently 503s, so we use JSON-in-text mode, which works reliably.
+// PyAI is being stress-tested and returns intermittent 5xx/429, so every call
+// goes through a small retry-with-backoff (PYAI_RETRIES, default 3).
 // PYAI_BASE overrides the API base (used by integration tests / self-host).
 export class PyAiCorrection implements CorrectionProvider {
   readonly id = "pyai";
@@ -11,28 +16,46 @@ export class PyAiCorrection implements CorrectionProvider {
 
   constructor(private apiKey = process.env.PYAI_API_KEY ?? "") {}
 
-  async correct(raw: string, ctx?: CorrectionContext): Promise<CorrectionResult> {
+  /** POST /v1/messages with retry on transient errors; returns the parsed body. */
+  private async messages(body: unknown, label: string): Promise<any> {
     const base = process.env.PYAI_BASE ?? "https://api.pyai.com/v1"; // read at call time (testable)
     const url = `${base}/messages`;
+    const attempts = Math.max(1, Number(process.env.PYAI_RETRIES ?? 3));
+    let lastErr: unknown;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (res.ok) return await res.json();
+        const detail = `PyAI ${label} ${res.status}: ${await res.text()}`;
+        if (!TRANSIENT.has(res.status) || i === attempts - 1) throw new Error(detail);
+        lastErr = new Error(detail);
+      } catch (e) {
+        lastErr = e;
+        if (i === attempts - 1) throw e;
+      }
+      await sleep(300 * (i + 1) * (i + 1)); // 300ms, 1200ms, ...
+    }
+    throw lastErr;
+  }
+
+  async correct(raw: string, ctx?: CorrectionContext): Promise<CorrectionResult> {
     const model = process.env.PYAI_MODEL ?? "gpt-5.6-sol";
     const t0 = Date.now();
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    const body = await this.messages(
+      {
         model,
         max_tokens: 1024,
         temperature: 0,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: userMessage(raw, ctx?.priorContext) }],
-      }),
-    });
+      },
+      "correction",
+    );
     const latencyMs = Date.now() - t0;
-    if (!res.ok) throw new Error(`PyAI correction ${res.status}: ${await res.text()}`);
-    const body = (await res.json()) as any;
     const text = (body.content ?? []).find((b: any) => b.type === "text")?.text ?? "";
     const parsed = parseJson(text);
     const edits = parsed?.edits ?? [];
@@ -42,22 +65,19 @@ export class PyAiCorrection implements CorrectionProvider {
   }
 
   async format(text: string): Promise<{ text: string }> {
-    const base = process.env.PYAI_BASE ?? "https://api.pyai.com/v1";
     const model = process.env.PYAI_MODEL ?? "gpt-5.6-sol";
-    const res = await fetch(`${base}/messages`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const body = await this.messages(
+      {
         model,
-        max_tokens: 1024,
+        max_tokens: 2048, // whole formatted paragraph/list — give it room
         temperature: 0,
         system: FORMAT_PROMPT,
         messages: [{ role: "user", content: formatMessage(text) }],
-      }),
-    });
-    if (!res.ok) throw new Error(`PyAI format ${res.status}: ${await res.text()}`);
-    const body = (await res.json()) as any;
-    const out = (body.content ?? []).find((b: any) => b.type === "text")?.text ?? text;
-    return { text: out.trim() };
+      },
+      "format",
+    );
+    let out = (body.content ?? []).find((b: any) => b.type === "text")?.text ?? text;
+    out = String(out).replace(/^```[a-z]*\n?|\n?```$/g, "").trim(); // strip stray code fences
+    return { text: out };
   }
 }

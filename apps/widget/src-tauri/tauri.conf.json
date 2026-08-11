@@ -19,8 +19,12 @@
         "height": 240,
         "resizable": false,
         "alwaysOnTop": true,
-        "decorations": true,
-        "transparent": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "focus": false,
+        "skipTaskbar": true,
+        "visibleOnAllWorkspaces": true,
         "visible": true
       }
     ],
@@ -29,6 +33,7 @@
   "bundle": {
     "active": true,
     "targets": "app",
-    "category": "public.app-category.productivity"
+    "category": "public.app-category.productivity",
+    "icon": ["icons/icon.png"]
   }
 }

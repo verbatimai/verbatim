@@ -91,6 +91,47 @@ describe("PyAiSTT adapter (against a faithful mock Hear server)", () => {
     expect(mock.received.some((r) => r.startsWith("AUTH:Bearer test-key-123"))).toBe(true);
   });
 
+  it("handles sliding stable_text, noise messages, raw_text finals and rollover cleanly", async () => {
+    // A mock that reproduces Hear's real quirks: session.created + usage.delta
+    // noise, a SLIDING stable_text (drops words off the front), a final carrying
+    // only `raw_text`, then a SECOND utterance with a fresh utterance_id.
+    const wss = new WebSocketServer({ port: 0 });
+    cleanup.push(() => wss.close());
+    wss.on("connection", (ws: WebSocket) => {
+      const emit = (o: unknown, ms: number) => setTimeout(() => ws.send(JSON.stringify(o)), ms);
+      emit({ type: "session.created", session_id: "s1" }, 5);
+      emit({ type: "usage.delta", usage: { audio_ms: 100 } }, 10); // noise -> ignored
+      // Utterance 1: `text` is full; stable_text is a sliding window.
+      emit({ type: "transcript.partial", utterance_id: "u1", text: "i am testing", stable_text: "i am testing", active_text: "testing", t_ms: 100 }, 15);
+      emit({ type: "transcript.partial", utterance_id: "u1", text: "i am testing the live input", stable_text: "the live input", active_text: "input", t_ms: 200 }, 25);
+      emit({ type: "usage.delta", usage: { audio_ms: 300 } }, 30); // noise -> ignored
+      emit({ type: "transcript.final", utterance_id: "u1", raw_text: "i am testing the live input", endpoint_reason: "vad", t_ms: 300 }, 40);
+      // Utterance 2: fresh id.
+      emit({ type: "transcript.partial", utterance_id: "u2", text: "and it should not", stable_text: "and it should not", active_text: "not", t_ms: 400 }, 55);
+      emit({ type: "transcript.final", utterance_id: "u2", text: "and it should not duplicate words", endpoint_reason: "vad", t_ms: 500 }, 65);
+      setTimeout(() => ws.close(), 90);
+    });
+    process.env.PYAI_STT_WS_URL = `ws://localhost:${(wss.address() as AddressInfo).port}`;
+
+    const { TranscriptAccumulator } = await import("../pipeline");
+    const acc = new TranscriptAccumulator();
+    const events: TranscriptEvent[] = [];
+    const stt = new PyAiSTT();
+    const session = await stt.startSession({ apiKey: "k" });
+    await new Promise<void>((resolve) => {
+      session.onTranscript((e) => { events.push(e); acc.push(e); });
+      session.onClose(() => resolve());
+    });
+
+    // raw_text-only final was mapped to `text` (never dropped as empty).
+    const finals = events.filter((e) => e.type === "final");
+    expect(finals.length).toBe(2);
+    expect(finals[0].text).toBe("i am testing the live input");
+    expect(finals[0].endpoint).toBe(true);
+    // Two utterances stitched in order, no duplication from the sliding windows.
+    expect(acc.final()).toBe("i am testing the live input and it should not duplicate words");
+  });
+
   it("drives the full Pipeline (STT -> segmenter -> correction) to a clean result", async () => {
     const finalText = "let's schedule a meeting at eightpm no no make it ninepm r i think that that works for me";
     const mock = mockHearServer(finalText);
@@ -164,6 +205,54 @@ describe("PyAiSTT.transcribeBatch (against a mock /v1/audio/transcriptions)", ()
     const text = await new PyAiSTT().transcribeBatch!(pcm, { apiKey: "test-key" });
     expect(text).toBe("the clean batch transcript");
     expect(gotContentType).toContain("multipart/form-data"); // sent as a file upload
+  });
+});
+
+describe("PyAiCorrection retry (PyAI is flaky under stress)", () => {
+  it("retries a transient 503 on format() and then succeeds", async () => {
+    let hits = 0;
+    const server = await new Promise<{ base: string; server: Server }>((resolve) => {
+      const s = createServer((req, res) => {
+        req.on("data", () => {});
+        req.on("end", () => {
+          hits += 1;
+          if (hits === 1) {
+            res.statusCode = 503;
+            res.end("service unavailable");
+            return;
+          }
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify({ role: "assistant", content: [{ type: "text", text: "Here it is:\n\n1. Phone\n2. Laptop" }] }));
+        });
+      });
+      s.listen(0, () => resolve({ base: `http://localhost:${(s.address() as AddressInfo).port}`, server: s }));
+    });
+    cleanup.push(() => server.server.close());
+    process.env.PYAI_BASE = server.base;
+    process.env.PYAI_RETRIES = "3";
+
+    const out = await new PyAiCorrection("k").format("here it is 1 phone 2 laptop");
+    expect(hits).toBe(2); // failed once, retried, succeeded
+    expect(out.text).toBe("Here it is:\n\n1. Phone\n2. Laptop"); // newlines preserved, no fences
+    delete process.env.PYAI_RETRIES;
+  });
+
+  it("throws after exhausting retries on persistent 5xx", async () => {
+    let hits = 0;
+    const server = await new Promise<{ base: string; server: Server }>((resolve) => {
+      const s = createServer((req, res) => {
+        req.on("data", () => {});
+        req.on("end", () => { hits += 1; res.statusCode = 500; res.end("boom"); });
+      });
+      s.listen(0, () => resolve({ base: `http://localhost:${(s.address() as AddressInfo).port}`, server: s }));
+    });
+    cleanup.push(() => server.server.close());
+    process.env.PYAI_BASE = server.base;
+    process.env.PYAI_RETRIES = "2";
+
+    await expect(new PyAiCorrection("k").format("x")).rejects.toThrow(/500/);
+    expect(hits).toBe(2);
+    delete process.env.PYAI_RETRIES;
   });
 });
 

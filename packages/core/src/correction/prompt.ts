@@ -30,6 +30,62 @@ export function formatMessage(text: string): string {
   return `Cleaned transcript to format:\n${text}`;
 }
 
+/**
+ * Deterministic, offline formatting used as a FALLBACK when the LLM formatter is
+ * unavailable (e.g. PyAI /v1/messages is failing under load). It is intentionally
+ * conservative — it never invents structure it isn't sure about — so the final
+ * output is always at least readable (capitalized, punctuated) instead of the raw
+ * transcript. The LLM formatter remains the primary, higher-quality path.
+ *
+ * What it does: normalizes whitespace (preserving intentional newlines), fixes a
+ * standalone "i" -> "I", capitalizes sentence starts, converts an EXPLICITLY
+ * numbered spoken enumeration ("... 1 ... 2 ...") into a numbered list, and
+ * ensures terminal punctuation.
+ */
+export function localFormat(text: string): string {
+  let t = (text ?? "").replace(/[ \t]+/g, " ").replace(/\s*\n\s*/g, "\n").trim();
+  if (!t) return t;
+  t = t.replace(/\bi\b/g, "I");
+
+  // Only restructure when the speaker explicitly numbered items ("1 ... 2 ... 3 ...").
+  const list = extractNumberedList(t);
+  if (list) {
+    const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+    const lead = list.lead ? cap(punctFree(list.lead)) + ":" : "Here's the list:";
+    return `${lead}\n\n` + list.items.map((it, i) => `${i + 1}. ${cap(punctFree(it))}`).join("\n");
+  }
+
+  t = t.replace(/(^|[.!?]\s+)([a-z])/g, (_m, p, c) => p + c.toUpperCase());
+  if (!/[.!?]$/.test(t)) t += ".";
+  return t;
+}
+
+const punctFree = (s: string) => s.replace(/[.,;:\s]+$/, "").trim();
+
+/**
+ * Detect a spoken enumeration that used explicit numbers: "<lead> 1 <a> 2 <b> ...".
+ * Returns null unless there are at least two ascending numbered markers, so free
+ * prose is never mangled into a list.
+ */
+function extractNumberedList(t: string): { lead: string; items: string[] } | null {
+  const re = /(?:^|\s)(\d+)[.)]?\s+/g;
+  const marks: Array<{ n: number; start: number; end: number }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(t))) marks.push({ n: Number(m[1]), start: m.index, end: re.lastIndex });
+  if (marks.length < 2) return null;
+  // Require the first two markers to be 1 then 2 (a real enumeration, not stray digits).
+  if (marks[0].n !== 1 || marks[1].n !== 2) return null;
+  const lead = t.slice(0, marks[0].start).trim();
+  const items: string[] = [];
+  for (let i = 0; i < marks.length; i++) {
+    const from = marks[i].end;
+    const to = i + 1 < marks.length ? marks[i + 1].start : t.length;
+    const item = t.slice(from, to).trim();
+    if (item) items.push(item);
+  }
+  return items.length >= 2 ? { lead, items } : null;
+}
+
 export function userMessage(raw: string, priorContext?: string): string {
   const ctx = priorContext ? `Prior context (already cleaned): ${priorContext}\n\n` : "";
   return `${ctx}Raw transcript:\n${raw}`;

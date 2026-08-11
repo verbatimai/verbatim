@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "dev:quiet": "HEAR_DEBUG=0 node scripts/dev.mjs",
     "test": "npm run test --workspace @open-dictation/core",
     "test:e2e": "playwright test",
     "typecheck": "npm run typecheck --workspaces --if-present",

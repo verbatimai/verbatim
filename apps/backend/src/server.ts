@@ -9,7 +9,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import { getSTTProvider, getCorrectionProvider, TranscriptAccumulator, type STTSession, type STTProvider, type CorrectionProvider } from "@open-dictation/core";
+import { getSTTProvider, getCorrectionProvider, TranscriptAccumulator, localFormat, type STTSession, type STTProvider, type CorrectionProvider } from "@open-dictation/core";
 
 function loadEnv() {
   for (const dir of [".", "..", "../..", "../../.."]) {
@@ -74,15 +74,32 @@ wss.on("connection", (ws) => {
     }
     raw = norm(raw);
     if (raw && correction) {
+      // 1) Cleanup -> drives the "what was removed" diff. If it fails, we keep
+      //    going with the raw transcript as the clean text (no diff shown).
+      let cleanText = raw;
       try {
         const result = await correction.correct(raw);
-        send(ws, { type: "correction", raw, cleanText: result.cleanText, ops: result.ops, valid: result.valid });
-        const text = correction.format ? (await correction.format(result.cleanText)).text : result.cleanText;
-        send(ws, { type: "formatted", text });
+        cleanText = norm(result.cleanText) || raw;
+        send(ws, { type: "correction", raw, cleanText, ops: result.ops, valid: result.valid });
       } catch (e: any) {
-        send(ws, { type: "error", message: e?.message ?? String(e) });
-        send(ws, { type: "formatted", text: raw });
+        send(ws, { type: "error", message: "cleanup failed: " + (e?.message ?? String(e)) });
       }
+      // 2) Formatting -> the final inserted text. GUARANTEED to be at least the
+      //    cleaned text: if the LLM formatter fails (PyAI flaky under load), fall
+      //    back to a deterministic local formatter — never to the raw transcript.
+      //    Do NOT norm() here: formatted output may contain intentional newlines.
+      let finalText = cleanText;
+      if (correction.format) {
+        try {
+          finalText = (await correction.format(cleanText)).text.trim() || cleanText;
+        } catch (e: any) {
+          send(ws, { type: "error", message: "format failed (used local fallback): " + (e?.message ?? String(e)) });
+          finalText = localFormat(cleanText);
+        }
+      } else {
+        finalText = localFormat(cleanText);
+      }
+      send(ws, { type: "formatted", text: finalText });
     }
     try { session?.close(); } catch {}
     send(ws, { type: "done" });
@@ -116,8 +133,9 @@ wss.on("connection", (ws) => {
         console.log(`[backend] session start: stt=${sttId} correction=${corrId} demo=${demo}`);
         session = await stt.startSession({ apiKey: apiKey ?? "" });
         session.onTranscript((e) => {
-          // Growing live display via the accumulator (fuzzy overlap-merge +
-          // collapse-repeats). Authoritative final still comes from batch (below).
+          // Growing live display via the accumulator (utterance-scoped: committed
+          // finals + current utterance's live text). Authoritative final still
+          // comes from batch transcription on stop (below).
           const { transcript, active } = acc.push(e);
           send(ws, { type: "live", transcript, active });
         });

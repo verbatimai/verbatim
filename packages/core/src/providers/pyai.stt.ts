@@ -64,17 +64,23 @@ class PyAiSession implements STTSession {
     if (process.env.PYAI_STT_DEBUG) console.error("[hear] " + raw); // capture the real stream for test fixtures
     const m = JSON.parse(raw);
     if (m.type === "transcript.partial" || m.type === "transcript.final") {
+      const isFinal = m.type === "transcript.final";
       this.tcb?.({
-        type: m.type === "transcript.final" ? "final" : "partial",
+        type: isFinal ? "final" : "partial",
         utteranceId: m.utterance_id,
-        text: m.text ?? "",
+        // `text` is the full per-utterance hypothesis. On finals Hear also sends
+        // `raw_text`; fall back to it so a final is never dropped as empty.
+        text: m.text ?? m.raw_text ?? "",
         stableText: m.stable_text ?? "",
         activeText: m.active_text ?? "",
+        endpoint: isFinal || Boolean(m.endpoint_reason) || undefined,
         tMs: m.t_ms,
       });
     } else if (m.type === "error") {
       this.ecb?.(new Error(m.error?.message ?? "pyai stream error"));
     }
+    // Everything else (session.created, usage.delta, keep-alives, ...) is noise
+    // for the transcript and is intentionally ignored.
   }
 
   sendAudio(frame: ArrayBufferView | ArrayBuffer) {
