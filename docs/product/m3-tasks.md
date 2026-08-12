@@ -26,9 +26,12 @@ The two things that can sink M3. Prove them in isolation before building the rea
 - [x] Render the M2 transcript/diff/final-output UI inside the widget window (ported from `apps/web`: streaming transcript, "what was removed" diff animation, final-output box + loading indicator). **Widget seam:** on the backend's `formatted` message the webview calls the Rust `inject_text` command → the finalized text lands in the focused field. **Scope note:** the pipeline is reused **via the M2 backend WS** (`ws://127.0.0.1:8787`), not by bundling `@open-dictation/core` in the browser — core is Node-side (`ws`/`node:fs`). The client-side `core` import (direct PyAI, no backend) is Phase **3.5** (BYOK/keychain); that's the correct sequencing.
 - [x] Dev script **`npm run widget`** (root → `scripts/widget.mjs`: backend + `tauri dev`). Widget `typecheck` script added (covered by root `npm run typecheck`); frontend typechecks clean. CI wiring (`cargo build` on a macOS runner + `typecheck`) still TODO — tracked in STATUS next-steps.
 
-## Phase 3.2 — Global hotkey / push-to-talk
-- [ ] `tauri-plugin-global-shortcut`: register a configurable hotkey (default a chord, e.g. ⌥Space) that toggles the widget; wire `Pressed`/`Released` for optional push-to-talk.
-- [ ] **`fn`-key hold** (Wispr-style) needs a native `CGEventTap`/`NSEvent` global monitor — the plugin can't bind bare modifiers. Implement as an optional Rust event-tap; document the extra Accessibility/Input-Monitoring permission it needs.
+## Phase 3.2 — Global hotkey / push-to-talk  ·  ~80% (12 Aug 2026)
+- [x] **⌥Space drives dictation with BOTH modes** via `tauri-plugin-global-shortcut` `Pressed`/`Released`: a quick **tap toggles** (hands-free), a **hold is push-to-talk** (record while held, stop on release; ≥300 ms = hold). Rust owns the state machine (`RECORDING`/`PRESS_AT`/`STARTED_THIS_PRESS`) and emits a `dictation` event (`start`/`stop`) the webview acts on. Chord push-to-talk needs no event tap.
+- [x] **Wispr/Amical-style UX**: a **floating orb** (idle, always visible, bottom-centre, **draggable** — click = dictate, drag = move; remembers its spot) that opens the **full streaming card** on start (transcript streams live per the SOP; no minimal-pill dead time), then collapses back to the orb after inserting. Card opens **anchored to the orb**, clamped on-screen. **Live mic-level meter** (AnalyserNode → 5 bars) in the card titlebar. **Menu-bar tray icon** (Show / Quit) as the app-running indicator.
+- [ ] **Configurable** hotkey (currently fixed ⌥Space) — needs a settings store (pairs with 3.5 keychain/settings).
+- [ ] **`fn`-key hold** (bare-modifier, Wispr-style) — needs a native `CGEventTap` + Input-Monitoring permission. Optional; deferred.
+- [ ] **Context-gate the orb** (show only when an editable field is focused) — blocked on the same AX focus read that returns NoValue here (see Phase 3.4).
 
 ## Phase 3.3 — Non-activating overlay (from Spike A)
 - [ ] Overlay window config: `alwaysOnTop`, `decorations:false`, `transparent:true`, `focus:false`, `skipTaskbar:true`, `visibleOnAllWorkspaces:true`; `app.macOSPrivateApi:true`.

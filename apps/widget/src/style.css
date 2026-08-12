@@ -15,6 +15,32 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;
   color:var(--ink);-webkit-font-smoothing:antialiased}
 body{padding:11px}
 
+/* ── orb (idle) vs card (active) views ── */
+#root{height:100%}
+#root.orb-view .card{display:none}
+#root.card-view .orb{display:none}
+
+.orb{
+  width:calc(100% - 22px);height:calc(100% - 22px);margin:0;padding:0;border:0;cursor:pointer;
+  border-radius:50%;display:grid;place-items:center;color:#eaf3ff;
+  background:linear-gradient(180deg,var(--accent),var(--accent-2));
+  box-shadow:0 8px 22px rgba(0,0,0,.5),0 0 0 3px rgba(76,157,240,.18),inset 0 1px 0 rgba(255,255,255,.35);
+  animation:orbpulse 2.6s ease-in-out infinite;transition:filter .12s,transform .08s}
+.orb:hover{filter:brightness(1.08)}
+.orb:active{transform:scale(.94)}
+@keyframes orbpulse{
+  0%,100%{box-shadow:0 8px 22px rgba(0,0,0,.5),0 0 0 3px rgba(76,157,240,.18),inset 0 1px 0 rgba(255,255,255,.35)}
+  50%{box-shadow:0 8px 22px rgba(0,0,0,.5),0 0 0 8px rgba(76,157,240,.05),inset 0 1px 0 rgba(255,255,255,.35)}}
+
+.icon-btn{flex:none;background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--ink);
+  width:26px;height:26px;border-radius:8px;cursor:pointer;font-size:12px;line-height:1;display:grid;place-items:center}
+.icon-btn:hover{background:rgba(255,255,255,.11)}
+.titlebar .icon-btn{margin-left:6px;pointer-events:auto} /* beat .titlebar>*{pointer-events:none} */
+
+/* live mic-level meter (5 bars) in the card titlebar */
+.level{display:inline-flex;align-items:flex-end;gap:2px;height:16px;margin:0 2px 0 8px;flex:none}
+.level i{width:2.5px;height:3px;border-radius:2px;background:var(--accent);transition:height .06s ease-out}
+
 .card{
   height:calc(100% - 22px);display:flex;flex-direction:column;
   background:linear-gradient(180deg,rgba(28,33,44,.97),rgba(18,21,29,.98));

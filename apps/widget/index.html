@@ -7,51 +7,60 @@
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
-  <div class="card">
-    <!-- Draggable title bar: grab anywhere here to move the widget out of the way. -->
-    <div class="titlebar" data-tauri-drag-region>
-      <span class="glyph" data-tauri-drag-region aria-hidden="true">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/>
-        </svg>
-      </span>
-      <span class="brand" data-tauri-drag-region>Open Dictation</span>
-      <span class="drag-hint" data-tauri-drag-region>drag to move</span>
-      <span class="statuspill"><span class="dot" id="dot"></span><span id="statusText">Idle</span></span>
-    </div>
+  <div id="root" class="orb-view">
+    <!-- Idle: a small floating orb. Click it (or press ⌥Space) to dictate. -->
+    <button class="orb" id="orb" title="Dictate  (⌥Space)">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/>
+      </svg>
+    </button>
 
-    <!-- Notification banner (errors + mic permission). Explicitly shown/cleared. -->
-    <div class="banner" id="banner" hidden>
-      <div class="banner-row">
-        <span class="banner-dot"></span>
-        <span class="banner-msg" id="bannerMsg"></span>
-        <button class="banner-x" id="bannerClose" aria-label="Dismiss">✕</button>
-      </div>
-      <div class="banner-actions" id="bannerActions" hidden>
-        <button id="openMic" class="banner-btn" hidden>Open Microphone Settings</button>
-        <button id="openAx" class="banner-btn" hidden>Open Accessibility Settings</button>
-        <button id="retryMic" class="banner-btn ghost" hidden>Retry</button>
-      </div>
-    </div>
-
-    <div class="body">
-      <div class="transcript" id="transcript">
-        <span class="hint">Press <b>Demo</b> to replay a sample, or <b>Start</b> to dictate. ⌥Space toggles the widget.</span>
+    <!-- Active: the full card — live streaming transcript / diff / final output. -->
+    <div class="card">
+      <div class="titlebar" data-tauri-drag-region>
+        <span class="glyph" data-tauri-drag-region aria-hidden="true">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/>
+          </svg>
+        </span>
+        <span class="brand" data-tauri-drag-region>Open Dictation</span>
+        <span class="statuspill"><span class="dot" id="dot"></span><span id="statusText">Idle</span></span>
+        <span class="level" id="level" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+        <button class="icon-btn" id="collapseBtn" title="Dismiss">✕</button>
       </div>
 
-      <div class="final">
-        <div class="lbl">
-          <span>Final output · inserted into the focused field</span>
-          <button id="copyBtn" class="copy-btn" disabled>Copy</button>
+      <div class="banner" id="banner" hidden>
+        <div class="banner-row">
+          <span class="banner-dot"></span>
+          <span class="banner-msg" id="bannerMsg"></span>
+          <button class="banner-x" id="bannerClose" aria-label="Dismiss">✕</button>
         </div>
-        <div class="txt" id="finalOut"></div>
+        <div class="banner-actions" id="bannerActions" hidden>
+          <button id="openMic" class="banner-btn" hidden>Open Microphone Settings</button>
+          <button id="openAx" class="banner-btn" hidden>Open Accessibility Settings</button>
+          <button id="retryMic" class="banner-btn ghost" hidden>Retry</button>
+        </div>
       </div>
 
-      <div class="controls">
-        <button id="demo" class="primary">▶&nbsp;Demo</button>
-        <button id="start" class="ghost">🎙&nbsp;Start</button>
-        <button id="stop" class="ghost" disabled>■&nbsp;Stop</button>
-        <label class="toggle"><input type="checkbox" id="showRemoved" checked /> show removed</label>
+      <div class="body">
+        <div class="transcript" id="transcript">
+          <span class="hint">Press <b>Demo</b> to replay a sample, or <b>Start</b> to dictate. ⌥Space toggles the widget.</span>
+        </div>
+
+        <div class="final">
+          <div class="lbl">
+            <span>Final output · inserted into the focused field</span>
+            <button id="copyBtn" class="copy-btn" disabled>Copy</button>
+          </div>
+          <div class="txt" id="finalOut"></div>
+        </div>
+
+        <div class="controls">
+          <button id="demo" class="primary">▶&nbsp;Demo</button>
+          <button id="start" class="ghost">🎙&nbsp;Start</button>
+          <button id="stop" class="ghost" disabled>■&nbsp;Stop</button>
+          <label class="toggle"><input type="checkbox" id="showRemoved" checked /> show removed</label>
+        </div>
       </div>
     </div>
   </div>

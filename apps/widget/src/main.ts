@@ -10,6 +10,9 @@
 // Pipeline + vendor key stay in the M2 backend (WS). Demo mode needs no mic/key.
 // The client-side core pipeline + BYOK/keychain is Phase 3.5.
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow, currentMonitor } from "@tauri-apps/api/window";
+import { LogicalSize, LogicalPosition } from "@tauri-apps/api/dpi";
 
 const WS_URL = (import.meta as any).env?.VITE_WS_URL ?? "ws://127.0.0.1:8787";
 const TARGET_RATE = 16000;
@@ -32,6 +35,65 @@ const bannerClose = $<HTMLButtonElement>("bannerClose");
 const openMicBtn = $<HTMLButtonElement>("openMic"), retryMicBtn = $<HTMLButtonElement>("retryMic");
 const openAxBtn = $<HTMLButtonElement>("openAx");
 const copyBtn = $<HTMLButtonElement>("copyBtn");
+const root = $("root"), orb = $<HTMLButtonElement>("orb");
+const collapseBtn = $<HTMLButtonElement>("collapseBtn");
+
+// Two views: idle "orb" (small floating dot) and active "card" (full streaming UI).
+// Both sit bottom-center; resize + reposition on switch.
+const appWin = getCurrentWindow();
+const ORB = 74, CARD_W = 440, CARD_H = 360;
+let orbPos: { x: number; y: number } | null = null; // logical top-left where the orb lives
+
+const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+async function monitorLogical() {
+  try {
+    const mon = await currentMonitor();
+    if (!mon) return null;
+    const s = mon.scaleFactor || 1;
+    return { ox: mon.position.x / s, oy: mon.position.y / s, w: mon.size.width / s, h: mon.size.height / s };
+  } catch { return null; }
+}
+
+async function setView(v: "orb" | "card") {
+  const card = v === "card";
+  root.classList.toggle("card-view", card);
+  root.classList.toggle("orb-view", !card);
+  const w = card ? CARD_W : ORB, h = card ? CARD_H : ORB;
+  try {
+    await appWin.setSize(new LogicalSize(w, h));
+    if (card) {
+      // Open the card anchored on the orb's spot (centred on it), clamped on-screen.
+      const a = orbPos ?? { x: 0, y: 0 };
+      let x = a.x + ORB / 2 - w / 2;
+      let y = a.y + ORB / 2 - h / 2;
+      const m = await monitorLogical();
+      if (m) {
+        x = clampN(x, m.ox + 8, m.ox + m.w - w - 8);
+        y = clampN(y, m.oy + 8, m.oy + m.h - h - 8);
+      }
+      await appWin.setPosition(new LogicalPosition(x, y));
+    } else if (orbPos) {
+      // Restore the orb to exactly where the user left it.
+      await appWin.setPosition(new LogicalPosition(orbPos.x, orbPos.y));
+    }
+  } catch {}
+}
+
+// First launch: park the orb bottom-centre, then remember that as its position.
+async function initOrbPosition() {
+  const m = await monitorLogical();
+  orbPos = m ? { x: m.ox + (m.w - ORB) / 2, y: m.oy + m.h - ORB - 96 } : { x: 120, y: 120 };
+  await setView("orb");
+}
+
+// Open the full card and start a fresh dictation session (streaming visible throughout).
+function beginDictation() {
+  clearBanner();
+  void setView("card");
+  reset();
+  if (ws) { try { ws.close(); } catch {} ws = null; }
+  void startLive();
+}
 
 let finalText = ""; // the last formatted output — always copyable, even if injection had no target
 
@@ -39,6 +101,34 @@ let ws: WebSocket | null = null;
 let audioCtx: AudioContext | null = null;
 let processor: ScriptProcessorNode | null = null;
 let micStream: MediaStream | null = null;
+let analyser: AnalyserNode | null = null;
+let levelRAF = 0;
+
+// Live mic-level meter (5 bars in the titlebar), driven by an AnalyserNode.
+const levelBars = Array.from(document.querySelectorAll<HTMLElement>("#level i"));
+function startLevelMeter() {
+  if (!analyser) return;
+  const buf = new Uint8Array(analyser.frequencyBinCount);
+  const n = Math.max(1, levelBars.length);
+  const band = Math.max(1, Math.floor(buf.length / n));
+  const tick = () => {
+    if (!analyser) return;
+    analyser.getByteFrequencyData(buf);
+    for (let i = 0; i < n; i++) {
+      let sum = 0;
+      for (let j = 0; j < band; j++) sum += buf[i * band + j] || 0;
+      const avg = sum / band / 255; // 0..1
+      levelBars[i].style.height = (3 + Math.pow(avg, 0.7) * 13).toFixed(1) + "px";
+    }
+    levelRAF = requestAnimationFrame(tick);
+  };
+  tick();
+}
+function stopLevelMeter() {
+  if (levelRAF) cancelAnimationFrame(levelRAF);
+  levelRAF = 0;
+  levelBars.forEach((b) => (b.style.height = "3px"));
+}
 
 const TYPING = `<span class="typing"><i></i><i></i><i></i></span>`;
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
@@ -163,7 +253,13 @@ function handle(m: ServerMsg) {
     void injectFinal(m.text);
   }
   else if (m.type === "error") { setStatus("err", "error"); showBanner("err", friendlyError(m.message)); }
-  else if (m.type === "done") { teardownAudio(); resetButtons(); }
+  else if (m.type === "done") {
+    teardownAudio();
+    if (ws) { try { ws.close(); } catch {} ws = null; } // next session starts fresh
+    resetButtons();
+    // Show the final result briefly, then collapse back to the floating orb.
+    setTimeout(() => { void setView("orb"); }, 1400);
+  }
 }
 
 function connect(mode: "demo" | "live"): Promise<void> {
@@ -221,6 +317,10 @@ async function startLive() {
   await connect("live");
   audioCtx = new AudioContext();
   const source = audioCtx.createMediaStreamSource(micStream);
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 128;
+  source.connect(analyser);
+  startLevelMeter();
   processor = audioCtx.createScriptProcessor(4096, 1, 1);
   source.connect(processor);
   processor.connect(audioCtx.destination);
@@ -231,6 +331,8 @@ async function startLive() {
 }
 
 function teardownAudio() {
+  stopLevelMeter();
+  analyser = null;
   processor?.disconnect(); processor = null;
   audioCtx?.close().catch(() => {}); audioCtx = null;
   micStream?.getTracks().forEach((t) => t.stop()); micStream = null;
@@ -252,6 +354,47 @@ demoBtn.onclick = async () => { clearBanner(); reset(); finalOut.innerHTML = TYP
 startBtn.onclick = () => void startLive();
 stopBtn.onclick = () => stop();
 bannerClose.onclick = () => clearBanner();
+
+// Orb: click to dictate, drag to reposition. Distinguish the two by movement.
+let orbDown = false, orbMoved = false, orbPosReady = false;
+let orbStartX = 0, orbStartY = 0, orbWinLX = 0, orbWinLY = 0, orbScale = 1;
+orb.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  orbDown = true; orbMoved = false; orbPosReady = false;
+  orbStartX = e.screenX; orbStartY = e.screenY;
+  try { orb.setPointerCapture(e.pointerId); } catch {}
+  void (async () => {
+    try {
+      orbScale = await appWin.scaleFactor();
+      const p = await appWin.outerPosition();
+      orbWinLX = p.x / orbScale; orbWinLY = p.y / orbScale;
+      orbPosReady = true;
+    } catch {}
+  })();
+});
+orb.addEventListener("pointermove", (e) => {
+  if (!orbDown || !orbPosReady) return;
+  const dx = e.screenX - orbStartX, dy = e.screenY - orbStartY;
+  if (!orbMoved && Math.hypot(dx, dy) > 4) orbMoved = true;
+  if (orbMoved) {
+    orbPos = { x: orbWinLX + dx, y: orbWinLY + dy }; // remember where the orb is dragged to
+    void appWin.setPosition(new LogicalPosition(orbPos.x, orbPos.y)).catch(() => {});
+  }
+});
+orb.addEventListener("pointerup", (e) => {
+  if (!orbDown) return;
+  orbDown = false;
+  try { orb.releasePointerCapture(e.pointerId); } catch {}
+  if (!orbMoved) beginDictation(); // a click, not a drag
+});
+collapseBtn.onclick = () => {
+  // Dismiss / cancel — drop the session without inserting, return to the orb.
+  if (ws) { try { ws.close(); } catch {} ws = null; }
+  teardownAudio();
+  resetButtons();
+  clearBanner();
+  void setView("orb");
+};
 copyBtn.onclick = async () => {
   if (!finalText) return;
   try {
@@ -268,4 +411,11 @@ openMicBtn.onclick = () => { void invoke("open_mic_settings").catch(() => {}); }
 openAxBtn.onclick = () => { void invoke("open_accessibility_settings").catch(() => {}); };
 retryMicBtn.onclick = () => { clearBanner(); void startLive(); };
 
+// ⌥Space drives dictation from Rust: hold = push-to-talk, tap = toggle.
+void listen<string>("dictation", (e) => {
+  if (e.payload === "start") beginDictation();
+  else if (e.payload === "stop") { if (ws) stop(); }
+});
+
 reset();
+void initOrbPosition(); // start as the floating orb, bottom-centre; drag to move

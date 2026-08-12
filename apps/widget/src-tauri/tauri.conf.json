@@ -15,8 +15,8 @@
       {
         "label": "main",
         "title": "Open Dictation",
-        "width": 440,
-        "height": 360,
+        "width": 74,
+        "height": 74,
         "resizable": false,
         "alwaysOnTop": true,
         "decorations": false,

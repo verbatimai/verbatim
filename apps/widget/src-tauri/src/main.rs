@@ -1,11 +1,20 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use tauri::Manager;
+use std::sync::Mutex;
+use std::time::Instant;
+use tauri::{Emitter, Manager};
 
 mod inject;
 
 #[cfg(target_os = "macos")]
 mod axinject;
+
+// Hotkey dictation state. A quick tap toggles (hands-free); a hold is push-to-talk
+// (record while held, stop on release).
+static RECORDING: Mutex<bool> = Mutex::new(false);
+static PRESS_AT: Mutex<Option<Instant>> = Mutex::new(None);
+static STARTED_THIS_PRESS: Mutex<bool> = Mutex::new(false);
+const HOLD_MS: u128 = 300; // ≥ this held = push-to-talk; below = a tap (toggle)
 
 // Inject the finalized text into the focused field — but only when it makes sense.
 // Returns a status the UI reacts to:
@@ -30,6 +39,14 @@ fn inject_text(text: String) -> Result<String, String> {
 #[tauri::command]
 fn copy_text(text: String) -> Result<(), String> {
     inject::copy_only(&text)
+}
+
+// Hide the overlay (auto-hide after inserting, Wispr-style).
+#[tauri::command]
+fn hide_widget(app: tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.hide();
+    }
 }
 
 // Open System Settings to a specific Privacy pane so the user can grant access.
@@ -149,26 +166,95 @@ fn main() {
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
                         .with_handler(move |app, shortcut, event| {
-                            if shortcut == &toggle_for_handler
-                                && event.state() == ShortcutState::Pressed
-                            {
-                                if let Some(win) = app.get_webview_window("main") {
-                                    let visible = win.is_visible().unwrap_or(false);
-                                    if visible {
-                                        let _ = win.hide();
+                            if shortcut != &toggle_for_handler {
+                                return;
+                            }
+                            match event.state() {
+                                ShortcutState::Pressed => {
+                                    // Probe focus while the widget is still hidden — the
+                                    // hotkey fires without touching our window.
+                                    #[cfg(target_os = "macos")]
+                                    axinject::probe();
+
+                                    *PRESS_AT.lock().unwrap() = Some(Instant::now());
+                                    let was_recording = *RECORDING.lock().unwrap();
+                                    if was_recording {
+                                        // Second tap -> stop (toggle off).
+                                        *RECORDING.lock().unwrap() = false;
+                                        *STARTED_THIS_PRESS.lock().unwrap() = false;
+                                        let _ = app.emit("dictation", "stop");
                                     } else {
-                                        // Show WITHOUT set_focus — a non-activating,
-                                        // non-key panel must appear without stealing
-                                        // focus/keyboard from the active app.
-                                        let _ = win.show();
+                                        // Summon (no set_focus) and start.
+                                        if let Some(win) = app.get_webview_window("main") {
+                                            let _ = win.show();
+                                        }
+                                        *RECORDING.lock().unwrap() = true;
+                                        *STARTED_THIS_PRESS.lock().unwrap() = true;
+                                        let _ = app.emit("dictation", "start");
                                     }
                                 }
+                                ShortcutState::Released => {
+                                    let held = PRESS_AT
+                                        .lock()
+                                        .unwrap()
+                                        .map(|t| t.elapsed().as_millis())
+                                        .unwrap_or(0);
+                                    let started = {
+                                        let mut s = STARTED_THIS_PRESS.lock().unwrap();
+                                        let v = *s;
+                                        *s = false;
+                                        v
+                                    };
+                                    // Held long enough on the starting press = push-to-talk;
+                                    // stop on release. A quick tap leaves it recording (toggle).
+                                    if started && held >= HOLD_MS {
+                                        *RECORDING.lock().unwrap() = false;
+                                        let _ = app.emit("dictation", "stop");
+                                    }
+                                }
+                                _ => {}
                             }
                         })
                         .build(),
                 )?;
 
                 app.global_shortcut().register(toggle)?;
+
+                // Menu-bar (tray) icon — the always-visible "the widget is available"
+                // indicator, since the window itself stays hidden until summoned. ⌥Space
+                // (or the menu's "Show") opens the dictation UI.
+                {
+                    use tauri::menu::{Menu, MenuItem};
+                    use tauri::tray::TrayIconBuilder;
+                    let h = app.handle();
+                    let show_i = MenuItem::with_id(
+                        h,
+                        "show",
+                        "Show Open Dictation  (⌥Space)",
+                        true,
+                        None::<&str>,
+                    )?;
+                    let quit_i =
+                        MenuItem::with_id(h, "quit", "Quit Open Dictation", true, None::<&str>)?;
+                    let menu = Menu::with_items(h, &[&show_i, &quit_i])?;
+                    let icon = app.default_window_icon().cloned();
+                    let mut tray = TrayIconBuilder::with_id("main-tray")
+                        .tooltip("Open Dictation — press ⌥Space to dictate")
+                        .menu(&menu)
+                        .on_menu_event(|app, event| match event.id.as_ref() {
+                            "show" => {
+                                if let Some(w) = app.get_webview_window("main") {
+                                    let _ = w.show();
+                                }
+                            }
+                            "quit" => app.exit(0),
+                            _ => {}
+                        });
+                    if let Some(ic) = icon {
+                        tray = tray.icon(ic);
+                    }
+                    let _tray = tray.build(h)?;
+                }
             }
             Ok(())
         })
@@ -176,7 +262,8 @@ fn main() {
             inject_text,
             open_mic_settings,
             open_accessibility_settings,
-            copy_text
+            copy_text,
+            hide_widget
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Open Dictation widget");

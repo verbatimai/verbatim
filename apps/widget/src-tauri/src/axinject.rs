@@ -86,6 +86,23 @@ unsafe fn focused_role() -> String {
     role
 }
 
+/// Diagnostic: log whether a focused element is readable right now. Called on hotkey
+/// press (widget still hidden) to test if hiding the overlay fixes the AX focus read
+/// that fails while the panel is visible. Does not affect injection.
+pub fn probe() {
+    unsafe {
+        if !AXIsProcessTrusted() {
+            eprintln!("[axinject] probe: Accessibility not granted");
+            return;
+        }
+        let role = focused_role();
+        eprintln!(
+            "[axinject] probe (on hotkey, widget hidden): focused role = {}",
+            if role.is_empty() { "NONE".to_string() } else { role }
+        );
+    }
+}
+
 /// Inject `text`: paste into the focused field, refusing only if we can positively
 /// identify a secure/password field. Returns "inserted" | "secure" | "no_access" |
 /// "no_field".
