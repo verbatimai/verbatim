@@ -37,6 +37,21 @@ const openAxBtn = $<HTMLButtonElement>("openAx");
 const copyBtn = $<HTMLButtonElement>("copyBtn");
 const root = $("root"), orb = $<HTMLButtonElement>("orb");
 const collapseBtn = $<HTMLButtonElement>("collapseBtn");
+const card = document.querySelector<HTMLElement>(".card")!;
+const settingsBtn = $<HTMLButtonElement>("settingsBtn"), doneSettings = $<HTMLButtonElement>("doneSettings");
+const keyInput = $<HTMLInputElement>("keyInput"), keyStatus = $("keyStatus");
+const saveKey = $<HTMLButtonElement>("saveKey"), clearKey = $<HTMLButtonElement>("clearKey");
+const PYAI_KEY = "PYAI_API_KEY";
+
+async function refreshKeyStatus() {
+  try {
+    const has = await invoke<boolean>("key_has", { account: PYAI_KEY });
+    keyStatus.textContent = has ? "✓ Key saved in your Keychain." : "No key saved — live dictation needs one (or a repo .env).";
+    keyStatus.classList.toggle("ok", has);
+  } catch (e) { keyStatus.textContent = "Keychain error: " + String(e); }
+}
+function openSettings() { card.classList.add("settings-open"); keyInput.value = ""; void refreshKeyStatus(); }
+function closeSettings() { card.classList.remove("settings-open"); }
 
 // Two views: idle "orb" (small floating dot) and active "card" (full streaming UI).
 // Both sit bottom-center; resize + reposition on switch.
@@ -89,6 +104,7 @@ async function initOrbPosition() {
 // Open the full card and start a fresh dictation session (streaming visible throughout).
 function beginDictation() {
   clearBanner();
+  closeSettings();
   void setView("card");
   reset();
   if (ws) { try { ws.close(); } catch {} ws = null; }
@@ -268,11 +284,12 @@ function handle(m: ServerMsg) {
   }
 }
 
-function connect(mode: "demo" | "live"): Promise<void> {
+function connect(mode: "demo" | "live", apiKey?: string): Promise<void> {
   return new Promise((resolve, reject) => {
     ws = new WebSocket(WS_URL);
     ws.binaryType = "arraybuffer";
-    ws.onopen = () => { ws!.send(JSON.stringify({ type: "start", mode })); resolve(); };
+    // apiKey (from the Keychain) is passed to the local backend for this session; never logged.
+    ws.onopen = () => { ws!.send(JSON.stringify({ type: "start", mode, apiKey })); resolve(); };
     ws.onmessage = (e) => handle(JSON.parse(e.data) as ServerMsg);
     ws.onerror = () => { setStatus("err", "no backend"); showBanner("err", "Can't reach the backend at " + WS_URL + " — run `npm run widget` (or `npm run backend`)."); reject(new Error("ws")); };
     ws.onclose = () => { ws = null; };
@@ -320,7 +337,10 @@ async function startLive() {
   clearBanner();
   reset();
   buttonsBusy();
-  await connect("live");
+  // BYOK: hand the Keychain key (if any) to the local backend for this session.
+  let apiKey: string | undefined;
+  try { apiKey = (await invoke<string | null>("key_get", { account: PYAI_KEY })) ?? undefined; } catch {}
+  await connect("live", apiKey);
   audioCtx = new AudioContext();
   const source = audioCtx.createMediaStreamSource(micStream);
   analyser = audioCtx.createAnalyser();
@@ -361,6 +381,20 @@ startBtn.onclick = () => void startLive();
 stopBtn.onclick = () => stop();
 bannerClose.onclick = () => clearBanner();
 
+// Settings (BYOK)
+settingsBtn.onclick = () => { if (card.classList.contains("settings-open")) closeSettings(); else openSettings(); };
+doneSettings.onclick = () => closeSettings();
+saveKey.onclick = async () => {
+  const k = keyInput.value.trim();
+  if (!k) { keyStatus.textContent = "Paste a key first."; return; }
+  try { await invoke("key_save", { account: PYAI_KEY, secret: k }); keyInput.value = ""; await refreshKeyStatus(); }
+  catch (e) { keyStatus.textContent = "Save failed: " + String(e); }
+};
+clearKey.onclick = async () => {
+  try { await invoke("key_delete", { account: PYAI_KEY }); await refreshKeyStatus(); }
+  catch (e) { keyStatus.textContent = "Clear failed: " + String(e); }
+};
+
 // Orb: click to dictate, drag to reposition. Distinguish the two by movement.
 let orbDown = false, orbMoved = false, orbPosReady = false;
 let orbStartX = 0, orbStartY = 0, orbWinLX = 0, orbWinLY = 0, orbScale = 1;
@@ -399,6 +433,7 @@ collapseBtn.onclick = () => {
   teardownAudio();
   resetButtons();
   clearBanner();
+  closeSettings();
   void setView("orb");
 };
 copyBtn.onclick = async () => {
@@ -422,6 +457,9 @@ void listen<string>("dictation", (e) => {
   if (e.payload === "start") beginDictation();
   else if (e.payload === "stop") { if (ws) stop(); }
 });
+
+// Tray "Settings…" → open the card in settings mode.
+void listen("open-settings", () => { void setView("card").then(() => openSettings()); });
 
 reset();
 void initOrbPosition(); // start as the floating orb, bottom-centre; drag to move

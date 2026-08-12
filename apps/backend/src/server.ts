@@ -124,9 +124,14 @@ wss.on("connection", (ws) => {
       try {
         stt = getSTTProvider(sttId);
         correction = getCorrectionProvider(corrId);
+        // BYOK: a key sent by the widget (from the OS keychain) takes precedence over .env.
+        // Set it into the process env so every provider/adapter that reads env picks it up.
+        if (!demo && msg.apiKey && stt.requiredKeys[0]) {
+          process.env[stt.requiredKeys[0]] = String(msg.apiKey);
+        }
         apiKey = stt.requiredKeys[0] ? process.env[stt.requiredKeys[0]] : undefined;
         if (stt.requiredKeys.length && !apiKey) {
-          send(ws, { type: "error", message: `Live mode needs ${stt.requiredKeys.join(", ")}. Put it in a .env at the repo root, or use Demo mode.` });
+          send(ws, { type: "error", message: `Live mode needs ${stt.requiredKeys.join(", ")}. Add it in the widget's Settings (⚙), or a repo .env, or use Demo mode.` });
           return;
         }
         send(ws, { type: "ready", stt: sttId, correction: corrId });

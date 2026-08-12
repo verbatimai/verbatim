@@ -49,6 +49,42 @@ fn hide_widget(app: tauri::AppHandle) {
     }
 }
 
+// ── Phase 3.5: BYOK — vendor API keys in the OS keychain ──────────────────────
+// `account` is the vendor key name (e.g. "PYAI_API_KEY"). Keys never touch disk/env
+// beyond the keychain, and are never logged.
+const KEYCHAIN_SERVICE: &str = "co.saaslabs.opendictation";
+
+#[tauri::command]
+fn key_save(account: String, secret: String) -> Result<(), String> {
+    keyring::Entry::new(KEYCHAIN_SERVICE, &account)
+        .and_then(|e| e.set_password(&secret))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn key_get(account: String) -> Result<Option<String>, String> {
+    match keyring::Entry::new(KEYCHAIN_SERVICE, &account).and_then(|e| e.get_password()) {
+        Ok(p) => Ok(Some(p)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+fn key_has(account: String) -> bool {
+    keyring::Entry::new(KEYCHAIN_SERVICE, &account)
+        .and_then(|e| e.get_password())
+        .is_ok()
+}
+
+#[tauri::command]
+fn key_delete(account: String) -> Result<(), String> {
+    match keyring::Entry::new(KEYCHAIN_SERVICE, &account).and_then(|e| e.delete_credential()) {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 // Open System Settings to a specific Privacy pane so the user can grant access.
 // macOS only; no-op elsewhere.
 #[cfg(target_os = "macos")]
@@ -270,9 +306,11 @@ fn main() {
                         true,
                         None::<&str>,
                     )?;
+                    let settings_i =
+                        MenuItem::with_id(h, "settings", "Settings…", true, None::<&str>)?;
                     let quit_i =
                         MenuItem::with_id(h, "quit", "Quit Open Dictation", true, None::<&str>)?;
-                    let menu = Menu::with_items(h, &[&show_i, &quit_i])?;
+                    let menu = Menu::with_items(h, &[&show_i, &settings_i, &quit_i])?;
                     let icon = app.default_window_icon().cloned();
                     let mut tray = TrayIconBuilder::with_id("main-tray")
                         .tooltip("Open Dictation — press ⌥Space to dictate")
@@ -281,6 +319,12 @@ fn main() {
                             "show" => {
                                 if let Some(w) = app.get_webview_window("main") {
                                     let _ = w.show();
+                                }
+                            }
+                            "settings" => {
+                                if let Some(w) = app.get_webview_window("main") {
+                                    let _ = w.show();
+                                    let _ = app.emit("open-settings", ());
                                 }
                             }
                             "quit" => app.exit(0),
@@ -299,7 +343,11 @@ fn main() {
             open_mic_settings,
             open_accessibility_settings,
             copy_text,
-            hide_widget
+            hide_widget,
+            key_save,
+            key_get,
+            key_has,
+            key_delete
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Open Dictation widget");

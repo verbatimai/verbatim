@@ -26,6 +26,7 @@
         <span class="brand" data-tauri-drag-region>Open Dictation</span>
         <span class="statuspill"><span class="dot" id="dot"></span><span id="statusText">Idle</span></span>
         <span class="level" id="level" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+        <button class="icon-btn" id="settingsBtn" title="Settings">⚙</button>
         <button class="icon-btn" id="collapseBtn" title="Dismiss">✕</button>
       </div>
 
@@ -61,6 +62,22 @@
           <button id="stop" class="ghost" disabled>■&nbsp;Stop</button>
           <label class="toggle"><input type="checkbox" id="showRemoved" checked /> show removed</label>
         </div>
+      </div>
+
+      <!-- Settings (BYOK) — toggled by the gear or the tray "Settings…" item. -->
+      <div class="settings" id="settings">
+        <div class="settings-title">Settings</div>
+        <label class="settings-field">
+          <span class="settings-label">PyAI API key</span>
+          <input type="password" id="keyInput" placeholder="Paste your PyAI API key" autocomplete="off" spellcheck="false" />
+        </label>
+        <div class="settings-status" id="keyStatus">Checking…</div>
+        <div class="settings-actions">
+          <button id="saveKey" class="primary">Save to Keychain</button>
+          <button id="clearKey" class="ghost">Clear</button>
+          <button id="doneSettings" class="ghost">Done</button>
+        </div>
+        <div class="settings-hint">Stored in the macOS Keychain — no <code>.env</code> needed. ⌥Space to dictate (hold = push-to-talk, tap = toggle).</div>
       </div>
     </div>
   </div>

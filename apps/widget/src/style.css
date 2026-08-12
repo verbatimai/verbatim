@@ -36,6 +36,22 @@ body{padding:11px}
   width:26px;height:26px;border-radius:8px;cursor:pointer;font-size:12px;line-height:1;display:grid;place-items:center}
 .icon-btn:hover{background:rgba(255,255,255,.11)}
 .titlebar .icon-btn{margin-left:6px;pointer-events:auto} /* beat .titlebar>*{pointer-events:none} */
+.titlebar #settingsBtn{margin-left:8px}
+
+/* settings (BYOK) panel — replaces the body when open */
+.settings{display:none;flex:1;min-height:0;flex-direction:column;gap:10px;padding:12px 14px 14px;overflow:auto}
+.card.settings-open .settings{display:flex}
+.card.settings-open .body{display:none}
+.settings-title{font-weight:650;font-size:13px}
+.settings-field{display:flex;flex-direction:column;gap:5px}
+.settings-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint)}
+.settings-field input{padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:rgba(10,13,19,.6);color:var(--ink);font-size:13px}
+.settings-field input:focus{outline:none;border-color:var(--accent)}
+.settings-status{font-size:11.5px;color:var(--dim)}
+.settings-status.ok{color:var(--grammar)}
+.settings-actions{display:flex;gap:8px;flex-wrap:wrap}
+.settings-hint{font-size:11px;color:var(--faint);line-height:1.5;margin-top:auto}
+.settings-hint code{background:rgba(255,255,255,.06);padding:1px 4px;border-radius:4px}
 
 /* live mic-level meter (5 bars) in the card titlebar */
 .level{display:inline-flex;align-items:flex-end;gap:2px;height:16px;margin:0 2px 0 8px;flex:none}
