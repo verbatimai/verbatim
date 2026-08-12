@@ -4,32 +4,62 @@ use tauri::Manager;
 
 mod inject;
 
+#[cfg(target_os = "macos")]
+mod axinject;
+
+// Inject the finalized text into the focused field — but only when it makes sense.
+// Returns a status the UI reacts to:
+//   "inserted"  — pasted into an editable field
+//   "secure"    — focused field is a password/secure field; refused, text copied instead
+//   "no_field"  — nothing editable was focused; text copied to the clipboard instead
 #[tauri::command]
-fn inject_text(text: String) -> Result<(), String> {
-    inject::paste_text(&text)
+fn inject_text(text: String) -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        Ok(axinject::inject(&text))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        inject::paste_text(&text)?;
+        Ok("inserted".into())
+    }
 }
 
 // Copy text to the clipboard (no paste, no restore) — the reliable fallback when no
 // editable field is focused to receive an injected paste.
 #[tauri::command]
 fn copy_text(text: String) -> Result<(), String> {
-    use arboard::Clipboard;
-    Clipboard::new()
-        .and_then(|mut cb| cb.set_text(text))
+    inject::copy_only(&text)
+}
+
+// Open System Settings to a specific Privacy pane so the user can grant access.
+// macOS only; no-op elsewhere.
+#[cfg(target_os = "macos")]
+fn open_privacy_pane(anchor: &str) -> Result<(), String> {
+    std::process::Command::new("open")
+        .arg(format!("x-apple.systempreferences:com.apple.preference.security?{anchor}"))
+        .spawn()
+        .map(|_| ())
         .map_err(|e| e.to_string())
 }
 
-// Open System Settings → Privacy & Security → Microphone, so the user can grant
-// mic access after a denial. macOS only; no-op elsewhere.
 #[tauri::command]
 fn open_mic_settings() -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
-            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| e.to_string())
+        open_privacy_pane("Privacy_Microphone")
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(())
+    }
+}
+
+#[tauri::command]
+fn open_accessibility_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        open_privacy_pane("Privacy_Accessibility")
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -142,7 +172,12 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![inject_text, open_mic_settings, copy_text])
+        .invoke_handler(tauri::generate_handler![
+            inject_text,
+            open_mic_settings,
+            open_accessibility_settings,
+            copy_text
+        ])
         .run(tauri::generate_context!())
         .expect("error while running the Open Dictation widget");
 }

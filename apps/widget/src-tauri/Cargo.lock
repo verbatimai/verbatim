@@ -2359,6 +2359,7 @@ name = "open-dictation-widget"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "core-foundation 0.10.1",
  "enigo",
  "serde",
  "serde_json",

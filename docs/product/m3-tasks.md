@@ -35,11 +35,15 @@ The two things that can sink M3. Prove them in isolation before building the rea
 - [ ] Reclass to `NSPanel` via `tauri-nspanel` (`NONACTIVATING_PANEL`, `can_become_key_window:false`, floating level, joins all Spaces). `#[cfg(target_os=…)]` per-OS.
 - [ ] Position near the caret (AX bounds) with a screen-corner fallback; handle multi-monitor + scale factor.
 
-## Phase 3.4 — Focus capture + injection (from Spike B)
-- [ ] Rust command `capture_focus()` — snapshot the focused element **before** the overlay shows.
-- [ ] Rust command `inject_text(text)` — AX-write first, clipboard-paste fallback; restore clipboard after ~120 ms; refuse `AXSecureTextField`.
-- [ ] Wire: webview emits the **final formatted output** → Tauri `inject_text` into the captured field. (During dictation, nothing is injected; only the finalized result.)
-- [ ] Permission flow: detect `AXIsProcessTrusted()`, deep-link to System Settings, and show a first-run "grant Accessibility" screen.
+## Phase 3.4 — Focus capture + injection (from Spike B)  ·  ~60% (12 Aug 2026)
+- [x] **Injection works end-to-end on a real Mac**: webview emits the final formatted output → `inject_text` → clipboard + synthetic ⌘V lands in the focused field. Verified pasting into a browser form input.
+- [x] **Hard lesson — AX focus reading is unreliable on this setup, so it must NOT gate injection.** `AXUIElementCopyAttributeValue(systemWide, AXFocusedUIElement / AXFocusedApplication)` returns `kAXErrorNoValue` (-25212) *even when the process is trusted* (`AXIsProcessTrusted()==true`), and even when triggered from the global ⌥Space hotkey (no widget click involved), and even with the per-application + `AXManualAccessibility` path for Chromium/Electron. Every attempt to route on the read (`focused_kind`, capture-then-write, capture-on-hotkey) sent everything to "no field". Root cause not fully resolved (candidate: our accessory + always-visible non-key panel means no reported key window/focused app; or a dev-signing/TCC quirk).
+- [x] **Design that works:** paste via ⌘V is the mechanism (it targets the key window; it does NOT need `AXFocusedUIElement`). `axinject::inject()` = trusted-gate → *best-effort* secure-field check (skipped if AX can't read) → paste → copy-to-clipboard fallback on paste error. Returns `inserted` | `secure` | `no_access` | `no_field`; UI shows a matching banner, and a **Copy** button by the final output is the manual escape hatch.
+- [ ] **Secure/password-field refusal** — only best-effort right now; depends on the AX role read, which currently fails here. Blocked on making the AX focus read reliable.
+- [ ] **"No editable field focused" detection** — likewise deferred; today an unfocused target just pastes nowhere (Copy button covers it).
+- [ ] **AX-write (`kAXSelectedText`)** as primary insert — deferred (needs the AX element read to work).
+- [ ] **Reliable AX focus read** is the real blocker for the above. Likely needs: the widget to stop being always-visible (hide until ⌥Space summons it, capturing focus in the global handler while the target is still key), and/or a signed/stable build so TCC/AX behaves. Tracked into 3.2/3.6.
+- [ ] Proactive first-run "grant Accessibility" screen (today reactive via the injection banner + deep-link).
 
 ## Phase 3.5 — Keychain (BYOK)
 - [ ] Rust `keyring` integration: store/read per-vendor keys (`PYAI_API_KEY`, etc.); a settings screen to enter them.

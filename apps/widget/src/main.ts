@@ -30,6 +30,7 @@ const showRemoved = $<HTMLInputElement>("showRemoved");
 const banner = $("banner"), bannerMsg = $("bannerMsg"), bannerActions = $("bannerActions");
 const bannerClose = $<HTMLButtonElement>("bannerClose");
 const openMicBtn = $<HTMLButtonElement>("openMic"), retryMicBtn = $<HTMLButtonElement>("retryMic");
+const openAxBtn = $<HTMLButtonElement>("openAx");
 const copyBtn = $<HTMLButtonElement>("copyBtn");
 
 let finalText = ""; // the last formatted output — always copyable, even if injection had no target
@@ -46,10 +47,14 @@ function setStatus(cls: string, text: string) { dot.className = "dot " + cls; st
 
 // Single notification banner under the title bar. Explicitly shown/cleared so it can
 // never go stale (e.g. a mic-permission notice must vanish the moment the mic works).
-function showBanner(kind: "err" | "warn" | "info", msg: string, micActions = false) {
+type BannerActions = "none" | "mic" | "ax";
+function showBanner(kind: "err" | "warn" | "info", msg: string, actions: BannerActions = "none") {
   banner.className = "banner " + kind;
   bannerMsg.textContent = msg;
-  bannerActions.hidden = !micActions;
+  openMicBtn.hidden = actions !== "mic";
+  retryMicBtn.hidden = actions !== "mic";
+  openAxBtn.hidden = actions !== "ax";
+  bannerActions.hidden = actions === "none";
   banner.hidden = false;
 }
 function clearBanner() { banner.hidden = true; bannerActions.hidden = true; }
@@ -126,11 +131,24 @@ async function animateCorrection(m: Extract<ServerMsg, { type: "correction" }>) 
 async function injectFinal(text: string) {
   if (!text.trim()) return;
   try {
-    await invoke("inject_text", { text });
-    setStatus("done", "inserted ✓");
+    // Rust returns where the text went; the fallback cases already put it on the clipboard.
+    const result = await invoke<string>("inject_text", { text });
+    if (result === "no_access") {
+      setStatus("err", "grant Accessibility");
+      showBanner("err", "Grant Accessibility so the widget can insert text (also needed for pasting). Enable Open Dictation (or your terminal, in dev), then quit & relaunch. Text is copied — press ⌘V meanwhile.", "ax");
+    } else if (result === "secure") {
+      setStatus("err", "secure field");
+      showBanner("warn", "That looks like a password / secure field — not inserting. The text is on your clipboard (⌘V) if you need it elsewhere.");
+    } else if (result === "no_field") {
+      setStatus("done", "copied");
+      showBanner("info", "No text field was focused — copied to your clipboard. Press ⌘V where you want it.");
+    } else {
+      setStatus("done", "inserted ✓");
+    }
   } catch (e) {
-    // Text stays visible in the Final Output box so nothing is lost.
-    setStatus("err", "inject failed (grant Accessibility?) — " + String(e));
+    // Text stays visible in the Final Output box + the Copy button, so nothing is lost.
+    setStatus("err", "inject failed");
+    showBanner("err", "Injection failed — grant Accessibility (System Settings → Privacy → Accessibility), then retry. Use Copy above meanwhile.");
   }
 }
 
@@ -187,7 +205,7 @@ async function startLive() {
     const name = (e as any)?.name ?? "";
     if (name === "NotAllowedError" || name === "SecurityError" || name === "PermissionDeniedError") {
       setStatus("err", "mic blocked");
-      showBanner("err", "Microphone access needed — enable Open Dictation (or your terminal, in dev) under Microphone, then quit & relaunch. Demo works without a mic.", true);
+      showBanner("err", "Microphone access needed — enable Open Dictation (or your terminal, in dev) under Microphone, then quit & relaunch. Demo works without a mic.", "mic");
     } else if (name === "NotFoundError" || name === "OverconstrainedError") {
       setStatus("err", "no mic"); showBanner("err", "No microphone found.");
     } else {
@@ -247,6 +265,7 @@ copyBtn.onclick = async () => {
   }
 };
 openMicBtn.onclick = () => { void invoke("open_mic_settings").catch(() => {}); };
+openAxBtn.onclick = () => { void invoke("open_accessibility_settings").catch(() => {}); };
 retryMicBtn.onclick = () => { clearBanner(); void startLive(); };
 
 reset();

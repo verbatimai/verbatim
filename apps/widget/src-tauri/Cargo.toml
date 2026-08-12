@@ -22,6 +22,9 @@ arboard = "3"
 # the keyboard from the app underneath.
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
+# Phase 3.4 — read the focused element's role via the Accessibility API (ApplicationServices
+# is linked directly in axinject.rs) to decide paste vs refuse vs copy.
+core-foundation = "0.10"
 
 # Keep the binary name stable for tauri.
 [[bin]]
