@@ -173,9 +173,34 @@ fn main() {
                 let toggle = Shortcut::new(Some(Modifiers::ALT), Code::Space);
                 let toggle_for_handler = toggle;
 
+                // ⌥⇧V — DEMO / PASTE TEST. Injects a fixed sentence straight through the
+                // Rust inject() path (read focus → route → AX-write/paste). Bypasses the
+                // backend/STT entirely, so it works even when the pyai quota is spent.
+                // Fires on RELEASE so the physical modifier keys are up before the
+                // synthetic ⌘V lands.
+                let test_paste = Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyV);
+                let test_for_handler = test_paste;
+
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
                         .with_handler(move |app, shortcut, event| {
+                            // Demo/paste-test hotkey: no backend, no widget, just inject.
+                            if shortcut == &test_for_handler {
+                                if event.state() == ShortcutState::Released {
+                                    #[cfg(target_os = "macos")]
+                                    {
+                                        const DEMO: &str =
+                                            "The quick brown fox jumps over the lazy dog.";
+                                        eprintln!(
+                                            "[axinject] === TEST PASTE hotkey (demo, no backend) ==="
+                                        );
+                                        let status = axinject::inject(DEMO);
+                                        eprintln!("[axinject] test paste status = {}", status);
+                                    }
+                                }
+                                return;
+                            }
+
                             if shortcut != &toggle_for_handler {
                                 return;
                             }
@@ -229,6 +254,7 @@ fn main() {
                 )?;
 
                 app.global_shortcut().register(toggle)?;
+                app.global_shortcut().register(test_paste)?;
 
                 // Menu-bar (tray) icon — the always-visible "the widget is available"
                 // indicator, since the window itself stays hidden until summoned. ⌥Space
