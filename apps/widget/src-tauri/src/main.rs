@@ -115,7 +115,10 @@ tauri_nspanel::tauri_panel! {
 fn configure_non_activating_panel(app: &mut tauri::App) {
     // `objc2_app_kit` is re-exported by tauri-nspanel, so we use its exact version
     // (a separately-added objc2-app-kit dep would be a different type → E0308).
-    use tauri_nspanel::{objc2_app_kit::NSWindowStyleMask, WebviewWindowExt};
+    use tauri_nspanel::{
+        objc2_app_kit::{NSWindowCollectionBehavior, NSWindowStyleMask},
+        WebviewWindowExt,
+    };
 
     // Accessory app: no Dock icon; the app never becomes the active/frontmost app.
     let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -134,6 +137,13 @@ fn configure_non_activating_panel(app: &mut tauri::App) {
             // Non-activating: clicking the panel doesn't bring our app frontmost, so
             // the app you were typing in stays active.
             panel.set_style_mask(NSWindowStyleMask::NonactivatingPanel);
+            // 3.3 overlay behaviour: show on every Space and over full-screen apps, and
+            // don't get shuffled by Space switches.
+            panel.set_collection_behavior(
+                NSWindowCollectionBehavior::CanJoinAllSpaces
+                    | NSWindowCollectionBehavior::Stationary
+                    | NSWindowCollectionBehavior::FullScreenAuxiliary,
+            );
             println!("[spike-a] main window reclassed to non-activating, non-key NSPanel");
         }
         Err(e) => eprintln!("[spike-a] to_panel() failed: {e:?}"),

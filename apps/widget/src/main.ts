@@ -245,7 +245,13 @@ async function injectFinal(text: string) {
 function handle(m: ServerMsg) {
   if (m.type === "ready") { setStatus("live", `listening (${m.stt} + ${m.correction})`); }
   else if (m.type === "live") renderLive(m);
-  else if (m.type === "correction") void animateCorrection(m);
+  else if (m.type === "correction") {
+    void animateCorrection(m);
+    setStatus("fix", "polishing…");
+    // Show the cleaned text immediately (before the formatter finishes) so the output
+    // isn't a long blank spinner — the polished version replaces it on `formatted`.
+    if (m.cleanText && m.cleanText.trim()) finalOut.textContent = m.cleanText;
+  }
   else if (m.type === "formatted") {
     finalText = m.text;
     finalOut.textContent = m.text;
@@ -339,7 +345,7 @@ function teardownAudio() {
 }
 
 function stop() {
-  setStatus("fix", "cleaning up & formatting…");
+  setStatus("fix", "finishing up…");
   resetCopy();
   finalOut.innerHTML = TYPING; // loading indicator on the OUTPUT while it computes
   demoBtn.disabled = true; startBtn.disabled = true; stopBtn.disabled = true;

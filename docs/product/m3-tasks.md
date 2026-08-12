@@ -33,10 +33,10 @@ The two things that can sink M3. Prove them in isolation before building the rea
 - [ ] **`fn`-key hold** (bare-modifier, Wispr-style) — needs a native `CGEventTap` + Input-Monitoring permission. Optional; deferred.
 - [ ] **Context-gate the orb** (show only when an editable field is focused) — blocked on the same AX focus read that returns NoValue here (see Phase 3.4).
 
-## Phase 3.3 — Non-activating overlay (from Spike A)
-- [ ] Overlay window config: `alwaysOnTop`, `decorations:false`, `transparent:true`, `focus:false`, `skipTaskbar:true`, `visibleOnAllWorkspaces:true`; `app.macOSPrivateApi:true`.
-- [ ] Reclass to `NSPanel` via `tauri-nspanel` (`NONACTIVATING_PANEL`, `can_become_key_window:false`, floating level, joins all Spaces). `#[cfg(target_os=…)]` per-OS.
-- [ ] Position near the caret (AX bounds) with a screen-corner fallback; handle multi-monitor + scale factor.
+## Phase 3.3 — Non-activating overlay (from Spike A)  ·  ~80% (12 Aug 2026)
+- [x] Overlay window config: `alwaysOnTop`, `decorations:false`, `transparent:true`, `focus:false`, `skipTaskbar:true`, `visibleOnAllWorkspaces:true`, `macOSPrivateApi:true` (in `tauri.conf.json`).
+- [x] Reclass to `NSPanel` via `tauri-nspanel` (non-activating style mask, `can_become_key_window:false`) + **collection behaviour** `CanJoinAllSpaces | Stationary | FullScreenAuxiliary` so the orb/card show on every Space and over full-screen apps. `#[cfg(target_os="macos")]`.
+- [ ] Position near the caret (AX bounds) with a screen-corner fallback + multi-monitor/scale — **blocked on the AX focus read** (parallel session). The orb/card currently position bottom-centre / anchored to the (draggable) orb, clamped on-screen.
 
 ## Phase 3.4 — Focus capture + injection (from Spike B)  ·  ~60% (12 Aug 2026)
 - [x] **Injection works end-to-end on a real Mac**: webview emits the final formatted output → `inject_text` → clipboard + synthetic ⌘V lands in the focused field. Verified pasting into a browser form input.
