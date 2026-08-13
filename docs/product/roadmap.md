@@ -90,8 +90,8 @@ The plan (`../product/product-plan.md`) is the *what* and *why*. This is the *in
 
 ---
 
-## M5 — Quality & polish (daily-driver)
-**Goal:** good enough that the team dictates with it every day.
+## M5 — Quality & polish (daily-driver)  ·  NEXT
+**Goal:** good enough that the team dictates with it every day. **Concrete breakdown in `../product/m5-tasks.md`** (5.0 decisions → 5.1 reliability/reconnect → 5.2 vocabulary · 5.3 formatting modes · 5.4 undo → 5.5 concurrency → 5.6 telemetry + perf → 5.7 dogfood).
 
 **Deliverables**
 - Custom vocabulary/dictionary, punctuation/formatting modes, undo, edit-while-correcting, robust error/reconnect handling.
