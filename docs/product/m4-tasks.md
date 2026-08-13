@@ -116,19 +116,19 @@ Both adapters shipped behind the existing interfaces + registered. **Cloud-teste
 
 *(4.4 / 4.5 / 4.6 have no interdependencies once 4.0 + 4.1 land — they can be built in parallel against mock servers using dev `.env` keys, before or alongside the window/keychain phases.)*
 
-## Phase 4.7 — Settings UI: real inputs + provider/model selection + multilingual
+## Phase 4.7 — Settings UI: real inputs + provider/model selection + multilingual  ·  ✅ DONE (code; compiles + built on Mac — full on-device click-through pending, 13 Aug 2026)
 
 Move settings into the focusable window with **real** controls. *(merges desktop-app Phase 3 + the M4 provider-selection UI + multilingual.)*
 
-- [ ] Port the settings DOM/logic out of `index.html`/`main.ts` into `settings.html`/`settings.ts`:
-  - **Typed** password field for the API key per vendor (Save → keychain, 4.3). Keep clipboard-paste as an optional convenience only.
-  - **Provider + model dropdowns** for STT and correction — independent = mix-and-match. Introduce the optional `sttModel`/`correctionModel` prefs here (additive to the store; core resolver defaults per-provider when absent).
-  - **Hotkey capture** — a focusable window can read `keydown`; record the combo into an accelerator string. Keep presets as quick picks.
-  - **Language** select; live **permission status** (`ax_trusted`, mic) with deep-links.
-- [ ] Wire `language` into `STTSessionConfig` at session start and **localize the cleanup + format prompts** in `prompt.ts` (or instruct the model to "respond in the transcript's language"). The core English-only guard (4.1) already blocks non-English on PyAI — surface it in the UI as **"English-only on PyAI — pick Deepgram/OpenAI for this language"** (don't silently fail).
-- [ ] Live **capability check** with a clear inline error when a chosen combination is missing a key (surface `assertCapability`/`capabilityErrors`, not just a thrown error).
-- [ ] Overlay gear → `show_settings_window`.
-- **Acceptance:** you can **type** a key, pick STT/correction provider + model, capture an arbitrary hotkey, and choose a language in the settings window; an invalid combo shows an inline error.
+- [x] Ported real controls into `settings.html`/`settings.ts` (the old inline panel in `index.html`/`main.ts` is untouched for now — its removal is 4.9):
+  - **Typed** password field per vendor (pyai/deepgram/openai/anthropic) → `set_key`/`has_key`/`delete_key` (4.3's keychain). `key_save_clipboard` stays as the overlay's convenience path until 4.9.
+  - **Provider + model dropdowns** for STT and correction, independent (mix-and-match) → `set_config`. Added `sttModel`/`correctionModel` to Rust `AppConfig` (additive; empty string = provider default) — core resolver / adapter env-var wiring for these is 4.8.
+  - **Hotkey capture**: click-to-record reads real `keydown` (this window is focusable, unlike the overlay panel) and builds a `Modifier+...+Code` accelerator string (e.g. `Alt+Shift+KeyD`) using Web `KeyboardEvent.code` values. Rust `parse_accelerator`/`parse_code` (`main.rs`) parse this generic format — falls back to the 5 legacy preset ids first for back-compat — so `apply_hotkey`/`set_toggle_hotkey` now accept **any** captured combo, not just the fixed preset list (kept as quick-pick buttons per the spec).
+  - **Language** select (curated list + free-BCP-47-tag fallback) and live **permission status**: `ax_trusted` (Accessibility) + best-effort `navigator.permissions.query({name:"microphone"})` (WebKit support is partial, so an "Unknown" state is shown honestly rather than guessed), both with "Open Settings" deep-links.
+- [x] `language` wired into `STTSessionConfig` at session start — already flowed through `Pipeline.startStreaming`/`deepgram.stt.ts`/`openai.stt.ts` (done incidentally alongside 4.5/4.6). **Localized the cleanup + format prompts** (`prompt.ts`): non-English `language` appends a "keep output in that language, don't translate" note to `userMessage`/`formatMessage` (the multilingual.md-endorsed fallback to full per-locale filler-word localization); threaded through `CorrectionContext.language` + `format(text, language)` in all three correction adapters (pyai/openai/anthropic) and `Pipeline`'s finalize step. Covered by `correction/prompt.test.ts` (3 tests). The English-only guard's UI message is surfaced via `languageHint` beneath the language select.
+- [x] Live **capability check**: `capabilityErrors()` in `settings.ts` mirrors core's `packages/core/src/settings.ts` (can't import the core package into this standalone Vite app, so the vendor→env-key map + English-only guard are duplicated the same way Rust's `vendor_key_name` already duplicates them) — renders as an inline error list, or a green "Ready" state when empty.
+- [x] Overlay gear → `show_settings_window` (already wired in 4.2).
+- **Acceptance:** type a key, pick STT/correction provider + model, capture an arbitrary hotkey, choose a language — invalid combo shows inline errors. **Verified:** `tsc --noEmit` + `vite build` clean for both windows, core suite 74/74 green, `cargo check`/`cargo build --release` clean, release `.app` launched standalone (stayed up, non-key panel reclass logged, no panic). **Not yet done:** clicking through the actual settings window on-Mac (folds into the 4.10 exit demo, same as 4.2/4.3's runtime checks).
 
 ## Phase 4.8 — Wire overlay + pipeline to config, via the sidecar
 
