@@ -14,8 +14,8 @@
 
 Progress is tracked in three places: **this file** (per-phase checklist — the detail), **`STATUS.md`** (handoff snapshot — read first for context), and **`roadmap.md`** (milestone level).
 
-- ✅ **4.0** decisions · ✅ **4.1** core config/capability · ✅ **4.2** settings window *(compiles on Mac; runtime pending)* · ✅ **4.3** config store + keychain *(compiles; committed `ea8ca9d`)* · ✅ **4.4** Deepgram STT *(cloud-tested)* · ✅ **4.5** OpenAI STT+correction *(cloud-tested)* · ✅ **4.6** Anthropic correction *(cloud-tested)* · ✅ **4.7** settings UI + multilingual *(compiles/builds on Mac; click-through pending)* · 🔶 **4.8** sidecar wiring *(dev code done, needs Mac verify; release packaging pending)* · ✅ **4.9** slim the overlay *(code; needs Mac verify)*
-- ⏳ **Remaining:** **4.8** release sidecar packaging (compile+sign the backend binary) · **4.10** wire-up + exit demo
+- ✅ **4.0** decisions · ✅ **4.1** core config/capability · ✅ **4.2** settings window *(compiles on Mac; runtime pending)* · ✅ **4.3** config store + keychain *(compiles; committed `ea8ca9d`)* · ✅ **4.4** Deepgram STT *(cloud-tested)* · ✅ **4.5** OpenAI STT+correction *(cloud-tested)* · ✅ **4.6** Anthropic correction *(cloud-tested)* · ✅ **4.7** settings UI + multilingual *(compiles/builds on Mac; click-through pending)* · ✅ **4.8** sidecar wiring + release packaging *(code + externalBin/entitlements/build-script + sign guide; needs Mac build+sign)* · ✅ **4.9** slim the overlay *(code; needs Mac verify)*
+- ⏳ **Remaining:** **4.10** wire-up + exit demo (on-Mac; needs a live vendor)
 - 🔎 **Pending verification (folds into 4.10):** on-Mac for 4.2/4.3/4.7/4.8 (compiled/built, not yet exercised — 4.8 dev spawn especially); live-vendor runs for 4.4/4.5/4.6 (mock-tested only so far).
 
 ---
@@ -133,7 +133,9 @@ Move settings into the focusable window with **real** controls. *(merges desktop
 - [x] Overlay gear → `show_settings_window` (already wired in 4.2).
 - **Acceptance:** type a key, pick STT/correction provider + model, capture an arbitrary hotkey, choose a language — invalid combo shows inline errors. **Verified:** `tsc --noEmit` + `vite build` clean for both windows, core suite 74/74 green, `cargo check`/`cargo build --release` clean, release `.app` launched standalone (stayed up, non-key panel reclass logged, no panic). **Not yet done:** clicking through the actual settings window on-Mac (folds into the 4.10 exit demo, same as 4.2/4.3's runtime checks).
 
-## Phase 4.8 — Wire overlay + pipeline to config, via the sidecar  ·  🔶 DEV DONE (needs Mac verify); release packaging pending (13 Aug 2026)
+## Phase 4.8 — Wire overlay + pipeline to config, via the sidecar  ·  ✅ CODE DONE (dev + release packaging; needs Mac build/sign) (13 Aug 2026)
+
+> **Release packaging landed (`885b68d`):** `externalBin: binaries/verbatim-backend`, `beforeBuildCommand` compiles it via `scripts/build-sidecar.mjs` (bun), the release spawn branch in `main.rs` launches the bundled sidecar, `entitlements.plist` (mic + JIT for hardened runtime), and `bundle.macOS` config. Sign + notarize steps in `docs/architecture/release-signing.md`. Remaining is the on-Mac `tauri build` + code-sign/notarize run.
 
 Make settings changes take effect live, with keys never crossing the renderer. *(merges desktop-app Phase 4 + the "drop the dev backend" step — reconciled to the 4.0 sidecar transport, NOT the old desktop plan's `start`-message-carries-`apiKey` path.)* **Code-level implementation plan: `m4.8-sidecar-plan.md`.**
 
