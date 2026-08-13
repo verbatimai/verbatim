@@ -1,4 +1,6 @@
-import type { GlossaryEntry, UserGlossary } from "./types";
+/** Browser-safe auto-learn (mirrors packages/core/src/vocabulary/learn.ts). */
+
+import { newGlossaryId, type UserGlossary } from "./glossary";
 
 export interface LearnPair {
   heard: string;
@@ -9,7 +11,6 @@ export interface LearnPair {
 const MIN_TERM_LEN = 3;
 const MAX_EDIT_DIST = 3;
 
-/** Common English — never suggest as names/jargon. */
 const COMMON_WORDS = new Set([
   "a", "an", "the", "and", "or", "but", "if", "in", "on", "at", "to", "for", "of", "with", "by", "from", "as",
   "is", "are", "was", "were", "be", "been", "being", "am", "have", "has", "had", "do", "does", "did",
@@ -29,7 +30,6 @@ function norm(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
-/** Trim surrounding punctuation but keep @ and dots for emails. */
 function stripToken(s: string): string {
   return s.replace(/^[^\w@]+|[^\w@.]+$/g, "");
 }
@@ -47,7 +47,6 @@ function isNoisyToken(s: string): boolean {
   return false;
 }
 
-/** Levenshtein distance (for short tokens). */
 function editDistance(a: string, b: string): number {
   const m = a.length;
   const n = b.length;
@@ -59,10 +58,7 @@ function editDistance(a: string, b: string): number {
     dp[0] = i;
     for (let j = 1; j <= n; j++) {
       const tmp = dp[j];
-      dp[j] =
-        a[i - 1] === b[j - 1]
-          ? prev
-          : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
       prev = tmp;
     }
   }
@@ -78,8 +74,8 @@ function isProperNoun(s: string): boolean {
 
 function isBrandLike(s: string): boolean {
   const t = stripToken(s);
-  if (/[a-z][A-Z]/.test(t)) return true; // SaaSLabs, PyAI
-  if (/^[A-Z]{2,}$/.test(t)) return true; // acronyms
+  if (/[a-z][A-Z]/.test(t)) return true;
+  if (/^[A-Z]{2,}$/.test(t)) return true;
   return false;
 }
 
@@ -100,40 +96,38 @@ function tokenOverlap(a: string[], b: string[]): number {
   return union === 0 ? 0 : inter / union;
 }
 
-/** Only suggest pairs that look like names, brands, emails, or domain jargon — not plain English. */
-export function isGlossaryCandidate(pair: LearnPair): boolean {
+function isGlossaryCandidate(pair: LearnPair): boolean {
   const heard = stripToken(pair.heard);
   const preferred = stripToken(pair.preferred);
   if (!heard || !preferred) return false;
   if (isNoisyToken(pair.heard) || isNoisyToken(pair.preferred)) return false;
-
-  // Symbol shorthand (e.g. "at the rate" → "@") — allow when the preferred side isn't a common word.
   if (preferred === "@" || preferred === "#") return heard.length >= MIN_TERM_LEN && !isCommonWord(heard);
-
   if (isEmailOrDomain(preferred) || isEmailOrDomain(heard)) return true;
   if (isBrandLike(preferred)) return !isCommonWord(preferred);
   if (isProperNoun(preferred)) return !isCommonWord(preferred);
-
-  // Reject case-only fixes on ordinary words (hi→Hi, i→I, are→Are).
   if (heard.toLowerCase() === preferred.toLowerCase()) return false;
   if (isCommonWord(preferred) || isCommonWord(heard)) return false;
-
-  // Spelling fix on a non-common token (e.g. mengbang→Mengbang, saaslabs→SaaSLabs).
   const dist = editDistance(heard.toLowerCase(), preferred.toLowerCase());
   if (preferred.length >= MIN_TERM_LEN && dist <= 2 && dist > 0) return true;
-
   return false;
 }
 
-/**
- * Align two token sequences with a simple greedy diff; return replace pairs where
- * tokens differ meaningfully (not whitespace-only).
- */
+function scorePair(heard: string, preferred: string): number {
+  if (!heard || !preferred) return 0;
+  if (heard === preferred) return 0;
+  if (heard.toLowerCase() === preferred.toLowerCase()) return 0.55;
+  const dist = editDistance(heard.toLowerCase(), preferred.toLowerCase());
+  if (dist > MAX_EDIT_DIST) return 0;
+  if (isEmailOrDomain(preferred) || isEmailOrDomain(heard)) return 0.85;
+  if (isProperNoun(preferred) || isBrandLike(preferred)) return 0.75;
+  if (heard.length >= MIN_TERM_LEN && preferred.length >= MIN_TERM_LEN && dist <= 2) return 0.65;
+  return 0;
+}
+
 function diffTokens(before: string[], after: string[]): LearnPair[] {
   const pairs: LearnPair[] = [];
   let bi = 0;
   let ai = 0;
-
   while (bi < before.length && ai < after.length) {
     const b = before[bi];
     const a = after[ai];
@@ -164,14 +158,12 @@ function diffTokens(before: string[], after: string[]): LearnPair[] {
   return pairs;
 }
 
-/** When the user heavily rewrites the text, greedy alignment lies — match names only. */
 function conservativeLearn(before: string[], after: string[]): LearnPair[] {
   const pairs: LearnPair[] = [];
   for (const aTok of after) {
     const preferred = stripToken(aTok);
     if (!preferred || isCommonWord(preferred) || isNoisyToken(aTok)) continue;
     if (!isProperNoun(aTok) && !isBrandLike(aTok) && !isEmailOrDomain(aTok)) continue;
-
     let best: { heard: string; dist: number } | null = null;
     for (const bTok of before) {
       const heard = stripToken(bTok);
@@ -184,9 +176,7 @@ function conservativeLearn(before: string[], after: string[]): LearnPair[] {
         continue;
       }
       const dist = editDistance(heard.toLowerCase(), preferred.toLowerCase());
-      if (dist > 0 && dist <= MAX_EDIT_DIST && (!best || dist < best.dist)) {
-        best = { heard: bTok, dist };
-      }
+      if (dist > 0 && dist <= MAX_EDIT_DIST && (!best || dist < best.dist)) best = { heard: bTok, dist };
     }
     if (!best) continue;
     const p = { heard: best.heard, preferred: aTok, confidence: scorePair(best.heard, aTok) };
@@ -195,46 +185,19 @@ function conservativeLearn(before: string[], after: string[]): LearnPair[] {
   return pairs;
 }
 
-function scorePair(heard: string, preferred: string): number {
-  if (!heard || !preferred) return 0;
-  if (heard === preferred) return 0;
-  if (heard.toLowerCase() === preferred.toLowerCase()) return 0.55;
-  const dist = editDistance(heard.toLowerCase(), preferred.toLowerCase());
-  if (dist > MAX_EDIT_DIST) return 0;
-  if (isEmailOrDomain(preferred) || isEmailOrDomain(heard)) return 0.85;
-  if (isProperNoun(preferred) || isBrandLike(preferred)) return 0.75;
-  if (heard.length >= MIN_TERM_LEN && preferred.length >= MIN_TERM_LEN && dist <= 2) return 0.65;
-  return 0;
-}
-
-/** Extract suggested glossary entries from injected vs user-edited text. */
 export function learnFromDiff(injected: string, edited: string): LearnPair[] {
   const b = norm(injected);
   const a = norm(edited);
   if (!b || !a || b === a) return [];
   const before = tokenize(b);
   const after = tokenize(a);
-  const pairs =
-    tokenOverlap(before, after) < 0.45
-      ? conservativeLearn(before, after)
-      : diffTokens(before, after);
+  const pairs = tokenOverlap(before, after) < 0.45 ? conservativeLearn(before, after) : diffTokens(before, after);
   return pairs.filter(
-    (p) =>
-      (p.heard.length >= MIN_TERM_LEN || p.preferred.length >= MIN_TERM_LEN) &&
-      isGlossaryCandidate(p),
+    (p) => (p.heard.length >= MIN_TERM_LEN || p.preferred.length >= MIN_TERM_LEN) && isGlossaryCandidate(p),
   );
 }
 
-function newId(): string {
-  return `g_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-}
-
-/** Upsert a suggestion into the glossary (dedupe by term/alias). */
-export function mergeSuggestion(
-  glossary: UserGlossary,
-  pair: LearnPair,
-  category: GlossaryEntry["category"] = "other",
-): UserGlossary {
+export function mergeSuggestion(glossary: UserGlossary, pair: LearnPair): UserGlossary {
   if (!isGlossaryCandidate(pair)) return glossary;
   const term = pair.preferred.trim();
   const heard = pair.heard.trim();
@@ -253,43 +216,24 @@ export function mergeSuggestion(
       ...glossary,
       entries: glossary.entries.map((e) =>
         e.id === existing.id
-          ? {
-              ...e,
-              term,
-              aliases: [...aliases],
-              confidence: Math.max(e.confidence ?? 0, pair.confidence),
-            }
+          ? { ...e, term, aliases: [...aliases], confidence: Math.max(e.confidence ?? 0, pair.confidence) }
           : e,
       ),
     };
   }
 
-  const entry: GlossaryEntry = {
-    id: newId(),
-    term,
-    aliases: heard && heard.toLowerCase() !== term.toLowerCase() ? [heard] : undefined,
-    category,
-    source: "suggested",
-    confidence: pair.confidence,
-    createdAt: Date.now(),
-  };
-  return { ...glossary, entries: [...glossary.entries, entry] };
-}
-
-export function acceptSuggestion(glossary: UserGlossary, id: string): UserGlossary {
   return {
     ...glossary,
-    entries: glossary.entries.map((e) =>
-      e.id === id ? { ...e, source: "learned" as const, confidence: 1 } : e,
-    ),
+    entries: [
+      ...glossary.entries,
+      {
+        id: newGlossaryId(),
+        term,
+        aliases: heard && heard.toLowerCase() !== term.toLowerCase() ? [heard] : undefined,
+        source: "suggested" as const,
+        confidence: pair.confidence,
+        createdAt: Date.now(),
+      },
+    ],
   };
-}
-
-export function dismissSuggestion(glossary: UserGlossary, id: string): UserGlossary {
-  return { ...glossary, entries: glossary.entries.filter((e) => e.id !== id) };
-}
-
-export function activeGlossaryEntries(glossary?: UserGlossary): GlossaryEntry[] {
-  if (!glossary?.entries?.length) return [];
-  return glossary.entries.filter((e) => e.source === "manual" || e.source === "learned");
 }

@@ -22,15 +22,20 @@ export function toPromptBlock(entries?: GlossaryEntry[]): string {
   const ranked = rankForPrompt(entries);
   if (!ranked.length) return "";
 
-  const lines = ranked.map((e) => {
-    const aliases = (e.aliases ?? []).filter((a) => a && a.toLowerCase() !== e.term.toLowerCase());
-    const aliasPart = aliases.length ? ` (heard as: ${aliases.join(", ")})` : "";
-    return `- ${e.term}${aliasPart}`;
+  const lines = ranked.flatMap((e) => {
+    const pairs = replacementPairs([e]);
+    if (!pairs.length) return [`- ${e.term}`];
+    return pairs.map(({ alias, term }) => {
+      if (isSymbol(term)) {
+        return `- Use "${term}" (heard as: ${alias}) — keep the symbol; do NOT spell out as words`;
+      }
+      return `- ${term} (heard as: ${alias})`;
+    });
   });
 
   return (
-    "\n\nUser glossary (preferred spellings — apply ONLY when the transcript clearly refers to these; " +
-    "do NOT invent mentions; do NOT override intentional self-corrections):\n" +
+    "\n\nUser glossary (preferred forms — apply ONLY when the transcript clearly refers to these; " +
+    "keep symbol substitutions like @; do NOT invent mentions; do NOT override intentional self-corrections):\n" +
     lines.join("\n")
   );
 }
@@ -61,4 +66,58 @@ export function toSttKeywords(entries?: GlossaryEntry[]): string[] {
 /** Whisper/OpenAI prompt field — space-separated keywords, truncated. */
 export function toSttPrompt(entries?: GlossaryEntry[]): string {
   return toSttKeywords(entries).join(", ");
+}
+
+function isSymbol(s: string): boolean {
+  return /^[^\w\s]{1,3}$/.test(s.trim());
+}
+
+/** Spoken/heard form → preferred written form (handles @ entries stored either way). */
+function replacementPairs(entries: GlossaryEntry[]): { alias: string; term: string }[] {
+  const pairs: { alias: string; term: string }[] = [];
+  for (const e of activeEntries(entries)) {
+    const term = e.term.trim();
+    const aliases = (e.aliases ?? []).map((a) => a.trim()).filter(Boolean);
+    if (!term) continue;
+
+    if (isSymbol(term)) {
+      // Preferred @ — aliases are spoken forms ("at the rate").
+      for (const alias of aliases) {
+        if (alias.toLowerCase() !== term.toLowerCase()) pairs.push({ alias, term });
+      }
+      continue;
+    }
+
+    const symbolAliases = aliases.filter(isSymbol);
+    const spokenAliases = aliases.filter((a) => !isSymbol(a));
+
+    for (const alias of spokenAliases) {
+      if (alias.toLowerCase() !== term.toLowerCase()) pairs.push({ alias, term });
+    }
+
+    // Backwards entry: term="at the rate", aliases=["@"] — still map spoken → symbol.
+    for (const sym of symbolAliases) {
+      pairs.push({ alias: term, term: sym });
+    }
+  }
+  return pairs;
+}
+
+/**
+ * Deterministic alias → term replacements from the user glossary. Runs after
+ * LLM format so spoken forms like "at the rate" stay as "@" in the final text.
+ */
+export function applyGlossaryReplacements(text: string, entries?: GlossaryEntry[]): string {
+  if (!text || !entries?.length) return text;
+  let out = text;
+  const pairs = replacementPairs(entries);
+  pairs.sort((a, b) => b.alias.length - a.alias.length);
+  for (const { alias, term } of pairs) {
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = /\w/.test(alias)
+      ? new RegExp(`(?<![\\w@])${escaped}(?![\\w])`, "gi")
+      : new RegExp(escaped, "gi");
+    out = out.replace(re, term);
+  }
+  return out;
 }

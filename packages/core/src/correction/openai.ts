@@ -56,6 +56,11 @@ export class OpenAiCorrection implements CorrectionProvider {
 
   constructor(private apiKey = process.env.OPENAI_API_KEY ?? "") {}
 
+  /** Read at call time so the backend can inject keys after construction (WS start). */
+  private bearer(): string {
+    return process.env.OPENAI_API_KEY ?? this.apiKey;
+  }
+
   /** POST /v1/chat/completions with retry on transient errors; returns the parsed body. */
   private async chat(body: unknown, label: string): Promise<any> {
     const base = process.env.OPENAI_BASE ?? "https://api.openai.com/v1"; // read at call time (testable)
@@ -66,7 +71,7 @@ export class OpenAiCorrection implements CorrectionProvider {
       try {
         const res = await fetch(url, {
           method: "POST",
-          headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
+          headers: { Authorization: `Bearer ${this.bearer()}`, "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
         if (res.ok) return await res.json();

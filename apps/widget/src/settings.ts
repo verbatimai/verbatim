@@ -116,7 +116,7 @@ const wakeWordThresholdEl = $<HTMLInputElement>("wakeWordThreshold");
 
 let config: AppConfig = {
   sttProvider: "pyai",
-  correctionProvider: "pyai",
+  correctionProvider: "openai",
   sttModel: "",
   correctionModel: "",
   language: "en",

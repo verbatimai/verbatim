@@ -50,6 +50,7 @@ export function mergeSuggestion(
   const term = preferred.trim();
   const alias = heard.trim();
   if (!term) return glossary;
+  // Common-word filtering lives in @verbatim/core — settings UI uses manual entry only.
 
   const existing = glossary.entries.find(
     (e) =>
@@ -86,55 +87,4 @@ export function mergeSuggestion(
   };
 }
 
-function norm(s: string): string {
-  return s.replace(/\s+/g, " ").trim();
-}
-
-function editDistance(a: string, b: string): number {
-  const m = a.length;
-  const n = b.length;
-  if (!m) return n;
-  if (!n) return m;
-  const dp = Array.from({ length: n + 1 }, (_, i) => i);
-  for (let i = 1; i <= m; i++) {
-    let prev = dp[0];
-    dp[0] = i;
-    for (let j = 1; j <= n; j++) {
-      const tmp = dp[j];
-      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
-      prev = tmp;
-    }
-  }
-  return dp[n];
-}
-
-export function learnFromDiff(injected: string, edited: string): Array<{ heard: string; preferred: string; confidence: number }> {
-  const b = norm(injected).split(/\s+/);
-  const a = norm(edited).split(/\s+/);
-  if (!b.length || !a.length || injected === edited) return [];
-  const pairs: Array<{ heard: string; preferred: string; confidence: number }> = [];
-  let bi = 0;
-  let ai = 0;
-  while (bi < b.length && ai < a.length) {
-    if (b[bi].toLowerCase() === a[ai].toLowerCase()) {
-      if (b[bi] !== a[ai]) pairs.push({ heard: b[bi], preferred: a[ai], confidence: 0.55 });
-      bi++;
-      ai++;
-      continue;
-    }
-    if (b[bi] === a[ai]) {
-      bi++;
-      ai++;
-      continue;
-    }
-    const dist = editDistance(b[bi].toLowerCase(), a[ai].toLowerCase());
-    let confidence = 0.45;
-    if (b[bi].toLowerCase() === a[ai].toLowerCase()) confidence = 0.55;
-    else if (dist <= 2 && a[ai].length >= 3) confidence = 0.65;
-    else if (/^[A-Z]/.test(a[ai])) confidence = 0.75;
-    if (confidence >= 0.4) pairs.push({ heard: b[bi], preferred: a[ai], confidence });
-    bi++;
-    ai++;
-  }
-  return pairs;
-}
+// Auto-learn filtering is in @verbatim/core (learnFromDiff). Widget main.ts imports it there.

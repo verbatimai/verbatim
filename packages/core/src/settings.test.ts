@@ -9,19 +9,20 @@ import {
 
 const NO_ENV: Record<string, string | undefined> = {};
 const PYAI_ONLY = { PYAI_API_KEY: "k" };
+const PYAI_AND_OPENAI = { PYAI_API_KEY: "k", OPENAI_API_KEY: "o" };
 const BOTH_KEYS = { PYAI_API_KEY: "k", DEEPGRAM_API_KEY: "d" };
 
 describe("AppSettings resolver", () => {
-  it("defaults to PyAI STT + PyAI correction in English", () => {
+  it("defaults to PyAI STT + OpenAI correction in English", () => {
     expect(DEFAULT_SETTINGS).toEqual({
       sttProvider: "pyai",
-      correctionProvider: "pyai",
+      correctionProvider: "openai",
       language: "en",
       autoDetectLanguage: false,
     });
     const r = resolveProviders(DEFAULT_SETTINGS);
     expect(r.stt.id).toBe("pyai");
-    expect(r.correction.id).toBe("pyai");
+    expect(r.correction.id).toBe("openai");
     expect(r.language).toBe("en");
   });
 
@@ -46,11 +47,11 @@ describe("capabilityErrors", () => {
     const errs = capabilityErrors(DEFAULT_SETTINGS, NO_ENV);
     expect(errs.length).toBeGreaterThan(0);
     expect(errs.some((e) => /STT 'pyai'.*PYAI_API_KEY/.test(e))).toBe(true);
-    expect(errs.some((e) => /Correction 'pyai'.*PYAI_API_KEY/.test(e))).toBe(true);
+    expect(errs.some((e) => /Correction 'openai'.*OPENAI_API_KEY/.test(e))).toBe(true);
   });
 
-  it("passes when the one shared key satisfies both roles", () => {
-    expect(capabilityErrors(DEFAULT_SETTINGS, PYAI_ONLY)).toEqual([]);
+  it("passes when both STT and correction keys are present", () => {
+    expect(capabilityErrors(DEFAULT_SETTINGS, PYAI_AND_OPENAI)).toEqual([]);
   });
 
   it("still flags the STT key when only the correction key is present", () => {
@@ -117,10 +118,10 @@ describe("capabilityErrors", () => {
 
 describe("assertCapability", () => {
   it("throws one message listing problems when unsatisfied", () => {
-    expect(() => assertCapability(DEFAULT_SETTINGS, NO_ENV)).toThrow(/PYAI_API_KEY/);
+    expect(() => assertCapability(DEFAULT_SETTINGS, NO_ENV)).toThrow(/PYAI_API_KEY|OPENAI_API_KEY/);
   });
 
   it("does not throw when the combination is runnable", () => {
-    expect(() => assertCapability(DEFAULT_SETTINGS, PYAI_ONLY)).not.toThrow();
+    expect(() => assertCapability(DEFAULT_SETTINGS, PYAI_AND_OPENAI)).not.toThrow();
   });
 });
