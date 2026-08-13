@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "open-dictation-widget",
+  "productName": "Verbatim",
   "version": "0.1.0",
-  "identifier": "co.saaslabs.opendictation.widget",
+  "identifier": "co.saaslabs.verbatim.widget",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5175",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Open Dictation",
+        "title": "Verbatim",
         "width": 74,
         "height": 74,
         "resizable": false,
@@ -26,6 +26,20 @@
         "skipTaskbar": true,
         "visibleOnAllWorkspaces": true,
         "visible": true
+      },
+      {
+        "label": "settings",
+        "title": "Verbatim — Settings",
+        "url": "settings.html",
+        "width": 480,
+        "height": 620,
+        "resizable": true,
+        "decorations": true,
+        "transparent": false,
+        "alwaysOnTop": false,
+        "focus": true,
+        "skipTaskbar": false,
+        "visible": false
       }
     ],
     "security": { "csp": null }

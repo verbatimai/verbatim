@@ -1,8 +1,8 @@
 [package]
-name = "open-dictation-widget"
+name = "verbatim-widget"
 version = "0.1.0"
 edition = "2021"
-description = "Open Dictation macOS widget (M3 spike)"
+description = "Verbatim macOS widget (M3 spike)"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -30,5 +30,5 @@ core-foundation = "0.10"
 
 # Keep the binary name stable for tauri.
 [[bin]]
-name = "open-dictation-widget"
+name = "verbatim-widget"
 path = "src/main.rs"

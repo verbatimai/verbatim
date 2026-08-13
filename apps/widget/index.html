@@ -3,15 +3,16 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Open Dictation</title>
+  <title>Verbatim</title>
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
   <div id="root" class="orb-view">
     <!-- Idle: a small floating orb. Click it (or press ⌥Space) to dictate. -->
     <button class="orb" id="orb" title="Dictate  (⌥Space)">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/>
+      <svg width="26" height="26" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" aria-hidden="true">
+        <path d="M11 23V41"/><path d="M21 16V48"/><path d="M31 20V44"/>
+        <path d="M40 22H54"/><path d="M40 32H54"/><path d="M40 42H48"/>
       </svg>
     </button>
 
@@ -19,11 +20,12 @@
     <div class="card">
       <div class="titlebar" data-tauri-drag-region>
         <span class="glyph" data-tauri-drag-region aria-hidden="true">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/>
+          <svg width="15" height="15" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" aria-hidden="true">
+            <path d="M11 23V41"/><path d="M21 16V48"/><path d="M31 20V44"/>
+            <path d="M40 22H54"/><path d="M40 32H54"/><path d="M40 42H48"/>
           </svg>
         </span>
-        <span class="brand" data-tauri-drag-region>Open Dictation</span>
+        <span class="brand" data-tauri-drag-region>Verbatim</span>
         <span class="statuspill"><span class="dot" id="dot"></span><span id="statusText">Idle</span></span>
         <span class="level" id="level" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
         <button class="icon-btn" id="settingsBtn" title="Settings">⚙</button>
@@ -40,7 +42,9 @@
           <button id="openMic" class="banner-btn" hidden>Open Microphone Settings</button>
           <button id="openAx" class="banner-btn" hidden>Open Accessibility Settings</button>
           <button id="retryMic" class="banner-btn ghost" hidden>Retry</button>
+          <button id="copyErr" class="banner-btn ghost" hidden>Copy details</button>
         </div>
+        <div class="banner-log" id="bannerLog" hidden></div>
       </div>
 
       <div class="body">
@@ -67,15 +71,43 @@
 
       <!-- Settings (BYOK) — toggled by the gear or the tray "Settings…" item. -->
       <div class="settings" id="settings">
-        <div class="settings-title">Settings · PyAI API key</div>
-        <div class="settings-status" id="keyStatus">Checking…</div>
-        <div class="settings-hint">The widget floats without ever taking keyboard focus (that's what lets it insert text into other apps) — so it can't accept a typed key. Instead: <b>copy your PyAI key</b>, then click below.</div>
-        <div class="settings-actions">
-          <button id="pasteKey" class="primary">Paste key from clipboard</button>
-          <button id="clearKey" class="ghost">Clear</button>
-          <button id="doneSettings" class="ghost">Done</button>
+        <div class="settings-title">Settings</div>
+
+        <div class="settings-group">
+          <div class="settings-label">PyAI API key</div>
+          <div class="settings-status" id="keyStatus">Checking…</div>
+          <div class="settings-hint">The widget floats without ever taking keyboard focus (that's what lets it insert text into other apps) — so it can't accept a typed key. <b>Copy your key</b>, then click Paste.</div>
+          <div class="settings-actions">
+            <button id="pasteKey" class="primary small">Paste key from clipboard</button>
+            <button id="clearKey" class="ghost small">Clear</button>
+          </div>
         </div>
-        <div class="settings-hint">Stored in the macOS Keychain — no <code>.env</code> needed. ⌥Space to dictate (hold = push-to-talk, tap = toggle).</div>
+
+        <div class="settings-group">
+          <div class="settings-label">Dictation hotkey</div>
+          <div class="hotkey-picker" id="hotkeyPicker">
+            <button class="hk" data-hk="alt-space">⌥ Space</button>
+            <button class="hk" data-hk="ctrl-space">⌃ Space</button>
+            <button class="hk" data-hk="cmd-shift-d">⌘⇧ D</button>
+            <button class="hk" data-hk="ctrl-alt-d">⌃⌥ D</button>
+            <button class="hk" data-hk="alt-grave">⌥ `</button>
+          </div>
+          <div class="settings-hint">Hold to talk (push-to-talk), or tap to toggle hands-free.</div>
+        </div>
+
+        <div class="settings-group">
+          <div class="settings-label">Accessibility permission</div>
+          <div class="settings-status" id="axStatus">Checking…</div>
+          <div class="settings-actions">
+            <button id="openAxSettings" class="ghost small">Open Accessibility Settings</button>
+          </div>
+          <div class="settings-hint">Needed to insert text into other apps. Grant Verbatim, then quit &amp; relaunch.</div>
+        </div>
+
+        <div class="settings-actions">
+          <button id="doneSettings" class="primary">Done</button>
+        </div>
+        <div class="settings-hint">Keys are stored in the macOS Keychain — no <code>.env</code> needed.</div>
       </div>
     </div>
   </div>

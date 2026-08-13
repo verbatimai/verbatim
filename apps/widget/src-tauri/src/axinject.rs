@@ -268,6 +268,13 @@ fn is_editable_role(role: &str) -> bool {
     )
 }
 
+/// Is this process trusted for Accessibility? Cheap, non-mutating — safe to poll from
+/// the settings screen so we can show the permission state proactively (not just after
+/// the first failed injection).
+pub fn is_trusted() -> bool {
+    unsafe { AXIsProcessTrusted() }
+}
+
 // ─────────────────────────────── diagnostic ─────────────────────────────────
 
 /// One-shot diagnostic dump, fired on the ⌥Space press while the widget is still hidden.

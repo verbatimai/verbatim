@@ -5,6 +5,6 @@
   <!-- Required so macOS shows the microphone permission prompt (WKWebView getUserMedia
        is silently denied without this). Merged into the app's Info.plist by Tauri. -->
   <key>NSMicrophoneUsageDescription</key>
-  <string>Open Dictation uses the microphone to transcribe your speech into text on this device.</string>
+  <string>Verbatim uses the microphone to transcribe your speech into text on this device.</string>
 </dict>
 </plist>

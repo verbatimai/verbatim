@@ -50,6 +50,10 @@ Thumbs.db
 .archive/
 hear-stream.log
 
+# ---- Logs (PyAI error log etc.) ----
+logs/
+*.log
+
 # ---- Audio: ignore stray recordings, but keep committed test fixtures ----
 *.wav
 !experiments/fixtures/*.wav

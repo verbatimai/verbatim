@@ -29,4 +29,4 @@ Use Node 20+ (22 recommended). The backend uses global `fetch` (Node 18+) and th
 Browsers only allow mic capture on `http://localhost` or HTTPS. Use the Vite URL (`http://localhost:5173`), and allow the mic permission prompt. If you denied it, reset the site permission in the browser and reload. (Demo mode needs no mic.)
 
 ## Nothing renders / blank page
-Rebuild and re-run: `npm run web` (dev) or `npm run build --workspace @open-dictation/web`. Check the browser console for errors.
+Rebuild and re-run: `npm run web` (dev) or `npm run build --workspace @verbatim/web`. Check the browser console for errors.

@@ -1,5 +1,5 @@
 {
-  "name": "open-dictation",
+  "name": "verbatim",
   "version": "0.1.0",
   "private": true,
   "description": "Real-time, vendor-agnostic dictation with visible corrections.",
@@ -11,12 +11,12 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:quiet": "HEAR_DEBUG=0 node scripts/dev.mjs",
-    "test": "npm run test --workspace @open-dictation/core",
+    "test": "npm run test --workspace @verbatim/core",
     "test:e2e": "playwright test",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "pipeline": "npm run pipeline --workspace @open-dictation/core --",
-    "backend": "npm run start --workspace @open-dictation/backend",
-    "web": "npm run dev --workspace @open-dictation/web",
+    "pipeline": "npm run pipeline --workspace @verbatim/core --",
+    "backend": "npm run start --workspace @verbatim/backend",
+    "web": "npm run dev --workspace @verbatim/web",
     "widget": "node scripts/widget.mjs"
   },
   "devDependencies": {

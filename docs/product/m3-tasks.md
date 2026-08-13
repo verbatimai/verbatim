@@ -4,7 +4,7 @@
 
 **Architecture decision (reuse everything from M1/M2):**
 - **Rust (Tauri core)** owns only the native shell: global hotkey, non-activating overlay window, focus capture, text injection, and OS keychain.
-- **Webview (React + `@open-dictation/core`)** owns the pipeline + UI: it captures the mic (`getUserMedia`, already working in M2), runs the `TranscriptAccumulator` + correction/format, and renders the transcript/diff. This reuses **all** of `packages/core` and the M2 UI — the widget is the M2 web app wrapped in a native overlay.
+- **Webview (React + `@verbatim/core`)** owns the pipeline + UI: it captures the mic (`getUserMedia`, already working in M2), runs the `TranscriptAccumulator` + correction/format, and renders the transcript/diff. This reuses **all** of `packages/core` and the M2 UI — the widget is the M2 web app wrapped in a native overlay.
 - **Keys:** BYOK, stored in the OS keychain via Rust (`keyring`); the webview gets a key through a Tauri command and calls PyAI directly (no dev backend needed → matches the open-core "local, no server" model). The `apps/backend` proxy stays optional.
 
 Research already in `docs/architecture/tauri-stack.md` and `docs/architecture/macos-injection.md`.
@@ -23,15 +23,15 @@ The two things that can sink M3. Prove them in isolation before building the rea
 
 ## Phase 3.1 — App scaffold ✅ (11 Aug 2026)
 - [x] `apps/widget` is a Tauri v2 + Vite + TypeScript app in the npm workspace. **Deviation:** vanilla TS, **not** React — M2 shipped its UI in vanilla TS, so the widget reuses it verbatim (the "reuse everything" principle) rather than forking it into React.
-- [x] Render the M2 transcript/diff/final-output UI inside the widget window (ported from `apps/web`: streaming transcript, "what was removed" diff animation, final-output box + loading indicator). **Widget seam:** on the backend's `formatted` message the webview calls the Rust `inject_text` command → the finalized text lands in the focused field. **Scope note:** the pipeline is reused **via the M2 backend WS** (`ws://127.0.0.1:8787`), not by bundling `@open-dictation/core` in the browser — core is Node-side (`ws`/`node:fs`). The client-side `core` import (direct PyAI, no backend) is Phase **3.5** (BYOK/keychain); that's the correct sequencing.
+- [x] Render the M2 transcript/diff/final-output UI inside the widget window (ported from `apps/web`: streaming transcript, "what was removed" diff animation, final-output box + loading indicator). **Widget seam:** on the backend's `formatted` message the webview calls the Rust `inject_text` command → the finalized text lands in the focused field. **Scope note:** the pipeline is reused **via the M2 backend WS** (`ws://127.0.0.1:8787`), not by bundling `@verbatim/core` in the browser — core is Node-side (`ws`/`node:fs`). The client-side `core` import (direct PyAI, no backend) is Phase **3.5** (BYOK/keychain); that's the correct sequencing.
 - [x] Dev script **`npm run widget`** (root → `scripts/widget.mjs`: backend + `tauri dev`). Widget `typecheck` script added (covered by root `npm run typecheck`); frontend typechecks clean. CI wiring (`cargo build` on a macOS runner + `typecheck`) still TODO — tracked in STATUS next-steps.
 
 ## Phase 3.2 — Global hotkey / push-to-talk  ·  ~80% (12 Aug 2026)
 - [x] **⌥Space drives dictation with BOTH modes** via `tauri-plugin-global-shortcut` `Pressed`/`Released`: a quick **tap toggles** (hands-free), a **hold is push-to-talk** (record while held, stop on release; ≥300 ms = hold). Rust owns the state machine (`RECORDING`/`PRESS_AT`/`STARTED_THIS_PRESS`) and emits a `dictation` event (`start`/`stop`) the webview acts on. Chord push-to-talk needs no event tap.
 - [x] **Wispr/Amical-style UX**: a **floating orb** (idle, always visible, bottom-centre, **draggable** — click = dictate, drag = move; remembers its spot) that opens the **full streaming card** on start (transcript streams live per the SOP; no minimal-pill dead time), then collapses back to the orb after inserting. Card opens **anchored to the orb**, clamped on-screen. **Live mic-level meter** (AnalyserNode → 5 bars) in the card titlebar. **Menu-bar tray icon** (Show / Quit) as the app-running indicator.
-- [ ] **Configurable** hotkey (currently fixed ⌥Space) — needs a settings store (pairs with 3.5 keychain/settings).
-- [ ] **`fn`-key hold** (bare-modifier, Wispr-style) — needs a native `CGEventTap` + Input-Monitoring permission. Optional; deferred.
-- [ ] **Context-gate the orb** (show only when an editable field is focused) — blocked on the same AX focus read that returns NoValue here (see Phase 3.4).
+- [x] **Configurable hotkey** — a **click-to-pick preset list** in Settings (⌥Space / ⌃Space / ⌘⇧D / ⌃⌥D / ⌥\`). The choice persists to a tiny file in the app config dir and Rust **re-registers it live** (`set_toggle_hotkey`/`get_toggle_hotkey`, a `CURRENT_TOGGLE` static the handler compares against). Click-based (not key-capture) because the non-key panel can't receive keystrokes — same constraint as the API-key field.
+- [ ] **`fn`-key hold** (bare-modifier, Wispr-style) — needs a native `CGEventTap` + Input-Monitoring permission. **Deferred** (its own native spike; higher risk).
+- [ ] **Context-gate the orb** (show only when an editable field is focused) — now **unblocked** by the 3.4 AX read, but **deferred**: needs a continuous background AX poll (cost/complexity), and the always-visible draggable orb is acceptable meanwhile.
 
 ## Phase 3.3 — Non-activating overlay (from Spike A)  ·  ~80% (12 Aug 2026)
 - [x] Overlay window config: `alwaysOnTop`, `decorations:false`, `transparent:true`, `focus:false`, `skipTaskbar:true`, `visibleOnAllWorkspaces:true`, `macOSPrivateApi:true` (in `tauri.conf.json`).
@@ -45,16 +45,16 @@ The two things that can sink M3. Prove them in isolation before building the rea
 - [x] **AX-write (`kAXSelectedText`) intentionally NOT used** — on tested apps it returns success but inserts nothing (accepted-but-no-op), silently dropping text. Paste (⌘V) is the injection path; AX is read/guard only. Documented in `axinject.rs`.
 - [x] **`⌥⇧V` paste-test hotkey** added: injects a fixed sentence straight through `inject()` (no backend/STT) — lets us verify focus-read + routing per app even with the PyAI quota spent.
 - [x] Permission flow: `AXIsProcessTrusted()` gate + reactive "grant Accessibility" banner with a deep-link (`open_accessibility_settings`).
-- [ ] Proactive first-run "grant Accessibility" screen (today reactive via the injection banner + deep-link).
+- [x] **Proactive Accessibility status in Settings** (`ax_trusted` command → live "✓ granted / not granted" indicator + deep-link button), so the permission is visible before the first injection rather than only via the failure banner. (A dedicated full-screen first-run wizard is still optional.)
 
-## Phase 3.5 — Keychain (BYOK)
-- [ ] Rust `keyring` integration: store/read per-vendor keys (`PYAI_API_KEY`, etc.); a settings screen to enter them.
-- [ ] Tauri command to hand the selected key to the webview for direct PyAI calls; **never** log or bundle keys.
+## Phase 3.5 — Keychain (BYOK) ✅ DONE
+- [x] Rust `keyring` integration (service `co.saaslabs.verbatim`): store/read/clear per-vendor keys (`key_save`/`key_get`/`key_has`/`key_delete`) + a **Settings screen**. Because the non-key panel can't accept a typed/pasted key, entry is via **`key_save_clipboard`** — Rust reads the clipboard directly (no keyboard focus) and stores it, returning a masked `••••1234` preview. Keys never touch disk/env beyond the Keychain and are never logged.
+- [x] The key is handed to the local backend for the session (`start` message carries `apiKey`; backend sets it into the provider env). Direct client-side PyAI calls that let us **drop the dev backend** entirely are the M4 backbone (out of M3 scope).
 
 ## Phase 3.6 — UX polish
-- [ ] Show/hide animations; "listening / cleaning up / inserted" states (reuse M2 status + typing indicator).
-- [ ] Cancel/escape to dismiss without inserting; re-show last result.
-- [ ] Handle "no editable field focused" gracefully (offer copy-to-clipboard instead).
+- [x] Show/hide animations (card **scale/fade-in** on expand, settings **fade-in**); "listening / cleaning up / inserted" states reuse the M2 status pill + typing indicator + live mic-level meter.
+- [x] Cancel/escape to dismiss without inserting (the ✕ collapse button drops the session and returns to the orb); **re-show last result** via the tray **"Show Last Result"** item (`show-last` → recall the last dictation with Copy enabled; `lastResult` survives `reset()`).
+- [x] Handle "no editable field focused" gracefully — `axinject` returns `no_field` → text is copied to the clipboard and an info banner tells the user to press ⌘V.
 
 ---
 

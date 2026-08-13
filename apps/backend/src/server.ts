@@ -6,10 +6,41 @@
 //    never depends on reconstructing the messy live stream.
 // `mode:"demo"` uses fixture STT + mock correction (no key, no mic); its "batch"
 // falls back to the last streamed window (the fixture is a clean single utterance).
-import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync, existsSync, appendFileSync, mkdirSync } from "node:fs";
+import { resolve, dirname } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import { getSTTProvider, getCorrectionProvider, TranscriptAccumulator, localFormat, type STTSession, type STTProvider, type CorrectionProvider } from "@open-dictation/core";
+import { getSTTProvider, getCorrectionProvider, TranscriptAccumulator, localFormat, type STTSession, type STTProvider, type CorrectionProvider } from "@verbatim/core";
+
+// ── Complete PyAI error log ───────────────────────────────────────────────────
+// The widget's banner truncates long responses (e.g. a 401 HTML body), so every raw
+// PyAI/provider error is appended here IN FULL — status, message, stack, any extra
+// fields — for easy copy-paste reporting. Path is printed at startup and sent to the
+// widget; override with PYAI_LOG_FILE.
+const LOG_FILE = process.env.PYAI_LOG_FILE ?? resolve(process.cwd(), "logs", "pyai-errors.log");
+
+function serializeErr(e: any): Record<string, unknown> {
+  if (e instanceof Error) {
+    const o: Record<string, unknown> = { name: e.name, message: e.message, stack: e.stack };
+    // Capture non-standard fields adapters may attach (status, body, response, cause…).
+    for (const k of Object.getOwnPropertyNames(e)) if (!(k in o)) o[k] = (e as any)[k];
+    return o;
+  }
+  try { return { message: String(e), value: JSON.parse(JSON.stringify(e)) }; }
+  catch { return { message: String(e) }; }
+}
+
+function logPyaiError(phase: string, e: any, extra: Record<string, unknown> = {}) {
+  const ts = new Date().toISOString();
+  const det = serializeErr(e);
+  const block =
+    `\n──────── ${ts} · ${phase} ────────\n` +
+    `message: ${det.message ?? ""}\n` +
+    (Object.keys(extra).length ? `context: ${JSON.stringify(extra)}\n` : "") +
+    `detail: ${JSON.stringify(det, null, 2)}\n`;
+  // Logging must never crash a dictation session.
+  try { mkdirSync(dirname(LOG_FILE), { recursive: true }); appendFileSync(LOG_FILE, block); } catch { /* ignore */ }
+  console.error(`[backend] PyAI error (${phase}) — full detail logged to ${LOG_FILE}\n  ${det.message ?? det}`);
+}
 
 function loadEnv() {
   for (const dir of [".", "..", "../..", "../../.."]) {
@@ -54,6 +85,8 @@ wss.on("connection", (ws) => {
   let correction: CorrectionProvider | null = null;
   let apiKey: string | undefined;
   let demo = false;
+  let sttId = "";   // remembered on start so finalize()/error logs know the providers
+  let corrId = "";
   const audio: Uint8Array[] = []; // buffered PCM (live only)
   let acc = new TranscriptAccumulator(); // growing live-display transcript
   let finalizing = false;
@@ -69,7 +102,8 @@ wss.on("connection", (ws) => {
         const pcm = concat(audio);
         raw = norm(await stt.transcribeBatch(pcm, { apiKey: apiKey ?? "", sampleRate: 16000 }));
       } catch (e: any) {
-        send(ws, { type: "error", message: "batch transcribe: " + (e?.message ?? e) });
+        logPyaiError("stt.transcribeBatch", e, { sttId, bytes: audio.reduce((n, c) => n + c.length, 0) });
+        send(ws, { type: "error", message: "batch transcribe: " + (e?.message ?? e), file: LOG_FILE });
       }
     }
     raw = norm(raw);
@@ -82,7 +116,8 @@ wss.on("connection", (ws) => {
         cleanText = norm(result.cleanText) || raw;
         send(ws, { type: "correction", raw, cleanText, ops: result.ops, valid: result.valid });
       } catch (e: any) {
-        send(ws, { type: "error", message: "cleanup failed: " + (e?.message ?? String(e)) });
+        logPyaiError("correction.cleanup", e, { corrId, rawLen: raw.length });
+        send(ws, { type: "error", message: "cleanup failed: " + (e?.message ?? String(e)), file: LOG_FILE });
       }
       // 2) Formatting -> the final inserted text. GUARANTEED to be at least the
       //    cleaned text: if the LLM formatter fails (PyAI flaky under load), fall
@@ -93,7 +128,8 @@ wss.on("connection", (ws) => {
         try {
           finalText = (await correction.format(cleanText)).text.trim() || cleanText;
         } catch (e: any) {
-          send(ws, { type: "error", message: "format failed (used local fallback): " + (e?.message ?? String(e)) });
+          logPyaiError("correction.format", e, { corrId, cleanLen: cleanText.length });
+          send(ws, { type: "error", message: "format failed (used local fallback): " + (e?.message ?? String(e)), file: LOG_FILE });
           finalText = localFormat(cleanText);
         }
       } else {
@@ -119,8 +155,8 @@ wss.on("connection", (ws) => {
       audio.length = 0;
       acc = new TranscriptAccumulator();
       demo = msg.mode === "demo";
-      const sttId = demo ? "fixture" : DEFAULT_STT;
-      const corrId = demo ? "mock" : DEFAULT_CORR;
+      sttId = demo ? "fixture" : DEFAULT_STT;
+      corrId = demo ? "mock" : DEFAULT_CORR;
       try {
         stt = getSTTProvider(sttId);
         correction = getCorrectionProvider(corrId);
@@ -144,10 +180,14 @@ wss.on("connection", (ws) => {
           const { transcript, active } = acc.push(e);
           send(ws, { type: "live", transcript, active });
         });
-        session.onError((err) => send(ws, { type: "error", message: err.message }));
+        session.onError((err) => {
+          logPyaiError("stt.stream", err, { sttId });
+          send(ws, { type: "error", message: err.message, file: LOG_FILE });
+        });
         session.onClose(() => { void finalize(); }); // demo/fixture self-closes -> finalize
       } catch (e: any) {
-        send(ws, { type: "error", message: e?.message ?? String(e) });
+        logPyaiError("session.start", e, { sttId, corrId });
+        send(ws, { type: "error", message: e?.message ?? String(e), file: LOG_FILE });
       }
     } else if (msg.type === "stop") {
       await session?.finalize().catch(() => {});
@@ -170,3 +210,4 @@ function concat(chunks: Uint8Array[]): Uint8Array {
 console.log(`[backend] listening on ws://${HOST}:${PORT}  (browser connects via the web app's /ws proxy)`);
 console.log(`[backend] live defaults: stt=${DEFAULT_STT} correction=${DEFAULT_CORR}`);
 console.log(`[backend] PYAI_API_KEY=${process.env.PYAI_API_KEY ? "set" : "MISSING"}  (Demo mode needs no key)`);
+console.log(`[backend] PyAI error log: ${LOG_FILE}`);

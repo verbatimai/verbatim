@@ -1,4 +1,4 @@
-# @open-dictation/core
+# @verbatim/core
 
 The vendor-neutral brain: streaming STT → segmentation → correction → visible-diff ops.
 

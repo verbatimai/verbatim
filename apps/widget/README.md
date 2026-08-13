@@ -5,7 +5,7 @@
 - **Spike A (non-activating overlay) ✅:** window reclassed to a non-activating, **non-key** `NSPanel` (`tauri-nspanel` `v2.1`) + accessory app, so it floats over another app **without stealing focus or keyboard**.
 - **Spike B (injection) ✅:** `inject_text` pastes into the focused field via clipboard + synthetic ⌘V; focus never leaves the target app.
 
-**Architecture (3.1):** the webview is the M2 WS client — it captures the mic, streams PCM to the backend, and renders transcript/diff/final. The one widget-specific line is: on the backend's `formatted` message, the webview calls the Rust `inject_text` command. The **client-side `@open-dictation/core` pipeline + BYOK keychain** (no backend) is Phase 3.5.
+**Architecture (3.1):** the webview is the M2 WS client — it captures the mic, streams PCM to the backend, and renders transcript/diff/final. The one widget-specific line is: on the backend's `formatted` message, the webview calls the Rust `inject_text` command. The **client-side `@verbatim/core` pipeline + BYOK keychain** (no backend) is Phase 3.5.
 
 Native macOS + Rust — build and run on a Mac.
 
@@ -66,14 +66,14 @@ macOS blocks WKWebView's `getUserMedia` unless the app declares a mic-usage stri
 - `src-tauri/Info.plist` (+ `Info.dev.plist`) sets `NSMicrophoneUsageDescription`, so macOS shows the prompt.
 - On a denial the widget shows a **"Open Microphone Settings"** button (Rust `open_mic_settings` deep-links to the pane).
 
-To grant: click **Start** once (triggers the prompt / the help panel) → **System Settings → Privacy & Security → Microphone** → enable **Open Dictation** (in dev it may show as your terminal or the dev binary) → **quit and relaunch** the widget. Demo mode never needs the mic. If the prompt still doesn't appear in `tauri dev`, run a one-off `npx tauri build` once so the Info.plist is baked into a bundle, then go back to `tauri dev`.
+To grant: click **Start** once (triggers the prompt / the help panel) → **System Settings → Privacy & Security → Microphone** → enable **Verbatim** (in dev it may show as your terminal or the dev binary) → **quit and relaunch** the widget. Demo mode never needs the mic. If the prompt still doesn't appear in `tauri dev`, run a one-off `npx tauri build` once so the Info.plist is baked into a bundle, then go back to `tauri dev`.
 
 ## If it doesn't build
 Paste the `cargo`/`tauri` error back. Version-sensitive spots (`src-tauri/src/main.rs`, marked `Spike A`): the `tauri_panel!` macro config keys, `window.to_panel::<SpikePanel>()`, and `set_style_mask(NSWindowStyleMask::…)` (uses the crate's **re-exported** `objc2_app_kit` — don't add a separate `objc2-app-kit` dep or the types won't match). `set_activation_policy` is core Tauri v2.
 
 ## What's next
-- **3.1 ✅ done** — M2 transcript/diff/final-output UI in the panel; mic → backend pipeline → `inject_text(finalized output)`. (Ran vanilla-TS reusing `apps/web`; client-side `@open-dictation/core` + BYOK is 3.5.)
+- **3.1 ✅ done** — M2 transcript/diff/final-output UI in the panel; mic → backend pipeline → `inject_text(finalized output)`. (Ran vanilla-TS reusing `apps/web`; client-side `@verbatim/core` + BYOK is 3.5.)
 - **3.2:** configurable hotkey / push-to-talk (`fn`-hold needs a native event tap).
 - **3.3 polish:** `set_collection_behaviour(canJoinAllSpaces | stationary | fullScreenAuxiliary)` + caret-anchored positioning (AX bounds).
 - **3.4:** `capture_focus()` before show, AX-write injection with paste fallback, secure/password-field refusal.
-- **3.5:** move the pipeline client-side (import `@open-dictation/core` in the webview, call PyAI directly) + keychain BYOK → no dev backend.
+- **3.5:** move the pipeline client-side (import `@verbatim/core` in the webview, call PyAI directly) + keychain BYOK → no dev backend.

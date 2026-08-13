@@ -7,7 +7,7 @@
 
 ## 1. The problem, stated precisely
 
-The widget is a **non-activating, non-key `NSPanel`** (Spike A): its webview can never receive typed/pasted keystrokes — that's what keeps focus on the app underneath. Keys already live in the **macOS Keychain** (Phase 3.5: `key_save/get/has/delete` under service `co.saaslabs.opendictation`, account = the vendor key name).
+The widget is a **non-activating, non-key `NSPanel`** (Spike A): its webview can never receive typed/pasted keystrokes — that's what keeps focus on the app underneath. Keys already live in the **macOS Keychain** (Phase 3.5: `key_save/get/has/delete` under service `co.saaslabs.verbatim`, account = the vendor key name).
 
 The open question for M4 is the **transport**: when the user picks an STT vendor and a correction vendor, *what process opens the vendor connection, and how does the key get there* — given the classic constraint that **a browser/webview cannot set a WebSocket `Authorization` header.**
 

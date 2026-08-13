@@ -13,9 +13,9 @@ function start(name, args, env) {
 }
 
 const children = [
-  start("backend", ["run", "start", "--workspace", "@open-dictation/backend"], process.env),
+  start("backend", ["run", "start", "--workspace", "@verbatim/backend"], process.env),
   // `tauri dev` runs the widget's Vite server (beforeDevCommand) then the Rust shell.
-  start("widget", ["run", "start", "--workspace", "@open-dictation/widget"], process.env),
+  start("widget", ["run", "start", "--workspace", "@verbatim/widget"], process.env),
 ];
 
 console.log("[widget] backend + Tauri widget starting. ⌥Space toggles the overlay; focus a field in another app before Stop.");

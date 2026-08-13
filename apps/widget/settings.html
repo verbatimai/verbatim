@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Verbatim — Settings</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: Canvas;
+      color: CanvasText;
+    }
+    .settings-page { padding: 24px 28px; max-width: 480px; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    .sub { opacity: 0.6; margin: 0 0 20px; font-size: 12.5px; }
+    label { display: block; font-weight: 600; margin: 16px 0 6px; }
+    input[type="text"] {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 10px;
+      font-size: 14px;
+      border: 1px solid color-mix(in srgb, CanvasText 25%, transparent);
+      border-radius: 8px;
+      background: Field;
+      color: FieldText;
+    }
+    input[type="text"]:focus { outline: 2px solid Highlight; outline-offset: 1px; }
+    .hint { opacity: 0.6; font-size: 12px; margin-top: 6px; }
+  </style>
+</head>
+<body class="settings-window">
+  <main class="settings-page">
+    <h1>Settings</h1>
+    <p class="sub">Phase 4.2 scaffold — real controls (keys, providers, hotkey, language) arrive in 4.7.</p>
+
+    <label for="probe">Keyboard focus test</label>
+    <input id="probe" type="text" placeholder="Type here — proves this window takes keyboard focus" />
+    <p class="hint">If characters appear as you type, the window split works: the overlay can stay non-key while this window accepts input.</p>
+  </main>
+  <script type="module" src="/src/settings.ts"></script>
+</body>
+</html>

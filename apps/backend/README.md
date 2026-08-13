@@ -1,6 +1,6 @@
 # apps/backend — dev bridge (M2)
 
-Node WebSocket server that bridges the browser to `@open-dictation/core`: it
+Node WebSocket server that bridges the browser to `@verbatim/core`: it
 runs the STT + correction pipeline with the **vendor key held server-side** and
 streams `live` / `correction` / `done` events back to the web client.
 

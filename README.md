@@ -1,4 +1,4 @@
-# Open Dictation (working title)
+# Verbatim (working title)
 
 A real-time, vendor-agnostic dictation widget with **visible corrections** —
 words stream in live as you speak, then the text cleans itself up (fillers,

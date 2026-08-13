@@ -1,4 +1,4 @@
-// Open Dictation widget frontend (M3 Phase 3.1).
+// Verbatim widget frontend (M3 Phase 3.1).
 // Reuses the M2 experience: the transcript streams as ONE clean growing line
 // (locked text + volatile tail); on Stop the backend batch-transcribes, runs
 // cleanup (the "what was removed" diff) and formatting, and returns the final text.
@@ -23,7 +23,7 @@ type ServerMsg =
   | { type: "live"; transcript: string; active: string }
   | { type: "correction"; raw: string; cleanText: string; ops: Op[]; valid: boolean }
   | { type: "formatted"; text: string }
-  | { type: "error"; message: string }
+  | { type: "error"; message: string; file?: string }
   | { type: "done" };
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -34,6 +34,7 @@ const banner = $("banner"), bannerMsg = $("bannerMsg"), bannerActions = $("banne
 const bannerClose = $<HTMLButtonElement>("bannerClose");
 const openMicBtn = $<HTMLButtonElement>("openMic"), retryMicBtn = $<HTMLButtonElement>("retryMic");
 const openAxBtn = $<HTMLButtonElement>("openAx");
+const copyErr = $<HTMLButtonElement>("copyErr"), bannerLog = $("bannerLog");
 const copyBtn = $<HTMLButtonElement>("copyBtn");
 const root = $("root"), orb = $<HTMLButtonElement>("orb");
 const collapseBtn = $<HTMLButtonElement>("collapseBtn");
@@ -41,6 +42,8 @@ const card = document.querySelector<HTMLElement>(".card")!;
 const settingsBtn = $<HTMLButtonElement>("settingsBtn"), doneSettings = $<HTMLButtonElement>("doneSettings");
 const keyStatus = $("keyStatus");
 const pasteKey = $<HTMLButtonElement>("pasteKey"), clearKey = $<HTMLButtonElement>("clearKey");
+const hotkeyPicker = $("hotkeyPicker");
+const axStatus = $("axStatus"), openAxSettings = $<HTMLButtonElement>("openAxSettings");
 const PYAI_KEY = "PYAI_API_KEY";
 
 async function refreshKeyStatus() {
@@ -50,7 +53,34 @@ async function refreshKeyStatus() {
     keyStatus.classList.toggle("ok", has);
   } catch (e) { keyStatus.textContent = "Keychain error: " + String(e); }
 }
-function openSettings() { card.classList.add("settings-open"); void refreshKeyStatus(); }
+
+// Highlight the active preset. The hotkey can't be typed into (non-key panel), so it's
+// picked by clicking one of a fixed set of presets — Rust re-registers it live.
+async function refreshHotkey() {
+  let id = "alt-space";
+  try { id = await invoke<string>("get_toggle_hotkey"); } catch {}
+  hotkeyPicker.querySelectorAll<HTMLButtonElement>(".hk").forEach((b) =>
+    b.classList.toggle("active", b.dataset.hk === id));
+}
+
+async function refreshAxStatus() {
+  try {
+    const ok = await invoke<boolean>("ax_trusted");
+    axStatus.textContent = ok
+      ? "✓ Granted — text can be inserted into other apps."
+      : "Not granted — text will be copied to the clipboard until you grant it.";
+    axStatus.classList.toggle("ok", ok);
+    axStatus.classList.toggle("bad", !ok);
+    openAxSettings.hidden = ok;
+  } catch (e) { axStatus.textContent = "Couldn't check: " + String(e); }
+}
+
+function openSettings() {
+  card.classList.add("settings-open");
+  void refreshKeyStatus();
+  void refreshHotkey();
+  void refreshAxStatus();
+}
 function closeSettings() { card.classList.remove("settings-open"); }
 
 // Two views: idle "orb" (small floating dot) and active "card" (full streaming UI).
@@ -112,6 +142,7 @@ function beginDictation() {
 }
 
 let finalText = ""; // the last formatted output — always copyable, even if injection had no target
+let lastResult = ""; // survives reset(): the last dictation, recallable via the tray "Show Last Result"
 
 let ws: WebSocket | null = null;
 let audioCtx: AudioContext | null = null;
@@ -160,10 +191,17 @@ function showBanner(kind: "err" | "warn" | "info", msg: string, actions: BannerA
   openMicBtn.hidden = actions !== "mic";
   retryMicBtn.hidden = actions !== "mic";
   openAxBtn.hidden = actions !== "ax";
+  copyErr.hidden = true;      // only shown for backend/PyAI errors (set in handle())
+  bannerLog.hidden = true;
   bannerActions.hidden = actions === "none";
   banner.hidden = false;
 }
-function clearBanner() { banner.hidden = true; bannerActions.hidden = true; }
+function clearBanner() { banner.hidden = true; bannerActions.hidden = true; copyErr.hidden = true; bannerLog.hidden = true; }
+
+// Full text of the last backend error + the log-file path (both untruncated), so the
+// user can copy the complete detail for reporting even though the banner is short.
+let lastErrorFull = "";
+let lastErrorFile = "";
 
 // Turn raw backend errors into a short, human line (the status pill is small, and
 // dumping vendor JSON reads as broken).
@@ -241,7 +279,7 @@ async function injectFinal(text: string) {
     const result = await invoke<string>("inject_text", { text });
     if (result === "no_access") {
       setStatus("err", "grant Accessibility");
-      showBanner("err", "Grant Accessibility so the widget can insert text (also needed for pasting). Enable Open Dictation (or your terminal, in dev), then quit & relaunch. Text is copied — press ⌘V meanwhile.", "ax");
+      showBanner("err", "Grant Accessibility so the widget can insert text (also needed for pasting). Enable Verbatim (or your terminal, in dev), then quit & relaunch. Text is copied — press ⌘V meanwhile.", "ax");
     } else if (result === "secure") {
       setStatus("err", "secure field");
       showBanner("warn", "That looks like a password / secure field — not inserting. The text is on your clipboard (⌘V) if you need it elsewhere.");
@@ -270,17 +308,27 @@ function handle(m: ServerMsg) {
   }
   else if (m.type === "formatted") {
     finalText = m.text;
+    if (m.text.trim()) lastResult = m.text; // remember for "Show Last Result"
     finalOut.textContent = m.text;
     copyBtn.disabled = !m.text.trim(); // always copyable, even if injection lands nowhere
     void injectFinal(m.text);
   }
-  else if (m.type === "error") { setStatus("err", "error"); showBanner("err", friendlyError(m.message)); }
+  else if (m.type === "error") {
+    setStatus("err", "error");
+    lastErrorFull = m.message;               // keep the FULL message (banner shows a short form)
+    if (m.file) lastErrorFile = m.file;
+    showBanner("err", friendlyError(m.message));
+    copyErr.hidden = false;                   // offer one-click copy of the complete detail
+    bannerActions.hidden = false;
+    if (lastErrorFile) { bannerLog.hidden = false; bannerLog.textContent = "Full error logged to " + lastErrorFile; }
+  }
   else if (m.type === "done") {
     teardownAudio();
     if (ws) { try { ws.close(); } catch {} ws = null; } // next session starts fresh
     resetButtons();
-    // Show the final result briefly, then collapse back to the floating orb.
-    setTimeout(() => { void setView("orb"); }, 1400);
+    // Stay open on the final result (card doesn't auto-collapse) so the transcript,
+    // diff and output remain visible for review. Dismiss with ✕ or ⌥Space.
+    // (Auto-collapse was: setTimeout(() => void setView("orb"), 1400);)
   }
 }
 
@@ -324,7 +372,7 @@ async function startLive() {
     const name = (e as any)?.name ?? "";
     if (name === "NotAllowedError" || name === "SecurityError" || name === "PermissionDeniedError") {
       setStatus("err", "mic blocked");
-      showBanner("err", "Microphone access needed — enable Open Dictation (or your terminal, in dev) under Microphone, then quit & relaunch. Demo works without a mic.", "mic");
+      showBanner("err", "Microphone access needed — enable Verbatim (or your terminal, in dev) under Microphone, then quit & relaunch. Demo works without a mic.", "mic");
     } else if (name === "NotFoundError" || name === "OverconstrainedError") {
       setStatus("err", "no mic"); showBanner("err", "No microphone found.");
     } else {
@@ -381,8 +429,10 @@ startBtn.onclick = () => void startLive();
 stopBtn.onclick = () => stop();
 bannerClose.onclick = () => clearBanner();
 
-// Settings (BYOK)
-settingsBtn.onclick = () => { if (card.classList.contains("settings-open")) closeSettings(); else openSettings(); };
+// Settings — Phase 4.2: the gear opens the separate, focusable Settings window (you
+// can't type into this non-key overlay). The old inline panel (openSettings/closeSettings
+// and the "open-settings" listener below) is now unreachable and gets removed in 4.9.
+settingsBtn.onclick = () => { void invoke("show_settings_window").catch(() => {}); };
 doneSettings.onclick = () => closeSettings();
 // Non-key panel can't accept a typed key, so we read it straight from the clipboard
 // in Rust and store it in the Keychain. Rust returns a masked preview to confirm.
@@ -400,6 +450,18 @@ pasteKey.onclick = async () => {
 clearKey.onclick = async () => {
   try { await invoke("key_delete", { account: PYAI_KEY }); await refreshKeyStatus(); }
   catch (e) { keyStatus.textContent = "Clear failed: " + String(e); }
+};
+// Pick a hotkey preset (click, not keystroke). Rust persists + re-registers it live.
+hotkeyPicker.addEventListener("click", async (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".hk");
+  if (!btn?.dataset.hk) return;
+  try { await invoke("set_toggle_hotkey", { id: btn.dataset.hk }); await refreshHotkey(); }
+  catch { await refreshHotkey(); }
+});
+openAxSettings.onclick = () => {
+  void invoke("open_accessibility_settings").catch(() => {});
+  // Re-check shortly after, in case they grant it and come back.
+  setTimeout(() => void refreshAxStatus(), 1200);
 };
 
 // Orb: click to dictate, drag to reposition. Distinguish the two by movement.
@@ -458,6 +520,15 @@ copyBtn.onclick = async () => {
 openMicBtn.onclick = () => { void invoke("open_mic_settings").catch(() => {}); };
 openAxBtn.onclick = () => { void invoke("open_accessibility_settings").catch(() => {}); };
 retryMicBtn.onclick = () => { clearBanner(); void startLive(); };
+// Copy the COMPLETE error (untruncated) + the log path for easy reporting.
+copyErr.onclick = async () => {
+  const payload = (lastErrorFile ? `Log: ${lastErrorFile}\n\n` : "") + lastErrorFull;
+  try {
+    await invoke("copy_text", { text: payload });
+    copyErr.textContent = "Copied ✓";
+  } catch { copyErr.textContent = "Copy failed"; }
+  setTimeout(() => { copyErr.textContent = "Copy details"; }, 1600);
+};
 
 // ⌥Space drives dictation from Rust: hold = push-to-talk, tap = toggle.
 void listen<string>("dictation", (e) => {
@@ -467,6 +538,27 @@ void listen<string>("dictation", (e) => {
 
 // Tray "Settings…" → open the card in settings mode.
 void listen("open-settings", () => { void setView("card").then(() => openSettings()); });
+
+// Tray "Show Last Result" → open the card showing the previous dictation (no new session),
+// so the user can re-copy it. lastResult survives reset() between sessions.
+async function showLastResult() {
+  clearBanner();
+  closeSettings();
+  await setView("card");
+  reset();
+  resetButtons();
+  if (lastResult.trim()) {
+    transcriptEl.innerHTML = `<span class="hint">Your last dictation — press <b>Copy</b>, or ⌥Space to dictate again.</span>`;
+    finalOut.textContent = lastResult;
+    finalText = lastResult;
+    copyBtn.disabled = false;
+    setStatus("done", "last result");
+  } else {
+    transcriptEl.innerHTML = `<span class="hint">Nothing dictated yet. Press ⌥Space or click the orb to start.</span>`;
+    setStatus("", "idle");
+  }
+}
+void listen("show-last", () => { void showLastResult(); });
 
 reset();
 void initOrbPosition(); // start as the floating orb, bottom-centre; drag to move

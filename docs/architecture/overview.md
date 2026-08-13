@@ -40,3 +40,6 @@ open-dictation/
 ├─ docs/             product plan, roadmap, architecture, research (research = internal)
 └─ experiments/      throwaway validation scripts + fixtures + UX prototype (internal)
 ```
+
+## Desktop app shell (M4)
+The widget is **two windows in one process**: a non-key floating **overlay** (orb + card + inject) and a focusable **settings** window, backed by a shared Rust config store + keychain. See `desktop-app-windows.md` for the window split, event flow, and activation-policy diagram.

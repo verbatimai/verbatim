@@ -26,8 +26,8 @@ function start(name, args, env, capture) {
 }
 
 const children = [
-  start("backend", ["run", "start", "--workspace", "@open-dictation/backend"], backendEnv, DEBUG),
-  start("web", ["run", "dev", "--workspace", "@open-dictation/web"], process.env, false),
+  start("backend", ["run", "start", "--workspace", "@verbatim/backend"], backendEnv, DEBUG),
+  start("web", ["run", "dev", "--workspace", "@verbatim/web"], process.env, false),
 ];
 
 if (DEBUG) {

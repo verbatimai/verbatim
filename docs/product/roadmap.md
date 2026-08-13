@@ -74,16 +74,17 @@ The plan (`../product/product-plan.md`) is the *what* and *why*. This is the *in
 
 ---
 
-## M4 — Multi-vendor + configuration
-**Goal:** deliver on the vendor-agnostic promise and the BYOK key model.
+## M4 — Desktop app + multi-vendor + configuration
+**Goal:** turn the widget into a real menu-bar app with a focusable settings window, and deliver on the vendor-agnostic promise and the BYOK key model. Full breakdown in `../product/m4-tasks.md` (the former standalone `desktop-app-plan.md` is now folded into it).
 
 **Deliverables**
+- **Desktop app / window split:** split the single-window overlay into a **menu-bar app + focusable settings window** (activation-policy switch), backed by one Rust config store with a `config-changed` live refresh. Unlocks typed API keys, arbitrary hotkey capture, and provider/model dropdowns.
 - Deepgram STT adapter (finish), OpenAI STT+correction, Anthropic correction — all behind the existing interfaces.
-- Provider selection UI; **keys stored in the OS keychain** (never plaintext/disk/bundle).
+- Provider selection UI; **keys stored in the OS keychain** (never plaintext/disk/bundle), **never passed through the renderer** (app-owned sidecar transport).
 - Startup capability check; mix-and-match (e.g. Deepgram STT + Anthropic correction).
 - **Multilingual** (see `../architecture/multilingual.md`): PyAI Hear is **English-only** today, so non-English dictation routes STT through Deepgram/OpenAI (PyAI stays the `en` default). Add a `language` setting; localize the cleanup/format prompts. Guard: choosing a non-English language on PyAI shows a clear "English-only on PyAI" message.
 
-**Exit criteria:** switch STT and correction vendors from settings; keys persist in the keychain; app runs with any valid combination.
+**Exit criteria:** menu-bar app with a focusable settings window (type a key + capture a hotkey there while the overlay keeps injecting); switch STT and correction vendors from settings; keys persist in the keychain and never cross the renderer; app runs with any valid combination.
 
 ---
 

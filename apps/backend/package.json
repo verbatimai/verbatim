@@ -1,5 +1,5 @@
 {
-  "name": "@open-dictation/backend",
+  "name": "@verbatim/backend",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@open-dictation/core": "*",
+    "@verbatim/core": "*",
     "ws": "^8.18.0"
   },
   "devDependencies": {

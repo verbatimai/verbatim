@@ -16,6 +16,12 @@ static PRESS_AT: Mutex<Option<Instant>> = Mutex::new(None);
 static STARTED_THIS_PRESS: Mutex<bool> = Mutex::new(false);
 const HOLD_MS: u128 = 300; // ≥ this held = push-to-talk; below = a tap (toggle)
 
+// The toggle hotkey currently registered. It's configurable at runtime (set_toggle_hotkey
+// swaps the registration), so the handler compares the fired shortcut against THIS rather
+// than a compile-time constant.
+#[cfg(desktop)]
+static CURRENT_TOGGLE: Mutex<Option<tauri_plugin_global_shortcut::Shortcut>> = Mutex::new(None);
+
 // Inject the finalized text into the focused field — but only when it makes sense.
 // Returns a status the UI reacts to:
 //   "inserted"  — pasted into an editable field
@@ -49,10 +55,34 @@ fn hide_widget(app: tauri::AppHandle) {
     }
 }
 
+// ── Phase 4.2: the focusable Settings window ──────────────────────────────────
+// The overlay ("main") is a non-key NSPanel and can never accept typed input — that's
+// what lets injected text land in the app underneath. The Settings window is an ordinary
+// focusable NSWindow. A menu-bar app runs as `Accessory` (no Dock icon, never frontmost,
+// so the overlay never steals focus); to give the Settings window keyboard focus we must
+// briefly switch the app to `Regular`, then revert to `Accessory` when it closes (see the
+// CloseRequested handler in setup). The overlay panel stays non-key throughout.
+fn open_settings_window(app: &tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+
+    let win = app
+        .get_webview_window("settings")
+        .ok_or_else(|| "no 'settings' window".to_string())?;
+    win.show().map_err(|e| e.to_string())?;
+    win.set_focus().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn show_settings_window(app: tauri::AppHandle) -> Result<(), String> {
+    open_settings_window(&app)
+}
+
 // ── Phase 3.5: BYOK — vendor API keys in the OS keychain ──────────────────────
 // `account` is the vendor key name (e.g. "PYAI_API_KEY"). Keys never touch disk/env
 // beyond the keychain, and are never logged.
-const KEYCHAIN_SERVICE: &str = "co.saaslabs.opendictation";
+const KEYCHAIN_SERVICE: &str = "co.saaslabs.verbatim";
 
 #[tauri::command]
 fn key_save(account: String, secret: String) -> Result<(), String> {
@@ -145,6 +175,92 @@ fn open_accessibility_settings() -> Result<(), String> {
     }
 }
 
+// Is the app trusted for Accessibility? Powers the proactive permission indicator in
+// Settings (so the user isn't surprised by the first injection banner).
+#[tauri::command]
+fn ax_trusted() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        axinject::is_trusted()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
+}
+
+// ── Configurable toggle hotkey ────────────────────────────────────────────────
+// The widget is a non-key panel (can't accept typed keystrokes), so the user picks the
+// hotkey from a fixed set of presets by CLICKING — no key-capture UI needed. The choice
+// persists to a tiny file in the app config dir and is re-registered live.
+
+// Map a preset id → an actual Shortcut. Keep this list in sync with the buttons in the
+// Settings UI (main.ts HOTKEYS).
+#[cfg(desktop)]
+fn preset_shortcut(id: &str) -> Option<tauri_plugin_global_shortcut::Shortcut> {
+    use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
+    let (m, c) = match id {
+        "alt-space" => (Modifiers::ALT, Code::Space),
+        "ctrl-space" => (Modifiers::CONTROL, Code::Space),
+        "cmd-shift-d" => (Modifiers::SUPER | Modifiers::SHIFT, Code::KeyD),
+        "ctrl-alt-d" => (Modifiers::CONTROL | Modifiers::ALT, Code::KeyD),
+        "alt-grave" => (Modifiers::ALT, Code::Backquote),
+        _ => return None,
+    };
+    Some(Shortcut::new(Some(m), c))
+}
+
+fn hotkey_config_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("hotkey"))
+}
+
+// Persisted preset id, defaulting to ⌥Space. Never fails — a missing/garbled file just
+// falls back to the default so the app always has a working hotkey.
+fn load_hotkey_id(app: &tauri::AppHandle) -> String {
+    hotkey_config_path(app)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "alt-space".to_string())
+}
+
+fn save_hotkey_id(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
+    let p = hotkey_config_path(app).ok_or("no config dir")?;
+    if let Some(dir) = p.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    std::fs::write(p, id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_toggle_hotkey(app: tauri::AppHandle) -> String {
+    load_hotkey_id(&app)
+}
+
+#[tauri::command]
+fn set_toggle_hotkey(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_global_shortcut::GlobalShortcutExt;
+        let sc = preset_shortcut(&id).ok_or_else(|| format!("unknown hotkey: {id}"))?;
+        let gs = app.global_shortcut();
+        // Swap the registration: drop the old toggle, register the new one, remember it so
+        // the handler recognises the fired shortcut.
+        if let Some(old) = CURRENT_TOGGLE.lock().unwrap().take() {
+            let _ = gs.unregister(old);
+        }
+        gs.register(sc).map_err(|e| e.to_string())?;
+        *CURRENT_TOGGLE.lock().unwrap() = Some(sc);
+        save_hotkey_id(&app, &id)?;
+        Ok(())
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, id);
+        Ok(())
+    }
+}
+
 // ── Spike A: reclass the "main" window into a non-activating, NON-KEY NSPanel ────
 //
 // A plain Tauri window is an NSWindow; even with `focus:false` it activates the app
@@ -224,15 +340,35 @@ fn main() {
             #[cfg(target_os = "macos")]
             configure_non_activating_panel(app);
 
+            // Phase 4.2: closing the Settings window HIDES it (keeps it for a fast reopen)
+            // and reverts the activation policy — the app must NOT quit when settings closes
+            // (it's a menu-bar app; the tray keeps it alive). The overlay is untouched.
+            if let Some(settings) = app.get_webview_window("settings") {
+                let app_h = app.handle().clone();
+                settings.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        if let Some(w) = app_h.get_webview_window("settings") {
+                            let _ = w.hide();
+                        }
+                        #[cfg(target_os = "macos")]
+                        let _ = app_h.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                    }
+                });
+            }
+
             #[cfg(desktop)]
             {
                 use tauri_plugin_global_shortcut::{
                     Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
                 };
 
-                // ⌥Space toggles the widget window.
-                let toggle = Shortcut::new(Some(Modifiers::ALT), Code::Space);
-                let toggle_for_handler = toggle;
+                // The toggle hotkey — loaded from the persisted preset (default ⌥Space),
+                // configurable at runtime via set_toggle_hotkey.
+                let hotkey_id = load_hotkey_id(app.handle());
+                let toggle = preset_shortcut(&hotkey_id)
+                    .unwrap_or_else(|| Shortcut::new(Some(Modifiers::ALT), Code::Space));
+                *CURRENT_TOGGLE.lock().unwrap() = Some(toggle);
 
                 // ⌥⇧V — DEMO / PASTE TEST. Injects a fixed sentence straight through the
                 // Rust inject() path (read focus → route → AX-write/paste). Bypasses the
@@ -262,7 +398,14 @@ fn main() {
                                 return;
                             }
 
-                            if shortcut != &toggle_for_handler {
+                            // Compare against the CURRENTLY-registered toggle (it can change
+                            // at runtime), not a captured constant.
+                            let is_toggle = CURRENT_TOGGLE
+                                .lock()
+                                .unwrap()
+                                .as_ref()
+                                .map_or(false, |t| t == shortcut);
+                            if !is_toggle {
                                 return;
                             }
                             match event.state() {
@@ -327,18 +470,20 @@ fn main() {
                     let show_i = MenuItem::with_id(
                         h,
                         "show",
-                        "Show Open Dictation  (⌥Space)",
+                        "Show Verbatim  (⌥Space)",
                         true,
                         None::<&str>,
                     )?;
+                    let last_i =
+                        MenuItem::with_id(h, "last", "Show Last Result", true, None::<&str>)?;
                     let settings_i =
                         MenuItem::with_id(h, "settings", "Settings…", true, None::<&str>)?;
                     let quit_i =
-                        MenuItem::with_id(h, "quit", "Quit Open Dictation", true, None::<&str>)?;
-                    let menu = Menu::with_items(h, &[&show_i, &settings_i, &quit_i])?;
+                        MenuItem::with_id(h, "quit", "Quit Verbatim", true, None::<&str>)?;
+                    let menu = Menu::with_items(h, &[&show_i, &last_i, &settings_i, &quit_i])?;
                     let icon = app.default_window_icon().cloned();
                     let mut tray = TrayIconBuilder::with_id("main-tray")
-                        .tooltip("Open Dictation — press ⌥Space to dictate")
+                        .tooltip("Verbatim — press ⌥Space to dictate")
                         .menu(&menu)
                         .on_menu_event(|app, event| match event.id.as_ref() {
                             "show" => {
@@ -346,11 +491,17 @@ fn main() {
                                     let _ = w.show();
                                 }
                             }
-                            "settings" => {
+                            "last" => {
                                 if let Some(w) = app.get_webview_window("main") {
                                     let _ = w.show();
-                                    let _ = app.emit("open-settings", ());
+                                    let _ = app.emit("show-last", ());
                                 }
+                            }
+                            "settings" => {
+                                // Phase 4.2: open the real, focusable Settings window
+                                // (was: show the overlay + emit "open-settings" for the
+                                // inline panel — that path is removed in 4.9).
+                                let _ = open_settings_window(app);
                             }
                             "quit" => app.exit(0),
                             _ => {}
@@ -367,8 +518,12 @@ fn main() {
             inject_text,
             open_mic_settings,
             open_accessibility_settings,
+            ax_trusted,
+            get_toggle_hotkey,
+            set_toggle_hotkey,
             copy_text,
             hide_widget,
+            show_settings_window,
             key_save,
             key_save_clipboard,
             key_get,
@@ -376,5 +531,5 @@ fn main() {
             key_delete
         ])
         .run(tauri::generate_context!())
-        .expect("error while running the Open Dictation widget");
+        .expect("error while running the Verbatim widget");
 }
