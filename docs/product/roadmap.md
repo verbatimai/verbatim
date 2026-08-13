@@ -90,8 +90,10 @@ The plan (`../product/product-plan.md`) is the *what* and *why*. This is the *in
 
 ---
 
-## M5 — Quality & polish (daily-driver)  ·  NEXT
-**Goal:** good enough that the team dictates with it every day. **Concrete breakdown in `../product/m5-tasks.md`** (5.0 decisions → 5.1 reliability/reconnect → 5.2 vocabulary · 5.3 formatting modes · 5.4 undo → 5.5 concurrency → 5.6 telemetry + perf → 5.7 dogfood).
+## M5 — Quality & polish (daily-driver)  ·  IN PROGRESS (started 13 Aug 2026)
+**Goal:** good enough that the team dictates with it every day. **Concrete breakdown + live status in `../product/m5-tasks.md`** (5.0 decisions → 5.1 reliability/reconnect → 5.2 vocabulary · 5.3 formatting modes · 5.4 undo → 5.5 concurrency → 5.6 telemetry + perf → 5.7 dogfood).
+
+**Status (13 Aug 2026):** a parallel settings-plan effort landed a chunk of M5 early. **5.2 custom vocabulary — done** (Rust list store + correction-side prompt injection across all adapters + Deepgram keyword boost + tests). **5.6 telemetry — scaffolding done** (opt-in, allow-list, content-free `Telemetry` wired into the backend with a Settings toggle; transport parked; the perf pass / latency capture / F9 / F10 remain). **5.1 reliability — partial** (retry-with-backoff on PyAI+OpenAI correction; streaming STT reconnect/keepalive + Anthropic/batch retry still to build). **5.4 undo — partial** (paste-last-result plumbing exists; "revert to raw" semantics remain). Telemetry privacy decision (5.0) locked. **Not started:** 5.3 formatting modes, 5.5 concurrency, 5.7 dogfood. Next build: **5.1 reliability/reconnect**.
 
 **Deliverables**
 - Custom vocabulary/dictionary, punctuation/formatting modes, undo, edit-while-correcting, robust error/reconnect handling.
