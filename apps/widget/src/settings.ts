@@ -100,67 +100,100 @@ async function patchConfig(patch: Partial<AppConfig>) {
 }
 
 // ---- vendor keys (Keychain, via 4.3's set_key/has_key/delete_key) ----
+// Two states per row:
+//   • unset  → password field + Save
+//   • locked → masked "•••• Saved" chip; a kebab (⋯) menu reveals Re-enter / Delete
+// so the destructive/entry controls aren't shown inline until the user opens the menu.
+function closeAllMenus() {
+  document.querySelectorAll<HTMLElement>(".key-menu.open").forEach((m) => m.classList.remove("open"));
+}
+document.addEventListener("click", closeAllMenus);
+
 function vendorRow(vendor: string): HTMLElement {
   const row = document.createElement("div");
   row.className = "vendor-row";
-  row.innerHTML = `
-    <div class="vendor-label"><span>${VENDOR_LABELS[vendor]}</span><span class="status" data-status></span></div>
-    <div class="row">
-      <input type="password" placeholder="${VENDOR_ENV[vendor]}" autocomplete="off" data-input />
-      <button data-save>Save</button>
-      <button data-clear>Clear</button>
-    </div>`;
-  const input = row.querySelector<HTMLInputElement>("[data-input]")!;
-  const status = row.querySelector<HTMLElement>("[data-status]")!;
-  const saveBtn = row.querySelector<HTMLButtonElement>("[data-save]")!;
-  const clearBtn = row.querySelector<HTMLButtonElement>("[data-clear]")!;
 
-  const refresh = () => {
-    status.textContent = hasKey[vendor] ? "✓ saved" : "not set";
-    status.classList.toggle("ok", hasKey[vendor]);
+  const render = () => {
+    if (hasKey[vendor]) {
+      row.innerHTML = `
+        <div class="vendor-head"><span class="name">${VENDOR_LABELS[vendor]}</span><span class="status ok">Saved</span></div>
+        <div class="row locked">
+          <div class="locked-key"><svg viewBox="0 0 24 24" class="ico lock"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><span>••••••••••••••••</span></div>
+          <div class="key-menu">
+            <button class="btn ghost kebab" data-kebab aria-label="Key options">⋯</button>
+            <div class="menu-pop">
+              <button data-reenter><svg viewBox="0 0 24 24" class="ico"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Re-enter key</button>
+              <button data-delete class="danger"><svg viewBox="0 0 24 24" class="ico"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>Delete key</button>
+            </div>
+          </div>
+        </div>`;
+      wireLocked();
+    } else {
+      row.innerHTML = `
+        <div class="vendor-head"><span class="name">${VENDOR_LABELS[vendor]}</span><span class="status">not set</span></div>
+        <div class="row">
+          <input type="password" placeholder="${VENDOR_ENV[vendor]}" autocomplete="off" data-input />
+          <button class="btn" data-save>Save</button>
+        </div>`;
+      wireUnset();
+    }
   };
-  refresh();
 
-  saveBtn.onclick = async () => {
-    const secret = input.value.trim();
+  const save = async (secret: string, statusEl?: HTMLElement) => {
     if (!secret) return;
-    status.textContent = "saving…";
     try {
       await invoke("set_key", { vendor, secret });
       hasKey[vendor] = true;
-      input.value = "";
-      refresh();
+      render();
       renderCapabilityErrors();
     } catch (e) {
-      status.textContent = "save failed: " + String(e);
-      status.classList.remove("ok");
+      if (statusEl) { statusEl.textContent = "save failed"; statusEl.classList.add("bad"); }
     }
   };
-  clearBtn.onclick = async () => {
-    try {
-      await invoke("delete_key", { vendor });
-      hasKey[vendor] = false;
-      refresh();
-      renderCapabilityErrors();
-    } catch (e) {
-      status.textContent = "clear failed: " + String(e);
-    }
-  };
+
+  function wireUnset() {
+    const input = row.querySelector<HTMLInputElement>("[data-input]")!;
+    const status = row.querySelector<HTMLElement>(".status")!;
+    row.querySelector<HTMLButtonElement>("[data-save]")!.onclick = () => save(input.value.trim(), status);
+    input.onkeydown = (e) => { if (e.key === "Enter") save(input.value.trim(), status); };
+  }
+
+  function wireLocked() {
+    const menu = row.querySelector<HTMLElement>(".key-menu")!;
+    row.querySelector<HTMLButtonElement>("[data-kebab]")!.onclick = (e) => {
+      e.stopPropagation();
+      const isOpen = menu.classList.contains("open");
+      closeAllMenus();
+      menu.classList.toggle("open", !isOpen);
+    };
+    row.querySelector<HTMLButtonElement>("[data-reenter]")!.onclick = () => {
+      closeAllMenus();
+      hasKey[vendor] = false; // drop to the entry state so a new key can be typed
+      render();
+      row.querySelector<HTMLInputElement>("[data-input]")?.focus();
+    };
+    row.querySelector<HTMLButtonElement>("[data-delete]")!.onclick = async () => {
+      closeAllMenus();
+      try {
+        await invoke("delete_key", { vendor });
+        hasKey[vendor] = false;
+        render();
+        renderCapabilityErrors();
+      } catch {}
+    };
+  }
+
+  render();
   return row;
 }
 
 async function initVendorKeys() {
-  for (const vendor of Object.keys(VENDOR_ENV)) {
-    vendorKeysEl.appendChild(vendorRow(vendor));
+  // Resolve key presence first so each row renders in its correct state once.
+  await Promise.all(Object.keys(VENDOR_ENV).map(async (vendor) => {
     try { hasKey[vendor] = await invoke<boolean>("has_key", { vendor }); } catch { hasKey[vendor] = false; }
-  }
-  // Re-render statuses now that has_key results are in (rows were built optimistically above).
-  vendorKeysEl.querySelectorAll<HTMLElement>(".vendor-row").forEach((row, i) => {
-    const vendor = Object.keys(VENDOR_ENV)[i];
-    const status = row.querySelector<HTMLElement>("[data-status]")!;
-    status.textContent = hasKey[vendor] ? "✓ saved" : "not set";
-    status.classList.toggle("ok", hasKey[vendor]);
-  });
+  }));
+  vendorKeysEl.innerHTML = "";
+  for (const vendor of Object.keys(VENDOR_ENV)) vendorKeysEl.appendChild(vendorRow(vendor));
   renderCapabilityErrors();
 }
 
@@ -319,18 +352,76 @@ async function refreshAxStatus() {
 openMicEl.onclick = () => { void invoke("open_mic_settings").catch(() => {}); setTimeout(() => void refreshMicStatus(), 1200); };
 openAxEl.onclick = () => { void invoke("open_accessibility_settings").catch(() => {}); setTimeout(() => void refreshAxStatus(), 1200); };
 
+// ---- nav: sidebar sections ↔ content panes ----
+function initNav() {
+  const items = Array.from(document.querySelectorAll<HTMLButtonElement>(".nav-item"));
+  const panes = Array.from(document.querySelectorAll<HTMLElement>(".pane"));
+  const show = (id: string) => {
+    items.forEach((b) => b.classList.toggle("active", b.dataset.pane === id));
+    panes.forEach((p) => p.classList.toggle("active", p.dataset.pane === id));
+    document.querySelector(".content")?.scrollTo({ top: 0 });
+  };
+  items.forEach((b) => (b.onclick = () => b.dataset.pane && show(b.dataset.pane)));
+  show("models"); // land on our headline feature
+
+  // Sidebar search filters nav items by label.
+  const search = $<HTMLInputElement>("navSearch");
+  search.oninput = () => {
+    const q = search.value.trim().toLowerCase();
+    items.forEach((b) => {
+      const label = b.textContent?.toLowerCase() ?? "";
+      b.classList.toggle("hidden", q.length > 0 && !label.includes(q));
+    });
+  };
+}
+
+// ---- theme: light / dark / system, persisted in localStorage ----
+function initTheme() {
+  const order = ["system", "light", "dark"] as const;
+  type Theme = (typeof order)[number];
+  const labelEl = $("themeLabel");
+  const seg = document.querySelectorAll<HTMLButtonElement>("[data-theme-opt]");
+  const apply = (t: Theme) => {
+    document.body.dataset.theme = t;
+    labelEl.textContent = t[0].toUpperCase() + t.slice(1);
+    seg.forEach((b) => b.classList.toggle("active", b.dataset.themeOpt === t));
+    try { localStorage.setItem("verbatim.theme", t); } catch {}
+  };
+  let current = ((): Theme => {
+    try { return (localStorage.getItem("verbatim.theme") as Theme) || "system"; } catch { return "system"; }
+  })();
+  apply(current);
+  $<HTMLButtonElement>("themeToggle").onclick = () => {
+    current = order[(order.indexOf(current) + 1) % order.length];
+    apply(current);
+  };
+  seg.forEach((b) => (b.onclick = () => { current = (b.dataset.themeOpt as Theme); apply(current); }));
+}
+
+// ---- dock icon toggle (real config field) ----
+function initDockIcon() {
+  const el = document.getElementById("dockIcon") as HTMLInputElement | null;
+  if (!el) return;
+  el.checked = !!config.dockIcon;
+  el.onchange = async () => { await patchConfig({ dockIcon: el.checked }); };
+}
+
 // `config-changed` fires from ANY writer (this window, or a future overlay/sidecar
 // listener) — keep the form in sync if the store changes from elsewhere.
 void listen<AppConfig>("config-changed", (e) => {
   config = e.payload;
   initProviderControls();
+  initDockIcon();
   refreshHotkeyUI();
   renderCapabilityErrors();
 });
 
 window.addEventListener("DOMContentLoaded", async () => {
+  initNav();
+  initTheme();
   try { config = await invoke<AppConfig>("get_config"); } catch {}
   initProviderControls();
+  initDockIcon();
   refreshHotkeyUI();
   void initVendorKeys();
   void refreshMicStatus();

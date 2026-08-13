@@ -1,163 +1,612 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Verbatim — Settings</title>
-  <style>
-    :root { color-scheme: light dark; }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: Canvas;
-      color: CanvasText;
-    }
-    .settings-page { padding: 20px 24px 28px; }
-    h1 { font-size: 17px; margin: 0 0 2px; }
-    .sub { opacity: 0.6; margin: 0 0 18px; font-size: 12px; }
-    section { margin-bottom: 22px; }
-    section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.55; margin: 0 0 10px; font-weight: 700; }
-    label { display: block; font-weight: 600; margin: 12px 0 5px; font-size: 12.5px; }
-    label:first-child { margin-top: 0; }
-    input[type="text"], input[type="password"], select {
-      width: 100%;
-      padding: 7px 9px;
-      font-size: 13px;
-      border: 1px solid color-mix(in srgb, CanvasText 25%, transparent);
-      border-radius: 7px;
-      background: Field;
-      color: FieldText;
-      font-family: inherit;
-    }
-    input:focus, select:focus, button:focus-visible { outline: 2px solid Highlight; outline-offset: 1px; }
-    .hint { opacity: 0.6; font-size: 11.5px; margin-top: 5px; }
-    .row { display: flex; gap: 8px; align-items: center; }
-    .row > input { flex: 1; }
-    button {
-      font: inherit; font-size: 12.5px; padding: 6px 12px; border-radius: 7px;
-      border: 1px solid color-mix(in srgb, CanvasText 25%, transparent);
-      background: color-mix(in srgb, Canvas 92%, CanvasText 8%);
-      color: CanvasText; cursor: pointer; white-space: nowrap;
-    }
-    button:hover { background: color-mix(in srgb, Canvas 85%, CanvasText 15%); }
-    button.primary { background: Highlight; color: HighlightText; border-color: transparent; }
-    button:disabled { opacity: 0.45; cursor: default; }
-    .vendor-row { margin-bottom: 14px; }
-    .vendor-row:last-child { margin-bottom: 0; }
-    .vendor-label { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 5px; }
-    .vendor-label span:first-child { font-weight: 600; font-size: 12.5px; }
-    .status { font-size: 11.5px; opacity: 0.65; }
-    .status.ok { opacity: 1; color: #1a7f37; }
-    .status.bad { color: #d1242f; }
-    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-    .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-    .presets button { font-size: 11.5px; padding: 4px 9px; }
-    .presets button.active { background: Highlight; color: HighlightText; border-color: transparent; }
-    #hotkeyCapture { font-variant-numeric: tabular-nums; }
-    #hotkeyCapture.recording { background: color-mix(in srgb, Highlight 18%, Field); }
-    .errors { list-style: none; margin: 0; padding: 0; }
-    .errors li {
-      font-size: 12px; padding: 7px 10px; border-radius: 7px; margin-bottom: 6px;
-      background: color-mix(in srgb, #d1242f 12%, Canvas); color: #d1242f;
-    }
-    .errors:empty::before {
-      content: "✓ Ready — this combination will run.";
-      display: block; font-size: 12px; padding: 7px 10px; border-radius: 7px;
-      background: color-mix(in srgb, #1a7f37 12%, Canvas); color: #1a7f37;
-    }
-    .perm-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-top: 1px solid color-mix(in srgb, CanvasText 12%, transparent); }
-    .perm-row:first-child { border-top: none; }
-  </style>
-</head>
-<body class="settings-window">
-  <main class="settings-page">
-    <h1>Settings</h1>
-    <p class="sub">Vendor-agnostic dictation — pick STT and correction independently, keys stay in your Keychain.</p>
-
-    <section>
-      <h2>Status</h2>
-      <ul id="capabilityErrors" class="errors"></ul>
-    </section>
-
-    <section>
-      <h2>Providers</h2>
-      <div class="grid2">
-        <div>
-          <label for="sttProvider">Speech-to-text</label>
-          <select id="sttProvider">
-            <option value="pyai">PyAI</option>
-            <option value="deepgram">Deepgram</option>
-            <option value="openai">OpenAI</option>
-          </select>
-          <label for="sttModel">STT model <span class="hint" style="display:inline">(optional)</span></label>
-          <input id="sttModel" type="text" placeholder="provider default" />
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Verbatim — Settings</title>
+    <link rel="icon" type="image/svg+xml" href="/verbatim-logo.svg" />
+    <link rel="stylesheet" href="/src/settings.css" />
+  </head>
+  <body class="settings-window" data-theme="system">
+    <div class="shell">
+      <!-- ───────────────────────── Sidebar ───────────────────────── -->
+      <aside class="sidebar">
+        <a class="back-link" href="/app.html">
+          <svg viewBox="0 0 24 24" class="ico"><path d="m15 18-6-6 6-6" /></svg>
+          <span>Back to app</span>
+        </a>
+        <div class="brand">
+          <img
+            class="brand-mark"
+            src="/verbatim-logo.svg"
+            alt="Verbatim"
+            width="32"
+            height="32"
+          />
+          <div class="brand-text">
+            <strong>Verbatim</strong>
+            <small>Settings</small>
+          </div>
         </div>
-        <div>
-          <label for="correctionProvider">Correction</label>
-          <select id="correctionProvider">
-            <option value="pyai">PyAI</option>
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic</option>
-          </select>
-          <label for="correctionModel">Correction model <span class="hint" style="display:inline">(optional)</span></label>
-          <input id="correctionModel" type="text" placeholder="provider default" />
+
+        <label class="search" role="search">
+          <svg viewBox="0 0 24 24" class="ico">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          <input
+            id="navSearch"
+            type="text"
+            placeholder="Search"
+            spellcheck="false"
+            autocomplete="off"
+          />
+          <kbd>⌘K</kbd>
+        </label>
+
+        <nav class="nav" id="nav">
+          <p class="nav-group">General</p>
+          <button class="nav-item" data-pane="preferences">
+            <svg viewBox="0 0 24 24" class="ico">
+              <circle cx="12" cy="12" r="3" />
+              <path
+                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+              />
+            </svg>
+            <span>Preferences</span>
+          </button>
+          <button class="nav-item" data-pane="dictation">
+            <svg viewBox="0 0 24 24" class="ico">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <path d="M12 19v3" />
+            </svg>
+            <span>Dictation</span>
+          </button>
+          <button class="nav-item" data-pane="shortcuts">
+            <svg viewBox="0 0 24 24" class="ico">
+              <rect x="2" y="4" width="20" height="16" rx="2" />
+              <path
+                d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"
+              />
+            </svg>
+            <span>Shortcuts</span>
+          </button>
+
+          <p class="nav-group">Intelligence</p>
+          <button class="nav-item" data-pane="models">
+            <svg viewBox="0 0 24 24" class="ico">
+              <path
+                d="M12 2a4 4 0 0 0-4 4 4 4 0 0 0-2 7 4 4 0 0 0 2 7 4 4 0 0 0 8 0 4 4 0 0 0 2-7 4 4 0 0 0-2-7 4 4 0 0 0-4-4z"
+              />
+              <path d="M12 6v12" />
+            </svg>
+            <span>Providers &amp; Keys</span>
+          </button>
+          <button class="nav-item" data-pane="labs">
+            <svg viewBox="0 0 24 24" class="ico">
+              <path
+                d="M9 2v6.2L4.5 17a2 2 0 0 0 1.8 3h11.4a2 2 0 0 0 1.8-3L15 8.2V2"
+              />
+              <path d="M8 2h8M8 13h8" />
+            </svg>
+            <span>Labs</span>
+          </button>
+
+          <p class="nav-group">System</p>
+          <button class="nav-item" data-pane="permissions">
+            <svg viewBox="0 0 24 24" class="ico">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              <path d="m9 12 2 2 4-4" />
+            </svg>
+            <span>Permissions</span>
+          </button>
+          <button class="nav-item" data-pane="vocabulary">
+            <svg viewBox="0 0 24 24" class="ico">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+              <path
+                d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"
+              />
+            </svg>
+            <span>Vocabulary</span>
+          </button>
+          <button class="nav-item" data-pane="snippets">
+            <svg viewBox="0 0 24 24" class="ico">
+              <path d="m8 6-6 6 6 6M16 6l6 6-6 6" />
+            </svg>
+            <span>Snippets</span>
+          </button>
+          <button class="nav-item" data-pane="advanced">
+            <svg viewBox="0 0 24 24" class="ico">
+              <path d="M4 6h16M4 12h16M4 18h16" />
+              <circle cx="8" cy="6" r="2" />
+              <circle cx="16" cy="12" r="2" />
+              <circle cx="10" cy="18" r="2" />
+            </svg>
+            <span>Advanced</span>
+          </button>
+          <button class="nav-item" data-pane="about">
+            <svg viewBox="0 0 24 24" class="ico">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 16v-4M12 8h.01" />
+            </svg>
+            <span>About</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-foot">
+          <button id="themeToggle" class="theme-toggle" title="Toggle theme">
+            <svg viewBox="0 0 24 24" class="ico ico-sun">
+              <circle cx="12" cy="12" r="4" />
+              <path
+                d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
+              />
+            </svg>
+            <svg viewBox="0 0 24 24" class="ico ico-moon">
+              <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+            </svg>
+            <span id="themeLabel">System</span>
+          </button>
+          <div class="user">
+            <span class="avatar">VT</span>
+            <span>Vishad Thusu</span>
+          </div>
         </div>
-      </div>
-      <label for="language">Language</label>
-      <select id="language">
-        <option value="en">English (en)</option>
-        <option value="es">Spanish (es)</option>
-        <option value="fr">French (fr)</option>
-        <option value="de">German (de)</option>
-        <option value="hi">Hindi (hi)</option>
-        <option value="ja">Japanese (ja)</option>
-        <option value="zh">Chinese (zh)</option>
-        <option value="other">Other…</option>
-      </select>
-      <input id="languageCustom" type="text" placeholder="BCP-47 tag, e.g. pt-BR" style="margin-top:6px; display:none" />
-      <p class="hint" id="languageHint"></p>
-    </section>
+      </aside>
 
-    <section>
-      <h2>API keys</h2>
-      <div id="vendorKeys"></div>
-    </section>
+      <!-- ───────────────────────── Content ───────────────────────── -->
+      <main class="content" id="content">
+        <!-- Preferences -->
+        <section class="pane" data-pane="preferences">
+          <header class="pane-head">
+            <h1>Preferences</h1>
+            <p>Customize application behavior and appearance.</p>
+          </header>
+          <div class="card">
+            <div class="set-row">
+              <div class="meta">
+                <h3>Appearance <span class="tag off">Not in use</span></h3>
+                <p>
+                  Light, dark, or match the system. Live in-app theme is
+                  available from the toggle below.
+                </p>
+              </div>
+              <div class="seg" id="themeSeg">
+                <button data-theme-opt="light">Light</button>
+                <button data-theme-opt="dark">Dark</button>
+                <button data-theme-opt="system" class="active">System</button>
+              </div>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>Launch at login <span class="tag off">Not in use</span></h3>
+                <p>Automatically start Verbatim when you log in.</p>
+              </div>
+              <label class="switch disabled"
+                ><input type="checkbox" disabled /><span></span
+              ></label>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>
+                  Show widget while inactive
+                  <span class="tag off">Not in use</span>
+                </h3>
+                <p>Keep the overlay visible on screen when not recording.</p>
+              </div>
+              <label class="switch disabled"
+                ><input type="checkbox" disabled checked /><span></span
+              ></label>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>Show app in dock</h3>
+                <p>Display the application icon in the macOS dock.</p>
+              </div>
+              <label class="switch"
+                ><input type="checkbox" id="dockIcon" /><span></span
+              ></label>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>
+                  Mute dictation sounds <span class="tag off">Not in use</span>
+                </h3>
+                <p>Disable the start and stop chimes when recording.</p>
+              </div>
+              <label class="switch disabled"
+                ><input type="checkbox" disabled /><span></span
+              ></label>
+            </div>
+          </div>
+        </section>
 
-    <section>
-      <h2>Hotkey</h2>
-      <div class="row">
-        <input id="hotkeyCapture" type="text" readonly value="Click, then press a key combo" />
-        <button id="hotkeyClear" title="Reset to ⌥Space">Reset</button>
-      </div>
-      <p class="hint">Needs at least one modifier (⌥/⌃/⌘/⇧). Or pick a quick preset:</p>
-      <div class="presets" id="hotkeyPresets">
-        <button data-hk="alt-space">⌥Space</button>
-        <button data-hk="ctrl-space">⌃Space</button>
-        <button data-hk="cmd-shift-d">⌘⇧D</button>
-        <button data-hk="ctrl-alt-d">⌃⌥D</button>
-        <button data-hk="alt-grave">⌥`</button>
-      </div>
-    </section>
+        <!-- Dictation -->
+        <section class="pane" data-pane="dictation">
+          <header class="pane-head">
+            <h1>Dictation</h1>
+            <p>Configure language, microphone, and transcription behavior.</p>
+          </header>
+          <div class="card">
+            <div class="set-row">
+              <div class="meta">
+                <h3>Language</h3>
+                <p>
+                  The language you dictate in. PyAI Hear is English-only — pick
+                  Deepgram or OpenAI for other languages.
+                </p>
+              </div>
+              <div class="control-col">
+                <select id="language">
+                  <option value="en">English (en)</option>
+                  <option value="es">Spanish (es)</option>
+                  <option value="fr">French (fr)</option>
+                  <option value="de">German (de)</option>
+                  <option value="hi">Hindi (hi)</option>
+                  <option value="ja">Japanese (ja)</option>
+                  <option value="zh">Chinese (zh)</option>
+                  <option value="other">Other…</option>
+                </select>
+                <input
+                  id="languageCustom"
+                  type="text"
+                  placeholder="BCP-47 tag, e.g. pt-BR"
+                  style="display: none"
+                />
+              </div>
+            </div>
+            <p class="hint" id="languageHint" style="padding: 0 20px 4px"></p>
+            <div class="set-row">
+              <div class="meta">
+                <h3>
+                  Auto-detect language <span class="tag off">Not in use</span>
+                </h3>
+                <p>
+                  Automatically detect the spoken language instead of a fixed
+                  choice.
+                </p>
+              </div>
+              <label class="switch disabled"
+                ><input type="checkbox" disabled /><span></span
+              ></label>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>Microphone <span class="tag off">Not in use</span></h3>
+                <p>Choose your preferred input device.</p>
+              </div>
+              <select disabled>
+                <option>System Default</option>
+              </select>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>Formatting <span class="tag alpha">Alpha</span></h3>
+                <p>
+                  Apply punctuation and structure to raw transcripts. Handled by
+                  the correction provider.
+                </p>
+              </div>
+              <label class="switch disabled"
+                ><input type="checkbox" disabled /><span></span
+              ></label>
+            </div>
+          </div>
+        </section>
 
-    <section>
-      <h2>While dictating</h2>
-      <label class="perm-row"><input type="checkbox" id="muteOthers" /> Mute other audio while listening</label>
-      <p class="hint">Silences system output during dictation so music or video doesn't bleed into the mic; your volume is restored when you stop.</p>
-    </section>
+        <!-- Shortcuts -->
+        <section class="pane" data-pane="shortcuts">
+          <header class="pane-head">
+            <h1>Shortcuts</h1>
+            <p>Global keyboard shortcuts for dictation and hands-free modes.</p>
+          </header>
+          <div class="card">
+            <div class="set-row">
+              <div class="meta">
+                <h3>Toggle dictation</h3>
+                <p>
+                  Press once to start, again to stop. Needs at least one
+                  modifier (⌥/⌃/⌘/⇧).
+                </p>
+              </div>
+              <div class="control-col align-end">
+                <div class="hotkey-row">
+                  <input
+                    id="hotkeyCapture"
+                    class="hotkey"
+                    type="text"
+                    readonly
+                    value="Click, then press a combo"
+                  />
+                  <button
+                    id="hotkeyClear"
+                    class="btn ghost"
+                    title="Reset to ⌥Space"
+                  >
+                    Reset
+                  </button>
+                </div>
+                <div class="presets" id="hotkeyPresets">
+                  <button data-hk="alt-space">⌥Space</button>
+                  <button data-hk="ctrl-space">⌃Space</button>
+                  <button data-hk="cmd-shift-d">⌘⇧D</button>
+                  <button data-hk="ctrl-alt-d">⌃⌥D</button>
+                  <button data-hk="alt-grave">⌥`</button>
+                </div>
+              </div>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>Push to talk <span class="tag off">Not in use</span></h3>
+                <p>Hold to dictate while the key is pressed.</p>
+              </div>
+              <span class="kbd-group"><kbd>Fn</kbd></span>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>
+                  Paste last transcript <span class="tag off">Not in use</span>
+                </h3>
+                <p>Paste your most recent transcription into the active app.</p>
+              </div>
+              <span class="kbd-group"
+                ><kbd>⌘</kbd><kbd>⌃</kbd><kbd>V</kbd></span
+              >
+            </div>
+          </div>
+        </section>
 
-    <section>
-      <h2>Permissions</h2>
-      <div class="perm-row">
-        <span id="micStatus" class="status">Checking…</span>
-        <button id="openMic">Open Settings</button>
-      </div>
-      <div class="perm-row">
-        <span id="axStatus" class="status">Checking…</span>
-        <button id="openAx">Open Settings</button>
-      </div>
-    </section>
-  </main>
-  <script type="module" src="/src/settings.ts"></script>
-</body>
+        <!-- Providers, Models & Keys -->
+        <section class="pane" data-pane="models">
+          <header class="pane-head">
+            <h1>Providers &amp; Keys</h1>
+            <p>
+              Vendor-agnostic dictation — pick speech-to-text and correction
+              independently. Keys stay in your Keychain.
+            </p>
+          </header>
+          <ul id="capabilityErrors" class="errors"></ul>
+          <h2 class="section-title">Models</h2>
+          <div class="card">
+            <div class="set-row">
+              <div class="meta">
+                <h3>Speech-to-text</h3>
+                <p>Transcribes your audio into raw text.</p>
+              </div>
+              <div class="control-col align-end">
+                <select id="sttProvider">
+                  <option value="pyai">PyAI Hear</option>
+                  <option value="deepgram">Deepgram</option>
+                  <option value="openai">OpenAI</option>
+                </select>
+                <input
+                  id="sttModel"
+                  type="text"
+                  placeholder="model — provider default"
+                />
+              </div>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>Correction</h3>
+                <p>
+                  Cleans fillers, repetitions and self-corrections from the
+                  transcript.
+                </p>
+              </div>
+              <div class="control-col align-end">
+                <select id="correctionProvider">
+                  <option value="pyai">PyAI</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                </select>
+                <input
+                  id="correctionModel"
+                  type="text"
+                  placeholder="model — provider default"
+                />
+              </div>
+            </div>
+          </div>
+
+          <h2 class="section-title">
+            API Keys
+            <span class="section-note"
+              >Stored in the macOS Keychain — never written to disk in
+              plaintext.</span
+            >
+          </h2>
+          <div class="card" id="vendorKeys"></div>
+        </section>
+
+        <!-- Labs -->
+        <section class="pane" data-pane="labs">
+          <header class="pane-head">
+            <h1>Labs</h1>
+            <p>Opt into experimental features before they become defaults.</p>
+          </header>
+          <div class="card">
+            <div class="set-row">
+              <div class="meta">
+                <h3>
+                  Self-correction <span class="tag cloud">Cloud only</span>
+                </h3>
+                <p>
+                  Applies spoken corrections and revisions so your final
+                  dictation reflects what you meant. Active whenever a
+                  correction provider is configured.
+                </p>
+              </div>
+              <label class="switch disabled"
+                ><input type="checkbox" disabled checked /><span></span
+              ></label>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>Draft mode <span class="tag off">Not in use</span></h3>
+                <p>
+                  Hold to speak an instruction; review the generated text, then
+                  insert it.
+                </p>
+              </div>
+              <label class="switch disabled"
+                ><input type="checkbox" disabled /><span></span
+              ></label>
+            </div>
+          </div>
+        </section>
+
+        <!-- Permissions -->
+        <section class="pane" data-pane="permissions">
+          <header class="pane-head">
+            <h1>Permissions</h1>
+            <p>
+              Verbatim needs these macOS permissions to capture audio and insert
+              text.
+            </p>
+          </header>
+          <div class="card">
+            <div class="set-row">
+              <div class="meta">
+                <h3>Microphone</h3>
+                <p id="micStatus" class="status">Checking…</p>
+              </div>
+              <button id="openMic" class="btn">Open Settings</button>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>Accessibility</h3>
+                <p id="axStatus" class="status">Checking…</p>
+              </div>
+              <button id="openAx" class="btn">Open Settings</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Vocabulary -->
+        <section class="pane" data-pane="vocabulary">
+          <header class="pane-head">
+            <h1>Vocabulary <span class="tag off">Not in use</span></h1>
+            <p>Teach Verbatim custom words, names, and spellings.</p>
+          </header>
+          <div class="card empty">
+            <svg viewBox="0 0 24 24" class="empty-ico">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+              <path
+                d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"
+              />
+            </svg>
+            <h3>Not available yet</h3>
+            <p>
+              Custom vocabulary isn't part of this build. It's on the roadmap.
+            </p>
+          </div>
+        </section>
+
+        <!-- Snippets -->
+        <section class="pane" data-pane="snippets">
+          <header class="pane-head">
+            <h1>Snippets <span class="tag off">Not in use</span></h1>
+            <p>Expand short spoken triggers into longer phrases.</p>
+          </header>
+          <div class="card empty">
+            <svg viewBox="0 0 24 24" class="empty-ico">
+              <path d="m8 6-6 6 6 6M16 6l6 6-6 6" />
+            </svg>
+            <h3>Not available yet</h3>
+            <p>
+              Voice snippets aren't part of this build. It's on the roadmap.
+            </p>
+          </div>
+        </section>
+
+        <!-- Advanced -->
+        <section class="pane" data-pane="advanced">
+          <header class="pane-head">
+            <h1>Advanced</h1>
+            <p>Advanced configuration and diagnostics.</p>
+          </header>
+          <div class="card">
+            <div class="set-row">
+              <div class="meta">
+                <h3>
+                  Preload speech model <span class="tag off">Not in use</span>
+                </h3>
+                <p>Load the model at startup for faster first transcription.</p>
+              </div>
+              <label class="switch disabled"
+                ><input type="checkbox" disabled checked /><span></span
+              ></label>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>Debug mode <span class="tag off">Not in use</span></h3>
+                <p>Enable detailed logging (also via HEAR_DEBUG env).</p>
+              </div>
+              <label class="switch disabled"
+                ><input type="checkbox" disabled /><span></span
+              ></label>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>
+                  Anonymous telemetry <span class="tag off">Not in use</span>
+                </h3>
+                <p>Help improve Verbatim by sharing anonymous usage data.</p>
+              </div>
+              <label class="switch disabled"
+                ><input type="checkbox" disabled /><span></span
+              ></label>
+            </div>
+          </div>
+          <div class="card danger">
+            <div class="set-row">
+              <div class="meta">
+                <h3>Reset settings <span class="tag off">Not in use</span></h3>
+                <p>
+                  Clear stored configuration and start fresh. Keychain keys are
+                  kept.
+                </p>
+              </div>
+              <button class="btn danger-btn" disabled>Reset</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- About -->
+        <section class="pane" data-pane="about">
+          <header class="pane-head">
+            <h1>About</h1>
+            <p>Version information and resources.</p>
+          </header>
+          <div class="card">
+            <div class="set-row">
+              <div class="meta">
+                <h3>Current version</h3>
+                <p>
+                  Verbatim — real-time, vendor-agnostic dictation with visible
+                  corrections.
+                </p>
+              </div>
+              <span class="version">v0.1.0</span>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>Repository</h3>
+                <p>Source code and issue tracking.</p>
+              </div>
+              <a
+                class="btn"
+                href="https://github.com/verbatimai/verbatim"
+                target="_blank"
+                rel="noopener"
+                >GitHub ↗</a
+              >
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/src/settings.ts"></script>
+  </body>
 </html>

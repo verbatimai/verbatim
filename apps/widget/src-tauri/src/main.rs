@@ -56,13 +56,17 @@ fn hide_widget(app: tauri::AppHandle) {
     }
 }
 
-// ── Phase 4.2: the focusable Settings window ──────────────────────────────────
+// ── Phase 4.2: the focusable app window (hosts History + the Settings tab) ─────
 // The overlay ("main") is a non-key NSPanel and can never accept typed input — that's
-// what lets injected text land in the app underneath. The Settings window is an ordinary
-// focusable NSWindow. A menu-bar app runs as `Accessory` (no Dock icon, never frontmost,
-// so the overlay never steals focus); to give the Settings window keyboard focus we must
-// briefly switch the app to `Regular`, then revert to `Accessory` when it closes (see the
-// CloseRequested handler in setup). The overlay panel stays non-key throughout.
+// what lets injected text land in the app underneath. The app window (label "settings",
+// loading app.html) is an ordinary focusable NSWindow. A menu-bar app runs as `Accessory`
+// (no Dock icon, never frontmost, so the overlay never steals focus); to give this window
+// keyboard focus we must briefly switch the app to `Regular`, then revert to `Accessory`
+// when it closes (see the CloseRequested handler in setup). The overlay panel stays non-key.
+//
+// The window loads the main app shell (app.html). The tray/hotkey "Settings…" entrypoint
+// deep-links to the in-app Settings tab (settings.html) before showing, so it lands there
+// with no visible History flash; "Back to app" inside returns to History.
 fn open_settings_window(app: &tauri::AppHandle) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
@@ -70,6 +74,8 @@ fn open_settings_window(app: &tauri::AppHandle) -> Result<(), String> {
     let win = app
         .get_webview_window("settings")
         .ok_or_else(|| "no 'settings' window".to_string())?;
+    // Route to the Settings surface while still hidden (avoids a History flash on open).
+    let _ = win.eval("if(!location.pathname.endsWith('/settings.html')){location.replace('/settings.html');}");
     win.show().map_err(|e| e.to_string())?;
     win.set_focus().map_err(|e| e.to_string())?;
     Ok(())
