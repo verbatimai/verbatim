@@ -44,6 +44,7 @@ const keyStatus = $("keyStatus");
 const pasteKey = $<HTMLButtonElement>("pasteKey"), clearKey = $<HTMLButtonElement>("clearKey");
 const hotkeyPicker = $("hotkeyPicker");
 const axStatus = $("axStatus"), openAxSettings = $<HTMLButtonElement>("openAxSettings");
+const muteOthersToggle = $<HTMLInputElement>("muteOthers");
 const PYAI_KEY = "PYAI_API_KEY";
 
 async function refreshKeyStatus() {
@@ -75,11 +76,16 @@ async function refreshAxStatus() {
   } catch (e) { axStatus.textContent = "Couldn't check: " + String(e); }
 }
 
+async function refreshMuteOthers() {
+  try { const cfg = await invoke<any>("get_config"); muteOthersToggle.checked = !!cfg?.muteOthers; } catch {}
+}
+
 function openSettings() {
   card.classList.add("settings-open");
   void refreshKeyStatus();
   void refreshHotkey();
   void refreshAxStatus();
+  void refreshMuteOthers();
 }
 function closeSettings() { card.classList.remove("settings-open"); }
 
@@ -100,14 +106,23 @@ async function monitorLogical() {
 }
 
 async function setView(v: "orb" | "card") {
-  const card = v === "card";
-  root.classList.toggle("card-view", card);
-  root.classList.toggle("orb-view", !card);
-  const w = card ? CARD_W : ORB, h = card ? CARD_H : ORB;
+  const isCard = v === "card";
+  root.classList.toggle("card-view", isCard);
+  root.classList.toggle("orb-view", !isCard);
+  const w = isCard ? CARD_W : ORB, h = isCard ? CARD_H : ORB;
   try {
-    await appWin.setSize(new LogicalSize(w, h));
-    if (card) {
-      // Open the card anchored on the orb's spot (centred on it), clamped on-screen.
+    if (isCard) {
+      // Capture the orb's REAL current position (wherever it was dragged to) straight
+      // from the window BEFORE resizing — don't trust the orbPos variable, which can be
+      // stale if a drag didn't update it. This is the anchor for the card, and also what
+      // the orb returns to on close.
+      try {
+        const s = await appWin.scaleFactor();
+        const p = await appWin.outerPosition();
+        orbPos = { x: p.x / s, y: p.y / s };
+      } catch {}
+      await appWin.setSize(new LogicalSize(w, h));
+      // Open the card centred on the orb's spot, clamped on-screen.
       const a = orbPos ?? { x: 0, y: 0 };
       let x = a.x + ORB / 2 - w / 2;
       let y = a.y + ORB / 2 - h / 2;
@@ -117,9 +132,10 @@ async function setView(v: "orb" | "card") {
         y = clampN(y, m.oy + 8, m.oy + m.h - h - 8);
       }
       await appWin.setPosition(new LogicalPosition(x, y));
-    } else if (orbPos) {
+    } else {
+      await appWin.setSize(new LogicalSize(w, h));
       // Restore the orb to exactly where the user left it.
-      await appWin.setPosition(new LogicalPosition(orbPos.x, orbPos.y));
+      if (orbPos) await appWin.setPosition(new LogicalPosition(orbPos.x, orbPos.y));
     }
   } catch {}
 }
@@ -383,6 +399,7 @@ async function startLive() {
   }
   // Mic works — make sure no stale permission banner lingers.
   clearBanner();
+  void muteOthersForSession(); // silence system output while dictating (if enabled)
   reset();
   buttonsBusy();
   // BYOK: hand the Keychain key (if any) to the local backend for this session.
@@ -410,6 +427,29 @@ function teardownAudio() {
   processor?.disconnect(); processor = null;
   audioCtx?.close().catch(() => {}); audioCtx = null;
   micStream?.getTracks().forEach((t) => t.stop()); micStream = null;
+  void restoreOthersAudio(); // un-mute system output if we muted it for this session
+}
+
+// Mute other system audio while dictating (config.muteOthers). We remember the prior
+// mute state and only mute if it wasn't already muted — restoring on teardown never
+// changes the user's actual volume level.
+let mutedBySession = false;
+let prevOutputMuted = false;
+async function muteOthersForSession() {
+  try {
+    const cfg = await invoke<any>("get_config");
+    if (!cfg?.muteOthers) return;
+    prevOutputMuted = await invoke<boolean>("get_output_muted");
+    if (!prevOutputMuted) {
+      await invoke("set_output_muted", { muted: true });
+      mutedBySession = true;
+    }
+  } catch {}
+}
+async function restoreOthersAudio() {
+  if (!mutedBySession) return;
+  mutedBySession = false;
+  try { await invoke("set_output_muted", { muted: prevOutputMuted }); } catch {}
 }
 
 function stop() {
@@ -462,6 +502,10 @@ openAxSettings.onclick = () => {
   void invoke("open_accessibility_settings").catch(() => {});
   // Re-check shortly after, in case they grant it and come back.
   setTimeout(() => void refreshAxStatus(), 1200);
+};
+// Persist the "mute other audio while dictating" preference into the config store.
+muteOthersToggle.onchange = () => {
+  void invoke("set_config", { patch: { muteOthers: muteOthersToggle.checked } }).catch(() => {});
 };
 
 // Orb: click to dictate, drag to reposition. Distinguish the two by movement.

@@ -101,6 +101,7 @@ struct AppConfig {
     language: String,            // BCP-47 tag, default "en"
     hotkey: String,              // preset id or captured accelerator (e.g. "Alt+Space")
     dock_icon: bool,
+    mute_others: bool,           // mute system audio output while dictating (restored on stop)
 }
 
 impl Default for AppConfig {
@@ -113,6 +114,7 @@ impl Default for AppConfig {
             language: "en".into(),
             hotkey: "alt-space".into(),
             dock_icon: false,
+            mute_others: true,
         }
     }
 }
@@ -340,6 +342,47 @@ fn ax_trusted() -> bool {
     #[cfg(not(target_os = "macos"))]
     {
         true
+    }
+}
+
+// ── Mute other audio while dictating ──────────────────────────────────────────
+// When enabled (config.muteOthers), the webview mutes the system output at the start
+// of a dictation and restores the prior state on stop — so music/video doesn't bleed
+// into the mic. We toggle the *muted* flag only (never the volume level), so unmuting
+// returns to exactly the level the user had. macOS-only via AppleScript; no-op else.
+
+// Is the system audio OUTPUT currently muted? Read before muting so we can restore it.
+#[tauri::command]
+fn get_output_muted() -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let out = std::process::Command::new("osascript")
+            .args(["-e", "output muted of (get volume settings)"])
+            .output()
+            .map_err(|e| e.to_string())?;
+        Ok(String::from_utf8_lossy(&out.stdout).trim().eq_ignore_ascii_case("true"))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(false)
+    }
+}
+
+#[tauri::command]
+fn set_output_muted(muted: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let val = if muted { "true" } else { "false" };
+        std::process::Command::new("osascript")
+            .args(["-e", &format!("set volume output muted {val}")])
+            .status()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = muted;
+        Ok(())
     }
 }
 
@@ -775,6 +818,8 @@ fn main() {
             open_mic_settings,
             open_accessibility_settings,
             ax_trusted,
+            get_output_muted,
+            set_output_muted,
             get_toggle_hotkey,
             set_toggle_hotkey,
             copy_text,

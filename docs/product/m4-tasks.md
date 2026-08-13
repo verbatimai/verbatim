@@ -135,7 +135,7 @@ Move settings into the focusable window with **real** controls. *(merges desktop
 
 ## Phase 4.8 — Wire overlay + pipeline to config, via the sidecar
 
-Make settings changes take effect live, with keys never crossing the renderer. *(merges desktop-app Phase 4 + the "drop the dev backend" step — reconciled to the 4.0 sidecar transport, NOT the old desktop plan's `start`-message-carries-`apiKey` path.)*
+Make settings changes take effect live, with keys never crossing the renderer. *(merges desktop-app Phase 4 + the "drop the dev backend" step — reconciled to the 4.0 sidecar transport, NOT the old desktop plan's `start`-message-carries-`apiKey` path.)* **Code-level implementation plan: `m4.8-sidecar-plan.md`.**
 
 - [ ] **App owns the sidecar:** the widget spawns the bundled Node backend as a Tauri sidecar; **Rust reads the Keychain and passes the selected keys to it via env/stdin** — the renderer never sees a key. The webview streams mic PCM over loopback as today. `apps/backend` remains an optional standalone proxy, clearly marked; the default run path no longer needs a manual `npm run`. Update `npm run widget` so the sidecar lifecycle is automatic.
 - [ ] **Live re-config:** on `config-changed`, the overlay re-registers the hotkey and the next dictation session uses the selected STT/correction provider + model + language. The `start` message carries **only** non-secret session config (provider/model/language) — the key is resolved Rust-side into the sidecar.
