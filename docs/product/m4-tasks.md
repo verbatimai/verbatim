@@ -100,10 +100,10 @@ Both adapters shipped behind the existing interfaces + registered. **Cloud-teste
 - [x] Mock-server integration tests, **all green in cloud**: correction (auth + json_schema request shape, reconstruct-validates, refusal, retry, exhaustion) = 5; STT (headers, pcm16 config, base64 append, delta→active / completed→final+endpoint, batch multipart) = 2. Full-package `tsc --noEmit` clean.
 - [ ] **Live on-Mac verification** (deferred to 4.10): real Realtime session (the `transcription_session.*` message names + ephemeral-token path are documented-but-unproven) and real batch transcription; `sendAudio` assumes capture feeds the provider's declared 24 kHz (wire it in 4.8).
 
-## Phase 4.6 — Anthropic correction adapter
+## Phase 4.6 — Anthropic correction adapter  ·  ✅ DONE (13 Aug 2026)
 
-- [ ] `POST /v1/messages` with **forced tool-use** (`emit_correction` tool, `input_schema` = compact-edits schema, `tool_choice:{type:"tool"}`) → parse the `tool_use` block's `input`; reuse the shared reconstructor. This is the "structured ops done right" path (native tool-use, unlike PyAI's JSON-in-text workaround).
-- [ ] Mock-server integration test (tool_use response → edits → `reconstruct` valid).
+- [x] `POST /v1/messages` with **forced tool-use** (`emit_correction` tool, `input_schema` = compact-edits schema, `tool_choice:{type:"tool"}`) → parse the `tool_use` block's `input`; reuse the shared reconstructor. This is the "structured ops done right" path (native tool-use, unlike PyAI's JSON-in-text workaround). Implemented in `packages/core/src/correction/anthropic.ts`, registered in `correction/registry.ts`. `format()` also implemented (plain-text pass, no forced tool) for parity with the other adapters and so the real pipeline's formatting step works when "anthropic" is selected.
+- [x] Mock-server integration test (tool_use response → edits → `reconstruct` valid) — `packages/core/src/correction/anthropic.integration.test.ts` (4 tests: request shape/auth, happy path, drift fallback, non-2xx, format). Full core suite green (64 tests), `tsc --noEmit` clean.
 
 *(4.4 / 4.5 / 4.6 have no interdependencies once 4.0 + 4.1 land — they can be built in parallel against mock servers using dev `.env` keys, before or alongside the window/keychain phases.)*
 
