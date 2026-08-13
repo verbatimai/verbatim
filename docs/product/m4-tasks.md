@@ -20,18 +20,15 @@ So M4 is **finish one adapter, add three, add a keychain + settings layer, and l
 
 ---
 
-## Phase 4.0 — Design spike / decisions (do FIRST, de-risk)
+## Phase 4.0 — Design spike / decisions (do FIRST, de-risk)  ·  ✅ DONE (13 Aug 2026)
 
-The one real unknown that can reshape the build. Resolve before writing adapter code.
+**Decided → full analysis in `docs/architecture/vendor-transport.md`.** The one real unknown; resolved before any adapter code.
 
-- [ ] **Decide the WS-auth transport for client-direct STT.** Browsers/webviews **cannot set WebSocket `Authorization` headers**. PyAI Hear and Deepgram both authenticate via header today; Deepgram also supports a **token subprotocol** (`["token", KEY]`), OpenAI Realtime uses a query/beta-header path. Three viable models — pick one and document it:
-  - **(A) Rust-side STT client (recommended).** The widget already has a Rust core; run the STT WebSocket **in Rust** (it can set headers, holds the keychain key, never exposes it to the webview) and bridge normalized `TranscriptEvent`s to the webview over the existing Tauri event channel. Cleanest security story; biggest Rust lift.
-  - **(B) Subprotocol/query auth from the webview.** Works for Deepgram (subprotocol) and OpenAI (query), **not** for PyAI-header-only — would keep a thin local proxy for PyAI. Least Rust, but leaks keys into the renderer.
-  - **(C) Keep `apps/backend` as an optional local proxy.** Simplest, but contradicts "drop the dev backend" as the default. Reserve as the commercial hosted-proxy path (per plan §13), not the OSS default.
-- [ ] **Confirm the [verify] items** from `vendor-apis.md`: OpenAI Realtime WS URL + `intent=transcription` + beta header; Anthropic forced-tool-use for structured ops (works natively — PyAI's tool-use 503 is a PyAI-only limitation, F1).
-- [ ] **Lock the settings/config schema** (`AppSettings`): `{ sttProvider, correctionProvider, language, keys: Record<vendor,string> }` — one shape shared by core, Rust keychain, and the settings UI.
+- [x] **WS-auth transport decided: (C′) Rust-managed local sidecar.** Reframing from reading the code: the WS-header limit only bites **streaming STT** — correction/format/batch are HTTPS and take a header from any `fetch`. Verified: PyAI Hear is **header-only**, and **OpenAI Realtime needs a server-minted ephemeral token** for browsers (raw key only allowed on a "secure backend") — so a renderer-direct design (B) is a dead end and leaks keys. Chosen: the app **spawns the existing Node backend as a bundled Tauri sidecar**; Rust reads the Keychain and hands the selected keys to it via env/stdin (**never through the renderer**); the webview streams mic PCM over loopback as today. Reuses 100% of the tested TS core; fixes the key-in-renderer smell. **(A) Rust-native STT kept as a future (M6) optimization.** → refines 4.2 below: "drop the dev backend" = the app owns the sidecar's lifecycle (no manual `npm run`, no renderer key-path), the code stays.
+- [x] **[verify] items confirmed** (logged in `vendor-transport.md` §2): OpenAI Realtime `wss://api.openai.com/v1/realtime?model=…`, raw key OK on a secure backend / ephemeral+WebRTC for browsers, **models renamed** `gpt-live-transcribe` (stream) / `gpt-transcribe` (post-turn), 24 kHz PCM, `…transcription.delta`/`.completed` events → **`vendor-apis.md` §2 needs the model-id update (fold into 4.4)**. Deepgram token-subprotocol + short-lived-token auth confirmed. Anthropic forced tool-use confirmed (already live in `vendor-apis.md`).
+- [x] **`AppSettings` schema locked** (see `vendor-transport.md` §5): `{ sttProvider, correctionProvider, language }` — **no keys in it** (secrets stay in the Keychain, keyed by each provider's `requiredKeys[]`). Non-secret settings persist as JSON via `tauri-plugin-store`.
 
-**Gate:** the WS-auth decision (A/B/C) is documented in `docs/architecture/` before 4.3–4.5, because it determines where each STT adapter's socket lives.
+**Gate:** ✅ cleared — the transport decision is documented in `docs/architecture/vendor-transport.md`, so 4.3–4.5 can start against a fixed plumbing model.
 
 ---
 
