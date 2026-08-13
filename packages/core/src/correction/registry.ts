@@ -1,7 +1,7 @@
 import type { CorrectionProvider } from "./types";
 import { PyAiCorrection } from "./pyai";
 import { MockCorrection } from "./mock";
-// import { AnthropicCorrection } from "./anthropic";
+import { AnthropicCorrection } from "./anthropic";
 // import { OpenAiCorrection } from "./openai";
 
 // All correction adapters share prompt.ts (system prompt + reconstruct), so a
@@ -9,7 +9,7 @@ import { MockCorrection } from "./mock";
 const PROVIDERS: Record<string, () => CorrectionProvider> = {
   pyai: () => new PyAiCorrection(),
   mock: () => new MockCorrection(), // offline canned/heuristic correction
-  // anthropic: () => new AnthropicCorrection(),
+  anthropic: () => new AnthropicCorrection(),
   // openai: () => new OpenAiCorrection(),
 };
 

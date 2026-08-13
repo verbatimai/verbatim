@@ -97,10 +97,10 @@ One persistence layer in Rust — the widget's single source of truth — read/w
 - [ ] Fold the 4.0 model-id update into `vendor-apis.md` §2.
 - [ ] Mock-server integration tests for both (auth, event parse, mapping, reconstruct-validates).
 
-## Phase 4.6 — Anthropic correction adapter
+## Phase 4.6 — Anthropic correction adapter  ·  ✅ DONE (13 Aug 2026)
 
-- [ ] `POST /v1/messages` with **forced tool-use** (`emit_correction` tool, `input_schema` = compact-edits schema, `tool_choice:{type:"tool"}`) → parse the `tool_use` block's `input`; reuse the shared reconstructor. This is the "structured ops done right" path (native tool-use, unlike PyAI's JSON-in-text workaround).
-- [ ] Mock-server integration test (tool_use response → edits → `reconstruct` valid).
+- [x] `POST /v1/messages` with **forced tool-use** (`emit_correction` tool, `input_schema` = compact-edits schema, `tool_choice:{type:"tool"}`) → parse the `tool_use` block's `input`; reuse the shared reconstructor. This is the "structured ops done right" path (native tool-use, unlike PyAI's JSON-in-text workaround). Implemented in `packages/core/src/correction/anthropic.ts`, registered in `correction/registry.ts`. `format()` also implemented (plain-text pass, no forced tool) for parity with the other adapters and so the real pipeline's formatting step works when "anthropic" is selected.
+- [x] Mock-server integration test (tool_use response → edits → `reconstruct` valid) — `packages/core/src/correction/anthropic.integration.test.ts` (4 tests: request shape/auth, happy path, drift fallback, non-2xx, format). Full core suite green (64 tests), `tsc --noEmit` clean.
 
 *(4.4 / 4.5 / 4.6 have no interdependencies once 4.0 + 4.1 land — they can be built in parallel against mock servers using dev `.env` keys, before or alongside the window/keychain phases.)*
 
