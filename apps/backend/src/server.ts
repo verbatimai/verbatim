@@ -161,7 +161,16 @@ wss.on("connection", (ws) => {
       const language = typeof msg.language === "string" && msg.language ? msg.language : "en";
       try {
         stt = getSTTProvider(sttId);
-        correction = getCorrectionProvider(corrId);
+        // A bad correction vendor in the config must NOT kill the STT/live session —
+        // fall back to the default and warn, so the live input preview still works even
+        // if the selected correction provider is invalid (e.g. a stale "deepgram").
+        try {
+          correction = getCorrectionProvider(corrId);
+        } catch (e: any) {
+          send(ws, { type: "error", message: `Correction '${corrId}' is invalid — using ${DEFAULT_CORR}. Fix it in Settings (⚙). (${e?.message ?? e})` });
+          corrId = DEFAULT_CORR;
+          correction = getCorrectionProvider(corrId);
+        }
         // Keys come ONLY from process.env — injected by the Rust host from the OS Keychain
         // (Phase 4.8), or a repo .env in standalone dev. The webview never sends a secret.
         apiKey = stt.requiredKeys[0] ? process.env[stt.requiredKeys[0]] : undefined;
