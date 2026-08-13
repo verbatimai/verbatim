@@ -2,6 +2,7 @@
 
 use std::sync::Mutex;
 use std::time::Instant;
+use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 
 mod inject;
@@ -79,6 +80,106 @@ fn show_settings_window(app: tauri::AppHandle) -> Result<(), String> {
     open_settings_window(&app)
 }
 
+// ── Phase 4.3: config store (single source of truth for non-secret settings) ───
+// Persisted as JSON in <app_config_dir>/settings.json via tauri-plugin-store. Shape is
+// a SUPERSET of the core `AppSettings` (packages/core/src/settings.ts) — same camelCase
+// keys for the provider-selection slice, plus widget-only prefs (hotkey, dockIcon).
+// Secrets are NOT here; API keys live in the Keychain (see below).
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase", default)]
+struct AppConfig {
+    stt_provider: String,        // "pyai" | "deepgram" | "openai"
+    correction_provider: String, // "pyai" | "openai" | "anthropic"
+    language: String,            // BCP-47 tag, default "en"
+    hotkey: String,              // preset id or captured accelerator
+    dock_icon: bool,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            stt_provider: "pyai".into(),
+            correction_provider: "pyai".into(),
+            language: "en".into(),
+            hotkey: "alt-space".into(),
+            dock_icon: false,
+        }
+    }
+}
+
+const STORE_FILE: &str = "settings.json";
+const CONFIG_KEY: &str = "config";
+
+fn read_config(app: &tauri::AppHandle) -> AppConfig {
+    use tauri_plugin_store::StoreExt;
+    let store = match app.store(STORE_FILE) {
+        Ok(s) => s,
+        Err(_) => return AppConfig::default(),
+    };
+    store
+        .get(CONFIG_KEY)
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default()
+}
+
+fn write_config(app: &tauri::AppHandle, cfg: &AppConfig) -> Result<(), String> {
+    use tauri_plugin_store::StoreExt;
+    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    store.set(CONFIG_KEY, serde_json::to_value(cfg).map_err(|e| e.to_string())?);
+    store.save().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_config(app: tauri::AppHandle) -> AppConfig {
+    read_config(&app)
+}
+
+// Shallow-merge `patch` over the current config, persist, re-register the hotkey if it
+// changed, and broadcast `config-changed` so the overlay/pipeline refresh live.
+#[tauri::command]
+fn set_config(app: tauri::AppHandle, patch: serde_json::Value) -> Result<AppConfig, String> {
+    let mut cur = serde_json::to_value(read_config(&app)).map_err(|e| e.to_string())?;
+    if let (Some(base), Some(p)) = (cur.as_object_mut(), patch.as_object()) {
+        for (k, v) in p {
+            base.insert(k.clone(), v.clone());
+        }
+    }
+    let next: AppConfig = serde_json::from_value(cur).map_err(|e| e.to_string())?;
+    write_config(&app, &next)?;
+
+    // Side effect: a changed hotkey must be re-registered live.
+    #[cfg(desktop)]
+    {
+        let _ = apply_hotkey(&app, &next.hotkey);
+    }
+
+    let _ = app.emit("config-changed", &next);
+    Ok(next)
+}
+
+// One-time seed: if the store has no config yet, create it from defaults, importing the
+// legacy <app_config_dir>/hotkey file (Phase 3.6) if present so existing users keep their
+// hotkey. Idempotent — runs only until a config exists.
+fn migrate_legacy_config(app: &tauri::AppHandle) {
+    use tauri_plugin_store::StoreExt;
+    let Ok(store) = app.store(STORE_FILE) else {
+        return;
+    };
+    if store.get(CONFIG_KEY).is_some() {
+        return;
+    }
+    let mut cfg = AppConfig::default();
+    if let Some(p) = hotkey_config_path(app) {
+        if let Ok(s) = std::fs::read_to_string(p) {
+            let id = s.trim().to_string();
+            if !id.is_empty() {
+                cfg.hotkey = id;
+            }
+        }
+    }
+    let _ = write_config(app, &cfg);
+}
+
 // ── Phase 3.5: BYOK — vendor API keys in the OS keychain ──────────────────────
 // `account` is the vendor key name (e.g. "PYAI_API_KEY"). Keys never touch disk/env
 // beyond the keychain, and are never logged.
@@ -138,6 +239,49 @@ fn key_save_clipboard(account: String) -> Result<String, String> {
     let n = secret.chars().count();
     let last4: String = secret.chars().skip(n.saturating_sub(4)).collect();
     Ok(format!("••••{last4}"))
+}
+
+// ── Phase 4.3: per-vendor keychain wrappers ───────────────────────────────────
+// Forward API keyed by vendor id (the settings UI in 4.7 uses these). The vendor→
+// env-var map MUST stay in sync with each provider's `requiredKeys` in packages/core
+// (providers/registry.ts, correction/registry.ts). The generic `key_*` commands above
+// stay for the current UI.
+fn vendor_key_name(vendor: &str) -> Option<&'static str> {
+    match vendor {
+        "pyai" => Some("PYAI_API_KEY"),
+        "deepgram" => Some("DEEPGRAM_API_KEY"),
+        "openai" => Some("OPENAI_API_KEY"),
+        "anthropic" => Some("ANTHROPIC_API_KEY"),
+        _ => None,
+    }
+}
+
+#[tauri::command]
+fn set_key(vendor: String, secret: String) -> Result<(), String> {
+    let acct = vendor_key_name(&vendor).ok_or_else(|| format!("unknown vendor: {vendor}"))?;
+    keyring::Entry::new(KEYCHAIN_SERVICE, acct)
+        .and_then(|e| e.set_password(&secret))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn has_key(vendor: String) -> bool {
+    vendor_key_name(&vendor)
+        .map(|acct| {
+            keyring::Entry::new(KEYCHAIN_SERVICE, acct)
+                .and_then(|e| e.get_password())
+                .is_ok()
+        })
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+fn delete_key(vendor: String) -> Result<(), String> {
+    let acct = vendor_key_name(&vendor).ok_or_else(|| format!("unknown vendor: {vendor}"))?;
+    match keyring::Entry::new(KEYCHAIN_SERVICE, acct).and_then(|e| e.delete_credential()) {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 // Open System Settings to a specific Privacy pane so the user can grant access.
@@ -216,6 +360,9 @@ fn hotkey_config_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
 
 // Persisted preset id, defaulting to ⌥Space. Never fails — a missing/garbled file just
 // falls back to the default so the app always has a working hotkey.
+// Superseded by the config store (4.3); kept for one release. `hotkey_config_path` is
+// still used by migrate_legacy_config.
+#[allow(dead_code)]
 fn load_hotkey_id(app: &tauri::AppHandle) -> String {
     hotkey_config_path(app)
         .and_then(|p| std::fs::read_to_string(p).ok())
@@ -224,6 +371,7 @@ fn load_hotkey_id(app: &tauri::AppHandle) -> String {
         .unwrap_or_else(|| "alt-space".to_string())
 }
 
+#[allow(dead_code)]
 fn save_hotkey_id(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
     let p = hotkey_config_path(app).ok_or("no config dir")?;
     if let Some(dir) = p.parent() {
@@ -234,31 +382,30 @@ fn save_hotkey_id(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
 
 #[tauri::command]
 fn get_toggle_hotkey(app: tauri::AppHandle) -> String {
-    load_hotkey_id(&app)
+    // Source of truth is now the config store (Phase 4.3).
+    read_config(&app).hotkey
+}
+
+// Re-register the global toggle shortcut live: drop the old one, register the new preset,
+// and remember it so the handler recognises the fired shortcut. Called from set_config.
+#[cfg(desktop)]
+fn apply_hotkey(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    let sc = preset_shortcut(id).ok_or_else(|| format!("unknown hotkey: {id}"))?;
+    let gs = app.global_shortcut();
+    if let Some(old) = CURRENT_TOGGLE.lock().unwrap().take() {
+        let _ = gs.unregister(old);
+    }
+    gs.register(sc).map_err(|e| e.to_string())?;
+    *CURRENT_TOGGLE.lock().unwrap() = Some(sc);
+    Ok(())
 }
 
 #[tauri::command]
 fn set_toggle_hotkey(app: tauri::AppHandle, id: String) -> Result<(), String> {
-    #[cfg(desktop)]
-    {
-        use tauri_plugin_global_shortcut::GlobalShortcutExt;
-        let sc = preset_shortcut(&id).ok_or_else(|| format!("unknown hotkey: {id}"))?;
-        let gs = app.global_shortcut();
-        // Swap the registration: drop the old toggle, register the new one, remember it so
-        // the handler recognises the fired shortcut.
-        if let Some(old) = CURRENT_TOGGLE.lock().unwrap().take() {
-            let _ = gs.unregister(old);
-        }
-        gs.register(sc).map_err(|e| e.to_string())?;
-        *CURRENT_TOGGLE.lock().unwrap() = Some(sc);
-        save_hotkey_id(&app, &id)?;
-        Ok(())
-    }
-    #[cfg(not(desktop))]
-    {
-        let _ = (app, id);
-        Ok(())
-    }
+    // Store-backed: set_config persists the hotkey, re-registers it (apply_hotkey), and
+    // emits config-changed.
+    set_config(app, serde_json::json!({ "hotkey": id })).map(|_| ())
 }
 
 // ── Spike A: reclass the "main" window into a non-activating, NON-KEY NSPanel ────
@@ -335,6 +482,9 @@ fn main() {
         builder = builder.plugin(tauri_nspanel::init());
     }
 
+    // Phase 4.3: config store (settings.json in the app config dir).
+    builder = builder.plugin(tauri_plugin_store::Builder::new().build());
+
     builder
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -363,9 +513,11 @@ fn main() {
                     Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
                 };
 
-                // The toggle hotkey — loaded from the persisted preset (default ⌥Space),
-                // configurable at runtime via set_toggle_hotkey.
-                let hotkey_id = load_hotkey_id(app.handle());
+                // The toggle hotkey — from the config store (default ⌥Space), configurable
+                // at runtime via set_config/set_toggle_hotkey. On first run, migrate the
+                // legacy <app_config_dir>/hotkey file into the store.
+                migrate_legacy_config(app.handle());
+                let hotkey_id = read_config(app.handle()).hotkey;
                 let toggle = preset_shortcut(&hotkey_id)
                     .unwrap_or_else(|| Shortcut::new(Some(Modifiers::ALT), Code::Space));
                 *CURRENT_TOGGLE.lock().unwrap() = Some(toggle);
@@ -524,11 +676,16 @@ fn main() {
             copy_text,
             hide_widget,
             show_settings_window,
+            get_config,
+            set_config,
             key_save,
             key_save_clipboard,
             key_get,
             key_has,
-            key_delete
+            key_delete,
+            set_key,
+            has_key,
+            delete_key
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Verbatim widget");

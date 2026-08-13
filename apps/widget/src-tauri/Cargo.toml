@@ -16,6 +16,9 @@ enigo = "0.2"
 arboard = "3"
 # Phase 3.5 — BYOK: store the vendor API key in the OS keychain (Security framework on macOS).
 keyring = { version = "3", features = ["apple-native"] }
+# Phase 4.3 — config store: persist non-secret settings (provider/language/hotkey/dockIcon)
+# as JSON in the app config dir. Secrets stay in the Keychain above.
+tauri-plugin-store = "2"
 
 # Spike A — non-activating NSPanel overlay. macOS-only; keep it target-gated so the
 # widget still compiles on other platforms (which no-op the panel code below).
