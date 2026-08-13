@@ -16,7 +16,7 @@ import { getSTTProvider, getCorrectionProvider, TranscriptAccumulator, localForm
 // PyAI/provider error is appended here IN FULL — status, message, stack, any extra
 // fields — for easy copy-paste reporting. Path is printed at startup and sent to the
 // widget; override with PYAI_LOG_FILE.
-const LOG_FILE = process.env.PYAI_LOG_FILE ?? resolve(process.cwd(), "logs", "pyai-errors.log");
+const LOG_FILE = process.env.PYAI_LOG_FILE ?? resolve(process.cwd(), "logs", "errors.log");
 
 function serializeErr(e: any): Record<string, unknown> {
   if (e instanceof Error) {
