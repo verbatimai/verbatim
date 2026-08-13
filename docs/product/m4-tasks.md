@@ -14,9 +14,9 @@
 
 Progress is tracked in three places: **this file** (per-phase checklist — the detail), **`STATUS.md`** (handoff snapshot — read first for context), and **`roadmap.md`** (milestone level).
 
-- ✅ **4.0** decisions · ✅ **4.1** core config/capability · ✅ **4.2** settings window *(compiles on Mac; runtime pending)* · ✅ **4.3** config store + keychain *(compiles; committed `ea8ca9d`)* · ✅ **4.5** OpenAI STT+correction *(cloud-tested)* · ✅ **4.6** Anthropic correction *(cloud-tested)*
-- ⏳ **Remaining:** **4.4** finish Deepgram STT · **4.7** settings UI + multilingual · **4.8** overlay/pipeline via sidecar · **4.9** slim the overlay · **4.10** wire-up + exit demo
-- 🔎 **Pending verification (folds into 4.10):** on-Mac runtime for 4.2/4.3 (compiled, not yet exercised); live-vendor runs for 4.5/4.6 (mock-tested only so far).
+- ✅ **4.0** decisions · ✅ **4.1** core config/capability · ✅ **4.2** settings window *(compiles on Mac; runtime pending)* · ✅ **4.3** config store + keychain *(compiles; committed `ea8ca9d`)* · ✅ **4.4** Deepgram STT *(cloud-tested)* · ✅ **4.5** OpenAI STT+correction *(cloud-tested)* · ✅ **4.6** Anthropic correction *(cloud-tested)* · ✅ **4.7** settings UI + multilingual *(compiles/builds on Mac; click-through pending)*
+- ⏳ **Remaining:** **4.8** overlay/pipeline via sidecar · **4.9** slim the overlay · **4.10** wire-up + exit demo
+- 🔎 **Pending verification (folds into 4.10):** on-Mac interactive click-through for 4.2/4.3/4.7 (compiled/built, not yet exercised); live-vendor runs for 4.4/4.5/4.6 (mock-tested only so far).
 
 ---
 
@@ -93,11 +93,14 @@ One persistence layer in Rust — the widget's single source of truth — read/w
 - [x] **Keychain (secrets):** per-vendor `set_key`/`has_key`/`delete_key` (pyai/deepgram/openai/anthropic → `*_API_KEY`); existing `key_*` kept. Keys stay Rust-side (never the renderer).
 - [ ] **On-Mac runtime acceptance (pending):** config round-trips + survives relaunch; `config-changed` fires; a saved key persists across restart; migrated hotkey still drives dictation. *(compiles; behaviour to confirm at runtime, folds into the 4.10 exit demo.)*
 
-## Phase 4.4 — Finish the Deepgram STT adapter
+## Phase 4.4 — Finish the Deepgram STT adapter  ·  ✅ DONE (core, cloud-tested) (13 Aug 2026)
 
-- [ ] Apply the 4.0 transport decision (Rust-side socket via the sidecar; not a webview `Authorization` header).
-- [ ] Add endpointing: `endpointing`, `utterance_end_ms>=1000`, `smart_format`/`punctuate`; confirm `speech_final` + `UtteranceEnd` both map to our segment boundary (`endpoint:true`).
-- [ ] **Integration test vs a Deepgram mock server** (mirror `providers/pyai.integration.test.ts`): auth handshake, interim → `activeText`, `is_final` → `stableText`, `UtteranceEnd` → final+endpoint. Green in cloud, no network.
+**Code-level implementation plan: `m4.4-deepgram-plan.md`.** *(The adapter runs in the Node sidecar, so its existing `ws` `Authorization` header is fine — the "webview can't set WS headers" worry doesn't apply.)* Deepgram is **STT-only** (no correction adapter, by design — no text LLM); pair it with a correction vendor (e.g. Deepgram STT + Anthropic correction).
+
+- [x] Sidecar socket with the Node-`ws` `Token` header (no webview token needed); added `DEEPGRAM_WS_URL`/`DEEPGRAM_STT_MODEL`/`DEEPGRAM_BASE` overrides (read at call time) for testability + the 4.7 dropdown.
+- [x] Endpointing: `model=nova-2`, `smart_format`, `punctuate`, `endpointing=300`, `utterance_end_ms=1000` (+ existing `interim_results`, `vad_events`, `language`). `speech_final` **and** `UtteranceEnd` both close a segment, **de-duplicated** to one `final`+`endpoint` per utterance. `finalize()` sends `Finalize` then `CloseStream`.
+- [x] Added **`transcribeBatch`** (prerecorded `POST /v1/listen`) for finalize parity with PyAI/OpenAI.
+- [x] **Integration test** `providers/deepgram.stt.integration.test.ts` — mock WS (auth + endpointing query, interim→active, is_final→stable, speech_final/UtteranceEnd→one final+endpoint) + mock HTTP for batch. **3 tests green in cloud** (`vitest`). Live on-Mac run vs real Deepgram deferred to 4.10.
 
 ## Phase 4.5 — OpenAI adapters (STT + correction)  ·  ✅ DONE (core, cloud-tested) (13 Aug 2026)
 
@@ -187,4 +190,4 @@ The app is a **menu-bar app with a focusable settings window**: you can **type**
 
 `4.0 decisions (gate) → 4.1 config/capability (core) → 4.2 settings window → 4.3 config store + keychain (backbone) → { 4.4 Deepgram · 4.5 OpenAI · 4.6 Anthropic } in parallel → 4.7 settings UI + multilingual → 4.8 wire overlay+pipeline via sidecar → 4.9 slim the overlay → 4.10 wire-up + exit demo`
 
-**Done:** 4.0, 4.1, 4.2, 4.3, 4.5, 4.6 (see *Progress at a glance* above). **Remaining:** 4.4 (finish Deepgram), 4.7 (settings UI + multilingual), 4.8 (sidecar wiring), 4.9 (slim overlay), 4.10 (exit demo). The adapters were built ahead of the window/keychain phases (they're independent), so only **Deepgram (4.4)** is left among vendors. **4.7 needs 4.2** (real inputs need the focusable window); the **4.10 exit demo needs the full chain**, including the on-Mac runtime checks still pending for 4.2/4.3 and the live-vendor runs for 4.5/4.6.
+**Done:** 4.0, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7 (see *Progress at a glance* above) — **all three vendor adapters and the settings UI complete**. **Remaining:** 4.8 (sidecar wiring), 4.9 (slim overlay), 4.10 (exit demo). The **4.10 exit demo needs the full chain**, including the on-Mac interactive click-through checks still pending for 4.2/4.3/4.7 and the live-vendor runs for 4.4/4.5/4.6.
