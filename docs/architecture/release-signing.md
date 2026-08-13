@@ -33,6 +33,25 @@ Signing and notarization are driven by environment variables — **nothing secre
 repo**. `tauri build` signs the app + the sidecar with your Developer ID, applies
 `entitlements.plist`, then (if the notarization vars are set) uploads to Apple and staples.
 
+### Where do these variables go?
+
+They are **shell environment variables in the terminal session where you run the build** —
+not in `tauri.conf.json`, `.env`, or any committed file (they're secrets). Set them, then run
+the build in the *same* session. Two ways:
+
+- **Inline** — `export …` each one, then run the build (below). They vanish when you close the terminal.
+- **A git-ignored file** — put the `export` lines in e.g. `~/.verbatim-signing.env` (outside the
+  repo, or add it to `.gitignore`), then `source ~/.verbatim-signing.env` before building.
+
+Where each value comes from:
+- `APPLE_SIGNING_IDENTITY` — your cert's exact name; run `security find-identity -v -p codesigning`
+  and copy the `Developer ID Application: … (TEAMID)` line.
+- `APPLE_TEAM_ID` — 10-char Team ID (developer.apple.com → Membership).
+- `APPLE_ID` — your Apple ID email.
+- `APPLE_PASSWORD` — an **app-specific password** (appleid.apple.com → Sign-In & Security →
+  App-Specific Passwords), **not** your normal password. *(Or use App Store Connect API-key auth
+  instead: `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_KEY_PATH`.)*
+
 ```bash
 export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
 # notarization (any one of these auth styles):
