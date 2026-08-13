@@ -10,6 +10,16 @@
 
 ---
 
+## Progress at a glance (updated 13 Aug 2026)
+
+Progress is tracked in three places: **this file** (per-phase checklist — the detail), **`STATUS.md`** (handoff snapshot — read first for context), and **`roadmap.md`** (milestone level).
+
+- ✅ **4.0** decisions · ✅ **4.1** core config/capability · ✅ **4.2** settings window *(compiles on Mac; runtime pending)* · ✅ **4.3** config store + keychain *(compiles; committed `ea8ca9d`)* · ✅ **4.5** OpenAI STT+correction *(cloud-tested)* · ✅ **4.6** Anthropic correction *(cloud-tested)*
+- ⏳ **Remaining:** **4.4** finish Deepgram STT · **4.7** settings UI + multilingual · **4.8** overlay/pipeline via sidecar · **4.9** slim the overlay · **4.10** wire-up + exit demo
+- 🔎 **Pending verification (folds into 4.10):** on-Mac runtime for 4.2/4.3 (compiled, not yet exercised); live-vendor runs for 4.5/4.6 (mock-tested only so far).
+
+---
+
 ## What already exists (starting point — don't rebuild)
 
 - **Interfaces are locked** (`packages/core/src/providers/types.ts`, `correction/types.ts`): `STTProvider` / `STTSession` / `TranscriptEvent {stableText, activeText, endpoint}`, and `CorrectionProvider` with the compact-edits `CorrectionResult`. Nothing above the adapter boundary references a vendor.
@@ -65,24 +75,23 @@ Make provider selection first-class and independent for the two roles. Implement
 - [x] `language` plumbed at the core level: on `AppSettings`, returned by the resolver, with the **PyAI-English-only guard** in the capability check. (Wiring `language` into `STTSessionConfig` at session start + localizing the correction/format prompts is 4.7, as planned.)
 - [x] Unit tests (12, all green): defaults, independent mix-and-match resolution, blank-language fallback, missing-key messages per role, shared-key satisfies-both, English-only guard (+ `en-US` allowed), multilingual vendor allows non-English, unknown-vendor id message, `assertCapability` throw/no-throw. Full-package `tsc --noEmit` clean.
 
-## Phase 4.2 — Settings window + activation policy (the window split)
+## Phase 4.2 — Settings window + activation policy (the window split)  ·  ✅ DONE (code; compiles on Mac — runtime acceptance pending)
 
-Scaffold the focusable second window before any real inputs can exist. *(from the desktop-app plan, Phase 1.)* **Code-level implementation plan: `m4.2-settings-window-plan.md`.**
+Scaffold the focusable second window before any real inputs can exist. *(from the desktop-app plan, Phase 1.)* **Code-level implementation plan: `m4.2-settings-window-plan.md`.** Implemented across `tauri.conf.json`, `vite.config.ts`, `settings.html`/`src/settings.ts`, `src-tauri/src/main.rs`, `capabilities/default.json`, `src/main.ts`; **`cargo build` clean on the Mac** (confirms `AppHandle::set_activation_policy`).
 
-- [ ] `tauri.conf.json`: add a `settings` window — `decorations:true`, `focus:true`, `alwaysOnTop:false`, `visible:false`, `resizable:true`, reasonable size (~`480×620`). Keep the existing `main` (overlay) window exactly as-is.
-- [ ] Vite multi-page: add `settings.html` + `src/settings.ts`; register `settings.html` as a Rollup input in `vite.config.ts`. Dev server serves both entries.
-- [ ] Rust `show_settings_window` command: get-or-create the `settings` window, apply the activation-policy switch (Accessory→Regular on open, revert on close/blur), `show` + `set_focus`. Wire the tray **"Settings…"** item and the overlay gear to call it (instead of emitting `open-settings` into the overlay).
-- [ ] Window-close handling: closing settings must **not** quit the app (menu-bar app stays alive) and must revert the activation policy.
-- **Acceptance:** both windows coexist; opening settings focuses a normal window you can **type** into; the overlay still streams + injects while settings is open; closing settings reverts activation policy and doesn't quit the app.
+- [x] `tauri.conf.json`: added the `settings` window (`decorations:true`, `focus:true`, `alwaysOnTop:false`, `visible:false`, `resizable:true`, ~`480×620`). `main` overlay unchanged.
+- [x] Vite multi-page: `settings.html` + `src/settings.ts` added; both registered as Rollup inputs in `vite.config.ts`.
+- [x] Rust `show_settings_window` command + `open_settings_window` helper: Accessory→Regular→`show`→`set_focus`. Tray **"Settings…"** and the overlay gear (`main.ts`) both call it.
+- [x] Window-close handling: `CloseRequested` → prevent-close + hide + revert to Accessory (never quits).
+- [ ] **On-Mac runtime acceptance (pending):** type into the settings window; overlay still injects while settings is open; closing settings drops the Dock icon without quitting. *(the injection-while-settings-focused check is the one to watch.)*
 
-## Phase 4.3 — Rust config store + keychain BYOK (the backbone; absorbs M3 Phase 3.5)
+## Phase 4.3 — Rust config store + keychain BYOK (the backbone; absorbs M3 Phase 3.5)  ·  ✅ DONE (code; compiles on Mac) (13 Aug 2026)
 
-One persistence layer in Rust — the widget's single source of truth — read/written by both windows, with a live-refresh event. *(merges desktop-app Phase 2 + the M3-deferred keychain BYOK. The core `AppSettings` type from 4.1 is unchanged; this phase persists it and adds widget-only prefs.)* **Code-level implementation plan: `m4.3-config-store-plan.md`.**
+One persistence layer in Rust — the widget's single source of truth — read/written by both windows, with a live-refresh event. *(merges desktop-app Phase 2 + the M3-deferred keychain BYOK. The core `AppSettings` type from 4.1 is unchanged; this phase persists it and adds widget-only prefs.)* **Code-level implementation plan: `m4.3-config-store-plan.md`.** Committed in `ea8ca9d`; **`cargo build` clean on the Mac.**
 
-- [ ] **Prefs store:** a config module over `tauri-plugin-store` that persists the core `AppSettings` (`sttProvider`, `correctionProvider`, `language`) **plus widget-only prefs** `hotkey` and `dockIcon`. Commands `get_config()` / `set_config(patch)` (merge). Migrate the existing standalone `hotkey` file (`hotkey_config_path` / `CURRENT_TOGGLE`) into this store on first read (back-compat). On any write, emit **`config-changed`** so listeners (overlay, sidecar/pipeline) refresh.
-- [ ] **Keychain (secrets):** Rust **`keyring`** integration — store / read / delete per-vendor keys (`PYAI_API_KEY`, `DEEPGRAM_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`), never plaintext to disk, never bundled, never logged. Commands `set_key(vendor, value)`, `has_key(vendor)`, `delete_key(vendor)`. Generalize the existing `key_*` commands into this module; keep `key_save_clipboard` as an optional convenience only (real typing arrives in 4.7). Per 4.0, keys stay in Rust and are handed to the sidecar — the renderer never receives a key.
-- [ ] Verify keys **persist across app restarts** and survive a rebuild (part of the exit demo, 4.10).
-- **Acceptance:** config round-trips from a command and changing a value emits `config-changed`; a key saved to the keychain is readable after restart; the migrated hotkey still drives dictation.
+- [x] **Prefs store:** `tauri-plugin-store` config module persisting `AppConfig` (superset of core `AppSettings` + `hotkey`/`dockIcon`) as `settings.json`. `get_config()` / `set_config(patch)` (shallow-merge). Legacy `hotkey` file migrated once via `migrate_legacy_config`. Every write emits **`config-changed`**.
+- [x] **Keychain (secrets):** per-vendor `set_key`/`has_key`/`delete_key` (pyai/deepgram/openai/anthropic → `*_API_KEY`); existing `key_*` kept. Keys stay Rust-side (never the renderer).
+- [ ] **On-Mac runtime acceptance (pending):** config round-trips + survives relaunch; `config-changed` fires; a saved key persists across restart; migrated hotkey still drives dictation. *(compiles; behaviour to confirm at runtime, folds into the 4.10 exit demo.)*
 
 ## Phase 4.4 — Finish the Deepgram STT adapter
 
@@ -178,4 +187,4 @@ The app is a **menu-bar app with a focusable settings window**: you can **type**
 
 `4.0 decisions (gate) → 4.1 config/capability (core) → 4.2 settings window → 4.3 config store + keychain (backbone) → { 4.4 Deepgram · 4.5 OpenAI · 4.6 Anthropic } in parallel → 4.7 settings UI + multilingual → 4.8 wire overlay+pipeline via sidecar → 4.9 slim the overlay → 4.10 wire-up + exit demo`
 
-4.0 and 4.1 are **done**. Adapters (4.4–4.6) can be developed and tested against mock servers as soon as they're picked up, without waiting on the window/keychain phases; but the **exit demo** needs the full chain. Only start each phase once the previous is demoable; **4.2 must land before 4.7** because real inputs need the focusable window, and **4.3 (keychain) before the exit demo** because persistence is part of sign-off.
+**Done:** 4.0, 4.1, 4.2, 4.3, 4.5, 4.6 (see *Progress at a glance* above). **Remaining:** 4.4 (finish Deepgram), 4.7 (settings UI + multilingual), 4.8 (sidecar wiring), 4.9 (slim overlay), 4.10 (exit demo). The adapters were built ahead of the window/keychain phases (they're independent), so only **Deepgram (4.4)** is left among vendors. **4.7 needs 4.2** (real inputs need the focusable window); the **4.10 exit demo needs the full chain**, including the on-Mac runtime checks still pending for 4.2/4.3 and the live-vendor runs for 4.5/4.6.
