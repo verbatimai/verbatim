@@ -1,0 +1,61 @@
+/* Verbatim — main app shell (app.html). Extends the design tokens & sidebar
+   from settings.css; adds the History view and a few sidebar affordances. */
+
+/* Create-note button (top of sidebar) */
+.create-btn {
+  display: flex; align-items: center; gap: 9px; width: calc(100% - 4px); margin: 2px 2px 12px;
+  padding: 9px 11px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--stroke); background: var(--glass-strong);
+  color: var(--text); font: inherit; font-size: 13px; font-weight: 600;
+}
+.create-btn .ico { color: var(--accent); }
+.create-btn kbd { margin-left: auto; font-size: 10px; color: var(--text-faint); border: 1px solid var(--stroke); border-radius: 5px; padding: 2px 6px; }
+.create-btn:disabled { cursor: default; }
+
+/* Nav items may carry a trailing tag or kbd */
+.nav-item .tag, .nav-item kbd { margin-left: auto; }
+.nav-item:disabled { opacity: 0.7; cursor: default; }
+.nav-item[href] { text-decoration: none; }
+
+/* Footer links */
+.foot-link { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 10px; color: var(--text-dim); font-size: 12.5px; text-decoration: none; cursor: pointer; }
+.foot-link:hover { background: var(--stroke-soft); color: var(--text); }
+.foot-link .tag { margin-left: auto; }
+.foot-link[data-soon] { cursor: default; }
+
+/* Main content — History is wider than the settings panes */
+.app-main { max-width: 1100px; }
+
+/* Stat card */
+.stat-card {
+  display: inline-flex; flex-direction: column; gap: 6px;
+  min-width: 240px; padding: 18px 20px; margin-bottom: 22px;
+  border-radius: var(--radius); border: 1px solid var(--stroke);
+  background: var(--glass); backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%); box-shadow: var(--shadow);
+}
+.stat-label { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-dim); }
+.stat-value { font-size: 30px; font-weight: 700; letter-spacing: -0.02em;
+  background: linear-gradient(120deg, var(--accent2), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* Toolbar */
+.hist-toolbar { margin-bottom: 10px; }
+.hist-search { max-width: 420px; margin: 0; opacity: 0.8; }
+.hist-search input:disabled { opacity: 1; }
+.hist-search .tag { flex: none; }
+
+.hist-note { margin: 0 0 16px; font-size: 12px; color: var(--text-faint); }
+
+/* History list */
+.hist-day { margin: 0 2px 10px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); }
+.hist-list { padding: 4px 0; }
+.hist-row { display: grid; grid-template-columns: 150px 1fr; gap: 20px; padding: 14px 20px; border-top: 1px solid var(--stroke-soft); align-items: start; }
+.hist-row:first-child { border-top: none; }
+.hist-row:hover { background: var(--stroke-soft); }
+.hist-time { color: var(--text-faint); font-size: 12.5px; font-variant-numeric: tabular-nums; padding-top: 1px; }
+.hist-text { font-size: 13.5px; line-height: 1.5; }
+.hist-text.muted { color: var(--text-faint); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+
+@media (max-width: 720px) {
+  .hist-row { grid-template-columns: 1fr; gap: 4px; }
+}
