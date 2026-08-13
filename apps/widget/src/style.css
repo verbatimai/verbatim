@@ -56,6 +56,9 @@ body{padding:11px}
 /* grouped sections in the settings panel */
 .settings-group{display:flex;flex-direction:column;gap:7px;padding-bottom:12px;border-bottom:1px solid var(--line-2)}
 .settings-group .settings-label{margin-bottom:1px}
+/* checkbox option row (e.g. mute-others toggle) */
+.opt{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink);cursor:pointer;user-select:none}
+.opt input{accent-color:var(--accent);width:15px;height:15px}
 /* click-to-pick hotkey (no key-capture — the panel can't take keystrokes) */
 .hotkey-picker{display:flex;flex-wrap:wrap;gap:6px}
 .hk{padding:5px 9px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.05);
