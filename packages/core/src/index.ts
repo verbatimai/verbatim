@@ -6,3 +6,4 @@ export * from "./correction/prompt";
 export * from "./segmenter";
 export * from "./pipeline";
 export * from "./audio/wav";
+export * from "./settings";

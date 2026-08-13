@@ -20,3 +20,21 @@ export function getCorrectionProvider(id: string = process.env.CORRECTION_PROVID
   }
   return make();
 }
+
+/**
+ * Fail fast if the selected correction provider's keys aren't present. Mirrors
+ * the STT registry's `assertKeys` (named distinctly so the core barrel's
+ * `export *` doesn't collide on the two registries). `assertCapability` in
+ * settings.ts checks both roles at once; this stays for symmetry / direct use.
+ */
+export function assertCorrectionKeys(
+  provider: CorrectionProvider,
+  env: Record<string, string | undefined> = process.env,
+): void {
+  const missing = provider.requiredKeys.filter((k) => !env[k]);
+  if (missing.length) {
+    throw new Error(
+      `Correction provider '${provider.id}' needs: ${missing.join(", ")}. Set them via the keychain (app) or .env (dev).`,
+    );
+  }
+}

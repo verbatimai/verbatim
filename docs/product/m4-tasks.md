@@ -32,14 +32,14 @@ So M4 is **finish one adapter, add three, add a keychain + settings layer, and l
 
 ---
 
-## Phase 4.1 — Config & capability layer (core)
+## Phase 4.1 — Config & capability layer (core)  ·  ✅ DONE (13 Aug 2026)
 
-Make provider selection first-class and independent for the two roles.
+Make provider selection first-class and independent for the two roles. Implemented in `packages/core/src/settings.ts` (+ `settings.test.ts`).
 
-- [ ] `AppSettings` type + a small resolver that builds the STT provider and the correction provider **independently** from settings (mix-and-match, e.g. Deepgram STT + Anthropic correction).
-- [ ] Add `assertKeys` to the **correction** registry (mirror the STT side) and a single `assertCapability(settings)` that validates the *selected combination* and **fails fast with one clear message** listing every missing key.
-- [ ] Plumb `language` end-to-end: settings → `STTSessionConfig.language` → correction/format prompt locale (see 4.6).
-- [ ] Unit tests: unknown provider id, missing-key messages, valid mix-and-match resolution.
+- [x] `AppSettings` type + `DEFAULT_SETTINGS` + `resolveProviders()` that builds the STT provider and the correction provider **independently** from settings (mix-and-match, e.g. Deepgram STT + Anthropic correction). No keys in the type — secrets stay in the Keychain.
+- [x] `assertCorrectionKeys` added to the **correction** registry (mirrors STT `assertKeys`; named distinctly so the barrel's `export *` doesn't collide), plus `capabilityErrors()` / `assertCapability()` in settings.ts that validate the *selected combination* against env and **fail fast with one message** listing every missing key.
+- [x] `language` plumbed at the core level: on `AppSettings`, returned by the resolver, with the **PyAI-English-only guard** in the capability check. (Wiring `language` into `STTSessionConfig` at session start + localizing the correction/format prompts is 4.6, as planned.)
+- [x] Unit tests (12, all green): defaults, independent mix-and-match resolution, blank-language fallback, missing-key messages per role, shared-key satisfies-both, English-only guard (+ `en-US` allowed), multilingual vendor allows non-English, unknown-vendor id message, `assertCapability` throw/no-throw. Full-package `tsc --noEmit` clean.
 
 ## Phase 4.2 — Keychain BYOK (absorbs M3 Phase 3.5) — the backbone
 
