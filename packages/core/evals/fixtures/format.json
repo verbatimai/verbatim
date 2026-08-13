@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "spoken-numbered-list",
+      "tags": ["list", "enumeration"],
+      "input": "i have two things to do 1 shopping and 2 swimming",
+      "expected": {
+        "must_contain": ["1.", "Shopping", "2.", "Swimming"],
+        "must_not_contain": ["```", "1 shopping and 2"]
+      }
+    },
+    {
+      "id": "simple-polish",
+      "tags": ["capitalization", "punctuation"],
+      "input": "let's schedule a meeting at 9 pm i think that works",
+      "expected": {
+        "must_contain": ["Let's", "9", "I think"],
+        "must_not_contain": ["```"]
+      }
+    },
+    {
+      "id": "preserve-meaning-no-hallucination",
+      "tags": ["negative"],
+      "input": "send the deck to alex",
+      "expected": {
+        "must_contain": ["Alex"],
+        "must_not_contain": ["Sarah", "John", "```"]
+      }
+    }
+  ]
+}

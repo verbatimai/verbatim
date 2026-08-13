@@ -6,12 +6,18 @@
 // Demo mode needs no mic/key. For live dictation, enter a key in Settings (⚙) — or, for
 // standalone dev, put PYAI_API_KEY in a .env at the repo root (the backend loads it).
 import { spawn } from "node:child_process";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
-// `tauri dev` runs the widget's Vite server (beforeDevCommand) then the Rust shell,
-// which spawns the backend sidecar itself.
+const env = {
+  ...process.env,
+  // rustup installs here; npm scripts may not inherit a login shell PATH.
+  PATH: [join(homedir(), ".cargo", "bin"), process.env.PATH].filter(Boolean).join(":"),
+};
+
 const child = spawn("npm", ["run", "start", "--workspace", "@verbatim/widget"], {
   stdio: "inherit",
-  env: process.env,
+  env,
 });
 child.on("exit", (code) => {
   console.log(`[widget] exited (${code})`);

@@ -1,0 +1,741 @@
+
+> open-dictation@0.1.0 eval:prompts
+> npm run eval:prompts --workspace @open-dictation/core -- --openrouter-first --correction-only --min-pass-rate 0 --json
+
+
+> @open-dictation/core@0.1.0 eval:prompts
+> tsx evals/cli.ts --openrouter-first --correction-only --min-pass-rate 0 --json
+
+{
+  "summaries": [
+    {
+      "kind": "correction",
+      "provider": "pyai",
+      "total": 52,
+      "passed": 13,
+      "failed": 39,
+      "passRate": 0.25,
+      "latencyMs": {
+        "p50": 1487,
+        "p95": 2346,
+        "max": 2691
+      },
+      "byCategory": {
+        "self_correction": {
+          "passed": 2,
+          "total": 10
+        },
+        "self_correction_multi": {
+          "passed": 1,
+          "total": 4
+        },
+        "filler": {
+          "passed": 1,
+          "total": 5
+        },
+        "repetition": {
+          "passed": 1,
+          "total": 5
+        },
+        "false_start": {
+          "passed": 1,
+          "total": 4
+        },
+        "negation_trap": {
+          "passed": 3,
+          "total": 5
+        },
+        "entity_correction": {
+          "passed": 0,
+          "total": 3
+        },
+        "number_correction": {
+          "passed": 0,
+          "total": 3
+        },
+        "meta_command": {
+          "passed": 0,
+          "total": 2
+        },
+        "no_op": {
+          "passed": 4,
+          "total": 5
+        },
+        "insertion_required": {
+          "passed": 0,
+          "total": 4
+        },
+        "long_form": {
+          "passed": 0,
+          "total": 2
+        }
+      },
+      "cases": [
+        {
+          "id": "sc_001",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "warnings": [],
+          "latencyMs": 1908,
+          "actual": "i want to schedule the meeting on friday",
+          "expected": "i want to schedule the meeting on friday",
+          "valid": false,
+          "cat": "self_correction"
+        },
+        {
+          "id": "sc_002",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1587,
+          "actual": "let's do  wednesday",
+          "expected": "let's do wednesday",
+          "valid": true,
+          "cat": "self_correction"
+        },
+        {
+          "id": "sc_003",
+          "pass": false,
+          "errors": [
+            "deletion_only: edit has replacement \"the doc\" for raw \"the deck sorry the doc\""
+          ],
+          "warnings": [],
+          "latencyMs": 2546,
+          "actual": "i'll send you the doc by end of day",
+          "expected": "i'll send you the doc by end of day",
+          "valid": true,
+          "cat": "self_correction"
+        },
+        {
+          "id": "sc_004",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1298,
+          "actual": "we need  four chairs for the standup",
+          "expected": "we need four chairs for the standup",
+          "valid": true,
+          "cat": "self_correction"
+        },
+        {
+          "id": "sc_005",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "warnings": [],
+          "latencyMs": 1661,
+          "actual": "the deploy is going out tomorrow morning",
+          "expected": "the deploy is going out tomorrow morning",
+          "valid": false,
+          "cat": "self_correction"
+        },
+        {
+          "id": "sc_006",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 1522,
+          "actual": "i went there yesterday  i'm going tomorrow",
+          "expected": "i'm going tomorrow",
+          "valid": true,
+          "cat": "self_correction"
+        },
+        {
+          "id": "sc_007",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 1534,
+          "actual": "put it in the shared drive put it in notion",
+          "expected": "put it in notion",
+          "valid": true,
+          "cat": "self_correction"
+        },
+        {
+          "id": "sc_008",
+          "pass": false,
+          "errors": [
+            "deletion_only: edit has replacement \"the big one\" for raw \"the small room no the big one\""
+          ],
+          "warnings": [],
+          "latencyMs": 1213,
+          "actual": "book the big one we have twelve people",
+          "expected": "book the big one we have twelve people",
+          "valid": true,
+          "cat": "self_correction"
+        },
+        {
+          "id": "sc_009",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "warnings": [],
+          "latencyMs": 1321,
+          "actual": "the latency was two seconds",
+          "expected": "the latency was two seconds",
+          "valid": false,
+          "cat": "self_correction"
+        },
+        {
+          "id": "sc_010",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 1520,
+          "actual": "cancel the friday sync   move it to monday",
+          "expected": "move it to monday",
+          "valid": true,
+          "cat": "self_correction"
+        },
+        {
+          "id": "scm_001",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text",
+            "clean_text mismatch (expected normalized_exact)",
+            "deletion_only: edit has replacement \"five\" for raw \"three no four no actually let's make it\""
+          ],
+          "warnings": [],
+          "latencyMs": 1079,
+          "actual": "let's meet at five",
+          "expected": "let's make it five",
+          "valid": false,
+          "cat": "self_correction_multi"
+        },
+        {
+          "id": "scm_002",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text",
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 2134,
+          "actual": "send it to john and cc anyone",
+          "expected": "send it to jane and don't cc anyone",
+          "valid": false,
+          "cat": "self_correction_multi"
+        },
+        {
+          "id": "scm_003",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text",
+            "deletion_only: edit has replacement \"nine\" for raw \"sorry nine\""
+          ],
+          "warnings": [],
+          "latencyMs": 1266,
+          "actual": "the standup is at nine thirty in the big room",
+          "expected": "the standup is at nine thirty in the big room",
+          "valid": false,
+          "cat": "self_correction_multi"
+        },
+        {
+          "id": "scm_004",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1486,
+          "actual": "i need the report by  tuesday and the deck by  thursday",
+          "expected": "i need the report by tuesday and the deck by thursday",
+          "valid": true,
+          "cat": "self_correction_multi"
+        },
+        {
+          "id": "fil_001",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 1727,
+          "actual": " so i think we should  ship it on friday you know",
+          "expected": "i think we should ship it on friday",
+          "valid": true,
+          "cat": "filler"
+        },
+        {
+          "id": "fil_002",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 1049,
+          "actual": "basically the thing is  we need more time",
+          "expected": "the thing is we need more time",
+          "valid": true,
+          "cat": "filler"
+        },
+        {
+          "id": "fil_003",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1892,
+          "actual": " can you send me the link",
+          "expected": "can you send me the link",
+          "valid": true,
+          "cat": "filler"
+        },
+        {
+          "id": "fil_004",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 2346,
+          "actual": "it's kind of blocked on the api",
+          "expected": "it's blocked on the api",
+          "valid": true,
+          "cat": "filler"
+        },
+        {
+          "id": "fil_005",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 957,
+          "actual": "so  anyway let's move on to the next item",
+          "expected": "let's move on to the next item",
+          "valid": true,
+          "cat": "filler"
+        },
+        {
+          "id": "rep_001",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "warnings": [],
+          "latencyMs": 1377,
+          "actual": "i want to book the room",
+          "expected": "i want to book the room",
+          "valid": false,
+          "cat": "repetition"
+        },
+        {
+          "id": "rep_002",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "warnings": [],
+          "latencyMs": 1187,
+          "actual": "can you check the logs for me",
+          "expected": "can you check the logs for me",
+          "valid": false,
+          "cat": "repetition"
+        },
+        {
+          "id": "rep_003",
+          "pass": false,
+          "errors": [
+            "deletion_only: edit has replacement \"the\" for raw \"the the the\""
+          ],
+          "warnings": [],
+          "latencyMs": 1788,
+          "actual": "the deploy failed again",
+          "expected": "the deploy failed again",
+          "valid": true,
+          "cat": "repetition"
+        },
+        {
+          "id": "rep_004",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "warnings": [],
+          "latencyMs": 1232,
+          "actual": "we need to fix the flow control bug",
+          "expected": "we need to fix the flow control bug",
+          "valid": false,
+          "cat": "repetition"
+        },
+        {
+          "id": "rep_005",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1111,
+          "actual": " it's not responding at all",
+          "expected": "it's not responding at all",
+          "valid": true,
+          "cat": "repetition"
+        },
+        {
+          "id": "fs_001",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)",
+            "deletion_only: edit has replacement \"let me\" for raw \"wait let me\""
+          ],
+          "warnings": [],
+          "latencyMs": 1536,
+          "actual": "can you send the let me check my calendar first",
+          "expected": "let me check my calendar first",
+          "valid": true,
+          "cat": "false_start"
+        },
+        {
+          "id": "fs_002",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 1658,
+          "actual": "i was thinking we could  how about we defer this to next sprint",
+          "expected": "how about we defer this to next sprint",
+          "valid": true,
+          "cat": "false_start"
+        },
+        {
+          "id": "fs_003",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text",
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 1074,
+          "actual": "the reason it broke is it even deployed",
+          "expected": "is it even deployed",
+          "valid": false,
+          "cat": "false_start"
+        },
+        {
+          "id": "fs_004",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1393,
+          "actual": "we should  just roll it back",
+          "expected": "we should just roll it back",
+          "valid": true,
+          "cat": "false_start"
+        },
+        {
+          "id": "neg_001",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 1630,
+          "actual": "don't  schedule it on monday",
+          "expected": "don't schedule it on friday schedule it on monday",
+          "valid": true,
+          "cat": "negation_trap"
+        },
+        {
+          "id": "neg_002",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 1554,
+          "actual": "i don't think that's the right approach",
+          "expected": "no i don't think that's the right approach",
+          "valid": true,
+          "cat": "negation_trap"
+        },
+        {
+          "id": "neg_003",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 954,
+          "actual": "the answer is no we are not shipping this week",
+          "expected": "the answer is no we are not shipping this week",
+          "valid": true,
+          "cat": "negation_trap"
+        },
+        {
+          "id": "neg_004",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1173,
+          "actual": " no that's not what i meant by idempotent",
+          "expected": "no that's not what i meant by idempotent",
+          "valid": true,
+          "cat": "negation_trap"
+        },
+        {
+          "id": "neg_005",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1322,
+          "actual": "say no to the vendor and yes to building it in house",
+          "expected": "say no to the vendor and yes to building it in house",
+          "valid": true,
+          "cat": "negation_trap"
+        },
+        {
+          "id": "ent_001",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 1487,
+          "actual": "email it to harshit at saaslabs  the personal address",
+          "expected": "email it to harshit at the personal address",
+          "valid": true,
+          "cat": "entity_correction"
+        },
+        {
+          "id": "ent_002",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "warnings": [],
+          "latencyMs": 1496,
+          "actual": "assign the ticket to rohan",
+          "expected": "assign the ticket to rohan",
+          "valid": false,
+          "cat": "entity_correction"
+        },
+        {
+          "id": "ent_003",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 1501,
+          "actual": "we're using deepgram  for this pipeline",
+          "expected": "we're using assemblyai for this pipeline",
+          "valid": true,
+          "cat": "entity_correction"
+        },
+        {
+          "id": "num_001",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "warnings": [],
+          "latencyMs": 1077,
+          "actual": "set the timeout to sixty",
+          "expected": "set the timeout to sixty",
+          "valid": false,
+          "cat": "number_correction"
+        },
+        {
+          "id": "num_002",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "warnings": [],
+          "latencyMs": 1082,
+          "actual": "invite twenty five people",
+          "expected": "invite twenty five people",
+          "valid": false,
+          "cat": "number_correction"
+        },
+        {
+          "id": "num_003",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text",
+            "clean_text mismatch (expected normalized_exact)",
+            "deletion_only: edit has replacement \"nine million\" for raw \"sorry nine million\""
+          ],
+          "warnings": [],
+          "latencyMs": 2101,
+          "actual": "the backlog is nine million messages",
+          "expected": "the backlog is nine million",
+          "valid": false,
+          "cat": "number_correction"
+        },
+        {
+          "id": "meta_001",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 1246,
+          "actual": "the meeting is on friday  the meeting is cancelled",
+          "expected": "the meeting is cancelled",
+          "valid": true,
+          "cat": "meta_command"
+        },
+        {
+          "id": "meta_002",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 1090,
+          "actual": "reschedule to noon  keep it as is",
+          "expected": "keep it as is",
+          "valid": true,
+          "cat": "meta_command"
+        },
+        {
+          "id": "nop_001",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1305,
+          "actual": "please book the conference room for friday at two",
+          "expected": "please book the conference room for friday at two",
+          "valid": true,
+          "cat": "no_op"
+        },
+        {
+          "id": "nop_002",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1333,
+          "actual": "the flow control permit leak was causing the consumer to stall",
+          "expected": "the flow control permit leak was causing the consumer to stall",
+          "valid": true,
+          "cat": "no_op"
+        },
+        {
+          "id": "nop_003",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1569,
+          "actual": "i want to schedule the meeting on friday",
+          "expected": "i want to schedule the meeting on friday",
+          "valid": true,
+          "cat": "no_op"
+        },
+        {
+          "id": "nop_004",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1269,
+          "actual": "can you review the pull request before the standup tomorrow",
+          "expected": "can you review the pull request before the standup tomorrow",
+          "valid": true,
+          "cat": "no_op"
+        },
+        {
+          "id": "nop_005",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 1527,
+          "actual": "we  the new latency numbers a lot",
+          "expected": "we like the new latency numbers a lot",
+          "valid": true,
+          "cat": "no_op"
+        },
+        {
+          "id": "ins_001",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text",
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 974,
+          "actual": "schedule it at friday",
+          "expected": "schedule it on friday",
+          "valid": false,
+          "cat": "insertion_required"
+        },
+        {
+          "id": "ins_002",
+          "pass": false,
+          "errors": [
+            "deletion_only: edit has replacement \"he doesn't\" for raw \"he don't he doesn't\""
+          ],
+          "warnings": [],
+          "latencyMs": 1907,
+          "actual": "he doesn't have access yet",
+          "expected": "he doesn't have access yet",
+          "valid": true,
+          "cat": "insertion_required"
+        },
+        {
+          "id": "ins_003",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 1543,
+          "actual": "there is four blockers left",
+          "expected": "there are four blockers left",
+          "valid": true,
+          "cat": "insertion_required"
+        },
+        {
+          "id": "ins_004",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "warnings": [],
+          "latencyMs": 1616,
+          "actual": "i talked to them yesterday",
+          "expected": "i talked to them yesterday",
+          "valid": false,
+          "cat": "insertion_required"
+        },
+        {
+          "id": "long_001",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text",
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 2091,
+          "actual": "so i wanted to walk through the architecture we have the hotkey capture layer then it streams to the asr endpoint and then before that there's a gate layer that checks the audio level and then it streams to the asr endpoint",
+          "expected": "i wanted to walk through the architecture we have the hotkey capture layer then there's a gate layer that checks the audio level and then it streams to the asr endpoint",
+          "valid": false,
+          "cat": "long_form"
+        },
+        {
+          "id": "long_002",
+          "pass": false,
+          "errors": [
+            "valid_reconstruct: edits did not rebuild model clean_text",
+            "clean_text mismatch (expected normalized_exact)",
+            "deletion_only: edit has replacement \"let me rephrase\" for raw \"no let me rephrase\"",
+            "deletion_only: edit has replacement \"assuming\" for raw \"uh assuming\""
+          ],
+          "warnings": [],
+          "latencyMs": 2691,
+          "actual": "the plan is to ship on friday let me rephrase the plan is to cut the release branch on friday and ship on monday assuming the evals pass",
+          "expected": "the plan is to cut the release branch on friday and ship on monday assuming the evals pass",
+          "valid": false,
+          "cat": "long_form"
+        }
+      ],
+      "ranAt": "2026-08-13T10:02:56.149Z"
+    }
+  ]
+}
