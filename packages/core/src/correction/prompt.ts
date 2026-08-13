@@ -42,8 +42,19 @@ function languageNote(language?: string): string {
   return isEnglish(language) ? "" : `\n\nThe transcript is in language "${language}" — keep your output in that same language. Do not translate it to English.`;
 }
 
-export function formatMessage(text: string, language?: string): string {
-  return `Cleaned transcript to format:\n${text}${languageNote(language)}`;
+/**
+ * 3.4 — a "Known terms" line appended when a custom-vocabulary list is present.
+ * Additive and behind a truthy/non-empty check, so existing calls (and prompt.test.ts)
+ * are byte-identical when no vocabulary is supplied. Deliberately avoids the word
+ * "language" so it never trips the language-note assertions.
+ */
+function vocabularyNote(vocabulary?: string[]): string {
+  const terms = (vocabulary ?? []).map((t) => t.trim()).filter(Boolean);
+  return terms.length ? `\n\nKnown terms (preserve and spell exactly): ${terms.join(", ")}.` : "";
+}
+
+export function formatMessage(text: string, language?: string, vocabulary?: string[]): string {
+  return `Cleaned transcript to format:\n${text}${languageNote(language)}${vocabularyNote(vocabulary)}`;
 }
 
 /**
@@ -102,9 +113,9 @@ function extractNumberedList(t: string): { lead: string; items: string[] } | nul
   return items.length >= 2 ? { lead, items } : null;
 }
 
-export function userMessage(raw: string, priorContext?: string, language?: string): string {
+export function userMessage(raw: string, priorContext?: string, language?: string, vocabulary?: string[]): string {
   const ctx = priorContext ? `Prior context (already cleaned): ${priorContext}\n\n` : "";
-  return `${ctx}Raw transcript:\n${raw}${languageNote(language)}`;
+  return `${ctx}Raw transcript:\n${raw}${languageNote(language)}${vocabularyNote(vocabulary)}`;
 }
 
 /** Extract the first JSON object from an LLM text response. */

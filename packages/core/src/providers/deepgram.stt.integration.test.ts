@@ -111,11 +111,69 @@ describe("DeepgramSTT adapter (against a mock streaming server)", () => {
   });
 });
 
+// 3.2 — auto-detect language. The mock captures the connect query; we assert the
+// vendor params directly (no scripted transcript needed).
+describe("DeepgramSTT auto-detect language (3.2)", () => {
+  async function connectQuery(cfg: { language?: string; detectLanguage?: boolean; model?: string; keywords?: string[] }): Promise<string> {
+    const mock = mockDeepgram([]);
+    cleanup.push(mock.close);
+    process.env.DEEPGRAM_WS_URL = mock.url;
+    const stt = new DeepgramSTT();
+    const session = await stt.startSession({ apiKey: "k", language: cfg.language, detectLanguage: cfg.detectLanguage, model: cfg.model, keywords: cfg.keywords });
+    await new Promise<void>((resolve) => {
+      session.onClose(() => resolve());
+      setTimeout(() => { session.close(); resolve(); }, 120);
+    });
+    return mock.seen.query;
+  }
+
+  it("detectLanguage:true uses language=multi on streaming (detect_language is prerecorded-only and 400s on streaming)", async () => {
+    const q = await connectQuery({ language: "fr", detectLanguage: true });
+    expect(q).toContain("language=multi");
+    // Must NOT send detect_language on the streaming socket (Deepgram 400s it).
+    expect(q).not.toContain("detect_language");
+  });
+
+  it("detectLanguage unset sends language=fr and no detect_language", async () => {
+    const q = await connectQuery({ language: "fr" });
+    expect(q).toContain("language=fr");
+    expect(q).not.toContain("detect_language");
+  });
+
+  // Phase 7 (Fix 1 + Fix 2) — per-session STT model override + the keyword-boost
+  // param branching on the RESOLVED model, on the streaming socket.
+  it("startSession({ model: 'nova-3' }) puts model=nova-3 on the connect query", async () => {
+    const q = await connectQuery({ model: "nova-3" });
+    expect(q).toContain("model=nova-3");
+  });
+
+  it("keyword boost branches on the per-user model: nova-3 uses keyterm, not keywords", async () => {
+    const q = await connectQuery({ model: "nova-3", keywords: ["Verbatim"] });
+    expect(q).toContain("keyterm=Verbatim");
+    expect(q).not.toContain("keywords=");
+  });
+
+  it("empty model does NOT override (env unset ⇒ default nova-2)", async () => {
+    const q = await connectQuery({ model: "" });
+    expect(q).toContain("model=nova-2");
+  });
+
+  it("empty model falls through to DEEPGRAM_STT_MODEL when set", async () => {
+    process.env.DEEPGRAM_STT_MODEL = "nova-3";
+    const q = await connectQuery({ model: "" });
+    expect(q).toContain("model=nova-3"); // env used when cfg is empty
+  });
+
+  it("cfg model wins over the env var", async () => {
+    process.env.DEEPGRAM_STT_MODEL = "nova-3";
+    const q = await connectQuery({ model: "nova-custom" });
+    expect(q).toContain("model=nova-custom");
+  });
+});
+
 describe("DeepgramSTT.transcribeBatch (against a mock /v1/listen)", () => {
-  it("posts the WAV and returns the transcript", async () => {
-    let gotAuth = "";
-    let gotUrl = "";
-    let gotContentType = "";
+  async function batchCall(cfg: { language?: string; detectLanguage?: boolean; model?: string; keywords?: string[] }): Promise<{ url: string; text: string; auth: string; ctype: string }> {
+    let gotAuth = "", gotUrl = "", gotContentType = "";
     const server = await new Promise<{ base: string; server: Server }>((resolve) => {
       const s = createServer((req, res) => {
         gotAuth = String(req.headers["authorization"] ?? "");
@@ -124,23 +182,72 @@ describe("DeepgramSTT.transcribeBatch (against a mock /v1/listen)", () => {
         req.on("data", () => {});
         req.on("end", () => {
           res.setHeader("content-type", "application/json");
-          res.end(
-            JSON.stringify({
-              results: { channels: [{ alternatives: [{ transcript: "clean batch" }] }] },
-            }),
-          );
+          res.end(JSON.stringify({ results: { channels: [{ alternatives: [{ transcript: "clean batch" }] }] } }));
         });
       });
       s.listen(0, () => resolve({ base: `http://localhost:${(s.address() as AddressInfo).port}/v1`, server: s }));
     });
     cleanup.push(() => server.server.close());
     process.env.DEEPGRAM_BASE = server.base;
-
     const pcm = new Uint8Array(3200); // 100ms @ 16k
-    const text = await new DeepgramSTT().transcribeBatch!(pcm, { apiKey: "test-key" });
-    expect(text).toBe("clean batch");
-    expect(gotAuth).toBe("Token test-key");
-    expect(gotUrl).toContain("/listen");
-    expect(gotContentType).toBe("audio/wav");
+    const text = await new DeepgramSTT().transcribeBatch!(pcm, { apiKey: "test-key", ...cfg });
+    return { url: gotUrl, text, auth: gotAuth, ctype: gotContentType };
+  }
+
+  it("posts the WAV and returns the transcript", async () => {
+    const r = await batchCall({});
+    expect(r.text).toBe("clean batch");
+    expect(r.auth).toBe("Token test-key");
+    expect(r.url).toContain("/listen");
+    expect(r.ctype).toBe("audio/wav");
+  });
+
+  it("passes the fixed language on the batch (authoritative) path", async () => {
+    const r = await batchCall({ language: "es" });
+    expect(r.url).toContain("language=es");
+    expect(r.url).not.toContain("detect_language");
+  });
+
+  it("detectLanguage:true uses detect_language=true on the batch path (prerecorded supports it)", async () => {
+    const r = await batchCall({ detectLanguage: true });
+    expect(r.url).toContain("detect_language=true");
+    expect(/[?&]language=/.test(r.url)).toBe(false);
+  });
+
+  // Phase 7 Fix 1 — model override on the AUTHORITATIVE batch path.
+  it("threads model=nova-3 onto the batch request", async () => {
+    const r = await batchCall({ model: "nova-3" });
+    expect(r.url).toContain("model=nova-3");
+  });
+
+  it("empty batch model does NOT override (default nova-2)", async () => {
+    const r = await batchCall({ model: "" });
+    expect(r.url).toContain("model=nova-2");
+  });
+
+  it("empty batch model falls through to DEEPGRAM_STT_MODEL", async () => {
+    process.env.DEEPGRAM_STT_MODEL = "nova-3";
+    const r = await batchCall({ model: "" });
+    expect(r.url).toContain("model=nova-3");
+  });
+
+  // Phase 7 Fix 2 — the keyword boost now also applies on the batch/finalize path,
+  // with the SAME model-branch as streaming.
+  it("keywords boost the batch request (nova-2 default ⇒ keywords=)", async () => {
+    const r = await batchCall({ keywords: ["Verbatim", "PyAI"] });
+    expect(r.url).toContain("keywords=Verbatim");
+    expect(r.url).toContain("keywords=PyAI");
+  });
+
+  it("keyword boost uses keyterm= on nova-3 (via the model override)", async () => {
+    const r = await batchCall({ model: "nova-3", keywords: ["Verbatim"] });
+    expect(r.url).toContain("keyterm=Verbatim");
+    expect(r.url).not.toContain("keywords=");
+  });
+
+  it("no keywords ⇒ neither keywords= nor keyterm= on the batch url (unchanged)", async () => {
+    const r = await batchCall({});
+    expect(r.url).not.toContain("keywords=");
+    expect(r.url).not.toContain("keyterm=");
   });
 });

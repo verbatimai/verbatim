@@ -38,6 +38,30 @@ export interface STTSession {
 export interface STTSessionConfig {
   apiKey: string;
   language?: string;
+  /**
+   * 3.2 — ask the STT vendor to auto-detect the spoken language instead of using a
+   * fixed `language`. Vendor-specific and PATH-specific: Deepgram cannot detect on
+   * the STREAMING socket (detect_language is prerecorded-only and 400s on streaming),
+   * so streaming uses the multilingual `language=multi` model; the BATCH finalize
+   * path uses `detect_language=true`. OpenAI omits the `language` field on both paths
+   * (Whisper auto-detects). PyAI Hear ignores it (English-only). Default = fixed lang.
+   */
+  detectLanguage?: boolean;
+  /**
+   * 3.4 — custom vocabulary terms for STT-side keyword boost. Deepgram-only consumer
+   * (`keywords` on nova-2 / `keyterm` on nova-3); OpenAI Realtime and PyAI Hear have
+   * no equivalent param, so this is ignored by those adapters.
+   */
+  keywords?: string[];
+  /**
+   * Phase 7 — per-session STT model override from the Settings "Models" pane. Empty
+   * string / whitespace / undefined ⇒ use the adapter's env var then its hardcoded
+   * default (never let an empty value override). Deepgram uses it on streaming AND
+   * batch; OpenAI uses it on STREAMING only (batch keeps OPENAI_BATCH_MODEL — a
+   * streaming-only model name would 400 the batch endpoint); PyAI Hear ignores it
+   * (single model, pyai-hear).
+   */
+  model?: string;
 }
 
 export interface STTProvider {
@@ -50,5 +74,5 @@ export interface STTProvider {
    * Batch-transcribe a full PCM clip → one clean transcript. Used on finalize so
    * the authoritative result doesn't depend on reconstructing the live stream.
    */
-  transcribeBatch?(pcm: Uint8Array, cfg: { apiKey: string; sampleRate?: number }): Promise<string>;
+  transcribeBatch?(pcm: Uint8Array, cfg: { apiKey: string; sampleRate?: number; language?: string; detectLanguage?: boolean; model?: string; keywords?: string[] }): Promise<string>;
 }

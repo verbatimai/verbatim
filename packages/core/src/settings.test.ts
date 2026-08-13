@@ -17,6 +17,7 @@ describe("AppSettings resolver", () => {
       sttProvider: "pyai",
       correctionProvider: "pyai",
       language: "en",
+      autoDetectLanguage: false,
     });
     const r = resolveProviders(DEFAULT_SETTINGS);
     expect(r.stt.id).toBe("pyai");
@@ -85,6 +86,24 @@ describe("capabilityErrors", () => {
       PYAI_ONLY,
     );
     expect(errs).toEqual([]);
+  });
+
+  // 3.2 — auto-detect language relaxation + the preserved PyAI-English-only warning.
+  it("auto-detect on + non-PyAI STT relaxes the fixed-language guard", () => {
+    const errs = capabilityErrors(
+      { sttProvider: "deepgram", correctionProvider: "pyai", language: "fr", autoDetectLanguage: true },
+      BOTH_KEYS,
+    );
+    expect(errs).toEqual([]); // no language error for a multilingual vendor under auto-detect
+  });
+
+  it("auto-detect on + PyAI STT STILL warns English-only (never silenced)", () => {
+    const errs = capabilityErrors(
+      { sttProvider: "pyai", correctionProvider: "pyai", language: "fr", autoDetectLanguage: true },
+      PYAI_ONLY,
+    );
+    expect(errs.some((e) => /English-only/.test(e))).toBe(true); // warning preserved
+    expect(errs.some((e) => /Auto-detect doesn't apply/.test(e))).toBe(true); // distinct note added
   });
 
   it("surfaces a clear message for an unknown vendor id", () => {

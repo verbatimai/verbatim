@@ -15,11 +15,11 @@ function mockRealtimeServer(deltas: string[], completed: string) {
   wss.on("connection", (ws: WebSocket, req) => {
     seen.auth = String(req.headers["authorization"] ?? "");
     seen.beta = String(req.headers["openai-beta"] ?? "");
-    ws.send(JSON.stringify({ type: "transcription_session.created" }));
+    ws.send(JSON.stringify({ type: "session.created" }));
     ws.on("message", (d, isBinary) => {
       if (isBinary) return;
       const m = JSON.parse(d.toString());
-      if (m.type === "transcription_session.update") seen.config = m.session;
+      if (m.type === "session.update") seen.config = m.session;
       else if (m.type === "input_audio_buffer.append") seen.appends++;
       else if (m.type === "input_audio_buffer.commit") {
         deltas.forEach((delta, i) =>
@@ -57,6 +57,8 @@ afterEach(() => {
   cleanup.splice(0).forEach((f) => f());
   delete process.env.OPENAI_REALTIME_WS_URL;
   delete process.env.OPENAI_BASE;
+  delete process.env.OPENAI_STT_MODEL;
+  delete process.env.OPENAI_BATCH_MODEL;
 });
 
 describe("OpenAiSTT adapter (against a mock Realtime server)", () => {
@@ -93,10 +95,69 @@ describe("OpenAiSTT adapter (against a mock Realtime server)", () => {
 
     // wire assertions
     expect(mock.seen.auth).toBe("Bearer key-abc");
-    expect(mock.seen.beta).toBe("realtime=v1");
-    expect(mock.seen.config?.input_audio_format).toBe("pcm16");
-    expect(mock.seen.config?.input_audio_transcription?.model).toBeTruthy();
+    expect(mock.seen.beta).toBe(""); // GA: no OpenAI-Beta header
+    expect(mock.seen.config?.type).toBe("transcription");
+    expect(mock.seen.config?.audio?.input?.format?.type).toBe("audio/pcm");
+    expect(mock.seen.config?.audio?.input?.transcription?.model).toBeTruthy();
     expect(mock.seen.appends).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// 3.2 — auto-detect language. Assert the transcription_session.update config: on
+// detect there is NO `language` key (model default); off, it's present.
+describe("OpenAiSTT auto-detect language (3.2)", () => {
+  async function seenConfig(cfg: { language?: string; detectLanguage?: boolean; model?: string }): Promise<any> {
+    const mock = mockRealtimeServer([], "");
+    cleanup.push(mock.close);
+    process.env.OPENAI_REALTIME_WS_URL = mock.url;
+    const stt = new OpenAiSTT();
+    const session = await stt.startSession({ apiKey: "k", language: cfg.language, detectLanguage: cfg.detectLanguage, model: cfg.model });
+    // Let the socket open + the config frame flush, then tear down.
+    await new Promise((r) => setTimeout(r, 80));
+    session.close();
+    return mock.seen.config;
+  }
+
+  it("detectLanguage:true omits the language field in transcription_session.update", async () => {
+    const config = await seenConfig({ language: "fr", detectLanguage: true });
+    expect(config?.audio?.input?.transcription).toBeTruthy();
+    expect("language" in config.audio.input.transcription).toBe(false);
+  });
+
+  it("detectLanguage unset keeps the language field", async () => {
+    const config = await seenConfig({ language: "fr" });
+    expect(config?.audio?.input?.transcription?.language).toBe("fr");
+  });
+});
+
+// Phase 7 Fix 1 — the Settings model field maps to the STREAMING model
+// (transcription_session.update.input_audio_transcription.model).
+describe("OpenAiSTT streaming model override (Phase 7)", () => {
+  async function seenConfig(cfg: { model?: string }): Promise<any> {
+    const mock = mockRealtimeServer([], "");
+    cleanup.push(mock.close);
+    process.env.OPENAI_REALTIME_WS_URL = mock.url;
+    const stt = new OpenAiSTT();
+    const session = await stt.startSession({ apiKey: "k", model: cfg.model });
+    await new Promise((r) => setTimeout(r, 80));
+    session.close();
+    return mock.seen.config;
+  }
+
+  it("uses the passed streaming model", async () => {
+    const config = await seenConfig({ model: "gpt-live-custom" });
+    expect(config?.audio?.input?.transcription?.model).toBe("gpt-live-custom");
+  });
+
+  it("empty model does NOT override (default gpt-4o-mini-transcribe)", async () => {
+    const config = await seenConfig({ model: "" });
+    expect(config?.audio?.input?.transcription?.model).toBe("gpt-4o-mini-transcribe");
+  });
+
+  it("empty model falls through to OPENAI_STT_MODEL", async () => {
+    process.env.OPENAI_STT_MODEL = "gpt-live-env";
+    const config = await seenConfig({ model: "" });
+    expect(config?.audio?.input?.transcription?.model).toBe("gpt-live-env");
   });
 });
 
@@ -124,5 +185,40 @@ describe("OpenAiSTT.transcribeBatch (against a mock /v1/audio/transcriptions)", 
     expect(text).toBe("the clean batch transcript");
     expect(gotContentType).toContain("multipart/form-data");
     expect(gotAuth).toBe("Bearer test-key");
+  });
+
+  // Phase 7 Fix 1 (OpenAI split, open-question #2) — the batch endpoint keeps its OWN
+  // model resolution (OPENAI_BATCH_MODEL ?? "gpt-transcribe") and MUST NOT use cfg.model:
+  // the streaming model name would 400 the Whisper-family batch endpoint. We capture the
+  // raw multipart body to read the `model` field the adapter sent.
+  async function batchBody(cfg: { apiKey: string; model?: string }): Promise<string> {
+    let raw = "";
+    const server = await new Promise<{ base: string; server: Server }>((resolve) => {
+      const s = createServer((req, res) => {
+        req.on("data", (c) => (raw += c.toString()));
+        req.on("end", () => {
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify({ text: "ok" }));
+        });
+      });
+      s.listen(0, () => resolve({ base: `http://localhost:${(s.address() as AddressInfo).port}/v1`, server: s }));
+    });
+    cleanup.push(() => server.server.close());
+    process.env.OPENAI_BASE = server.base;
+    await new OpenAiSTT().transcribeBatch!(new Uint8Array(4800), cfg);
+    return raw;
+  }
+
+  it("ignores cfg.model on batch and defaults to gpt-4o-mini-transcribe", async () => {
+    // A streaming-only model name is passed but must NOT reach the batch endpoint.
+    const body = await batchBody({ apiKey: "k", model: "gpt-live-custom" });
+    expect(body).toContain("gpt-4o-mini-transcribe");
+    expect(body).not.toContain("gpt-live-custom");
+  });
+
+  it("uses OPENAI_BATCH_MODEL when set (independent of cfg.model)", async () => {
+    process.env.OPENAI_BATCH_MODEL = "gpt-transcribe-custom";
+    const body = await batchBody({ apiKey: "k", model: "gpt-live-custom" });
+    expect(body).toContain("gpt-transcribe-custom");
   });
 });

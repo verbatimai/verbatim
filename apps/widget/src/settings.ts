@@ -5,6 +5,13 @@
 // inline panel — it can accept typed input and real keydown-based hotkey capture.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import {
+  sttModels,
+  sttLanguages,
+  sttSupportsAutoDetect,
+  sttIsBroad,
+  correctionModels,
+} from "./capabilities";
 
 type AppConfig = {
   sttProvider: string;
@@ -15,6 +22,18 @@ type AppConfig = {
   hotkey: string;
   dockIcon: boolean;
   muteOthers?: boolean;
+  launchAtLogin?: boolean;
+  debug?: boolean;
+  theme?: string;
+  keyStorage?: string; // hidden (§1.6) — no UI; kept for type-completeness
+  correct?: boolean; // 2.2 — run self-correction on finalize (default true)
+  format?: boolean; // 2.3 — run formatting on finalize (default true)
+  pasteLastHotkey?: string; // 2.1 — global accelerator to paste last transcript ("" = unset)
+  micDeviceId?: string; // 3.1 — chosen input device deviceId ("" = system default)
+  autoDetectLanguage?: boolean; // 3.2 — auto-detect spoken language (Deepgram/OpenAI)
+  telemetry?: boolean; // 3.3 — anonymous, metadata-only telemetry (default off; transport parked)
+  fnPushToTalk?: boolean; // Wave 4 — hold a bare key (Fn) to dictate
+  pttKey?: string; // Wave 4 — "fn" | "right_cmd" | "right_opt"
 };
 
 // Mirrors packages/core's provider registries' `requiredKeys` and Rust's
@@ -32,26 +51,50 @@ const VENDOR_LABELS: Record<string, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
 };
-const KNOWN_LANGUAGES = new Set(["en", "es", "fr", "de", "hi", "ja", "zh"]);
-
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const sttProviderEl = $<HTMLSelectElement>("sttProvider");
 const correctionProviderEl = $<HTMLSelectElement>("correctionProvider");
-const sttModelEl = $<HTMLInputElement>("sttModel");
-const correctionModelEl = $<HTMLInputElement>("correctionModel");
+const sttModelEl = $<HTMLSelectElement>("sttModel");
+const correctionModelEl = $<HTMLSelectElement>("correctionModel");
 const languageEl = $<HTMLSelectElement>("language");
 const languageCustomEl = $<HTMLInputElement>("languageCustom");
 const languageHintEl = $("languageHint");
 const capabilityErrorsEl = $("capabilityErrors");
 const vendorKeysEl = $("vendorKeys");
+const dockIconEl = $<HTMLInputElement>("dockIcon");
 const muteOthersEl = $<HTMLInputElement>("muteOthers");
+const launchAtLoginEl = $<HTMLInputElement>("launchAtLogin");
+const debugEl = $<HTMLInputElement>("debugMode");
+const resetBtnEl = $<HTMLButtonElement>("resetBtn");
 const hotkeyCaptureEl = $<HTMLInputElement>("hotkeyCapture");
 const hotkeyClearEl = $<HTMLButtonElement>("hotkeyClear");
 const hotkeyPresetsEl = $("hotkeyPresets");
+const selfCorrectEl = $<HTMLInputElement>("selfCorrect");
+const formatToggleEl = $<HTMLInputElement>("formatToggle");
+const pasteLastCaptureEl = $<HTMLInputElement>("pasteLastCapture");
+const pasteLastClearEl = $<HTMLButtonElement>("pasteLastClear");
+const micDeviceEl = $<HTMLSelectElement>("micDevice");
+const micHintEl = $("micHint");
+const autoDetectEl = $<HTMLInputElement>("autoDetect");
+const autoDetectSwitchEl = () => autoDetectEl?.closest<HTMLElement>(".switch") ?? null;
+const autoDetectHintEl = $("autoDetectHint");
+const telemetryEl = $<HTMLInputElement>("telemetry");
+const vocabListEl = $("vocabList");
+const vocabInputEl = $<HTMLInputElement>("vocabInput");
+const vocabAddEl = $<HTMLButtonElement>("vocabAdd");
+const snipListEl = $("snipList");
+const snipTriggerEl = $<HTMLInputElement>("snipTrigger");
+const snipExpansionEl = $<HTMLInputElement>("snipExpansion");
+const snipAddEl = $<HTMLButtonElement>("snipAdd");
 const micStatusEl = $("micStatus");
 const axStatusEl = $("axStatus");
 const openMicEl = $<HTMLButtonElement>("openMic");
 const openAxEl = $<HTMLButtonElement>("openAx");
+const imStatusEl = $("imStatus");
+const openImEl = $<HTMLButtonElement>("openIm");
+const pttEnableEl = $<HTMLInputElement>("pttEnable");
+const pttKeyEl = $<HTMLSelectElement>("pttKey");
+const pttStatusEl = $("pttStatus");
 
 let config: AppConfig = {
   sttProvider: "pyai",
@@ -79,8 +122,11 @@ function capabilityErrors(): string[] {
   if (!hasKey[config.correctionProvider]) {
     errors.push(`Correction '${config.correctionProvider}' needs ${VENDOR_ENV[config.correctionProvider]}.`);
   }
+  // 3.2 — auto-detect never silences the PyAI-English-only warning (PyAI ignores detect);
+  // for non-PyAI vendors, auto-detect relaxes the fixed-language guard (mirrors core).
   if (config.sttProvider === "pyai" && !isEnglish(config.language)) {
-    errors.push(`PyAI Hear is English-only — choose Deepgram or OpenAI as the STT vendor for language '${config.language}'.`);
+    const note = config.autoDetectLanguage ? " (Auto-detect doesn't apply — PyAI Hear is English-only.)" : "";
+    errors.push(`PyAI Hear is English-only — choose Deepgram or OpenAI as the STT vendor for language '${config.language}'.${note}`);
   }
   return errors;
 }
@@ -197,26 +243,42 @@ async function initVendorKeys() {
   renderCapabilityErrors();
 }
 
-// ---- providers, models, language ----
+// ---- providers, models, language (capability-driven, Phase 8) ----
+// The Dictation controls interlock via `capabilities.ts`:
+//   1. Language options follow the selected STT provider/model.
+//   2. Auto-detect is enabled only when the provider/model supports it (forced
+//      off + greyed for PyAI).
+//   3. When auto-detect is supported AND on, the language select is greyed (auto).
+function fillSelect(sel: HTMLSelectElement, opts: { value: string; label: string }[], value: string) {
+  sel.innerHTML = "";
+  for (const o of opts) {
+    const el = document.createElement("option");
+    el.value = o.value;
+    el.textContent = o.label;
+    sel.appendChild(el);
+  }
+  sel.value = value;
+}
+
 function initProviderControls() {
   sttProviderEl.value = config.sttProvider;
   correctionProviderEl.value = config.correctionProvider;
-  sttModelEl.value = config.sttModel;
-  correctionModelEl.value = config.correctionModel;
 
-  if (KNOWN_LANGUAGES.has(config.language) || config.language === "en") {
-    languageEl.value = config.language || "en";
-  } else {
-    languageEl.value = "other";
-    languageCustomEl.style.display = "block";
-    languageCustomEl.value = config.language;
-  }
-  updateLanguageHint();
-
-  sttProviderEl.onchange = async () => { await patchConfig({ sttProvider: sttProviderEl.value }); };
-  correctionProviderEl.onchange = async () => { await patchConfig({ correctionProvider: correctionProviderEl.value }); };
-  sttModelEl.onblur = async () => { await patchConfig({ sttModel: sttModelEl.value.trim() }); };
-  correctionModelEl.onblur = async () => { await patchConfig({ correctionModel: correctionModelEl.value.trim() }); };
+  sttProviderEl.onchange = async () => {
+    await patchConfig({ sttProvider: sttProviderEl.value });
+    await refreshSttCapabilities();
+  };
+  sttModelEl.onchange = async () => {
+    await patchConfig({ sttModel: sttModelEl.value });
+    await refreshSttCapabilities();
+  };
+  correctionProviderEl.onchange = async () => {
+    await patchConfig({ correctionProvider: correctionProviderEl.value });
+    refreshCorrectionModels();
+  };
+  correctionModelEl.onchange = async () => {
+    await patchConfig({ correctionModel: correctionModelEl.value });
+  };
 
   languageEl.onchange = async () => {
     if (languageEl.value === "other") {
@@ -234,12 +296,98 @@ function initProviderControls() {
     await patchConfig({ language: tag });
     updateLanguageHint();
   };
+
+  void refreshSttCapabilities();
+  refreshCorrectionModels();
+}
+
+// Repopulate the STT model + language selects and reconcile auto-detect whenever
+// the STT provider or model changes. Persists any values it has to coerce (a
+// model/language the new provider doesn't offer) through patchConfig — convergent,
+// so the config-changed echo settles without looping.
+async function refreshSttCapabilities() {
+  const provider = config.sttProvider;
+
+  // --- STT model select (disabled when the provider has a single fixed model) ---
+  const models = sttModels(provider);
+  const ids = models.map((m) => m.id);
+  const model = ids.includes(config.sttModel) ? config.sttModel : ids[0] ?? "";
+  fillSelect(sttModelEl, models.map((m) => ({ value: m.id, label: m.label })), model);
+  sttModelEl.disabled = models.length <= 1;
+  if (model !== config.sttModel) {
+    await patchConfig({ sttModel: model });
+  }
+
+  // --- Language select (only languages this provider/model offers) ---
+  const langs = sttLanguages(provider, model);
+  const codes = langs.map((l) => l.code);
+  const broad = sttIsBroad(provider);
+  const opts = langs.map((l) => ({ value: l.code, label: `${l.name} (${l.code})` }));
+  if (broad) opts.push({ value: "other", label: "Other… (custom BCP-47)" });
+
+  let lang = config.language;
+  let useCustom = false;
+  if (codes.includes(lang)) {
+    // offered as-is
+  } else if (broad) {
+    useCustom = true; // a custom BCP-47 tag on a broad provider — keep it
+  } else {
+    lang = codes[0] ?? "en"; // not offered here — coerce to the first supported
+  }
+  fillSelect(languageEl, opts, useCustom ? "other" : lang);
+  languageCustomEl.style.display = useCustom ? "block" : "none";
+  if (useCustom) languageCustomEl.value = lang;
+  if (!useCustom && lang !== config.language) {
+    await patchConfig({ language: lang });
+  }
+
+  // --- Auto-detect: enabled only when supported; forced off otherwise ---
+  const canAuto = sttSupportsAutoDetect(provider, model);
+  if (autoDetectEl) {
+    autoDetectEl.disabled = !canAuto;
+    autoDetectSwitchEl()?.classList.toggle("disabled", !canAuto);
+    if (!canAuto) {
+      autoDetectEl.checked = false;
+      if (config.autoDetectLanguage) await patchConfig({ autoDetectLanguage: false });
+    } else {
+      autoDetectEl.checked = !!config.autoDetectLanguage;
+    }
+    if (autoDetectHintEl) {
+      autoDetectHintEl.textContent = canAuto
+        ? ""
+        : "PyAI Hear is English-only — switch STT to Deepgram or OpenAI to auto-detect.";
+    }
+  }
+
+  // --- Rule 3: grey the language selector while auto-detect is on ---
+  const autoOn = canAuto && !!config.autoDetectLanguage;
+  languageEl.disabled = autoOn;
+  languageCustomEl.disabled = autoOn;
+  updateLanguageHint();
+}
+
+// Repopulate the correction model select from the selected correction provider
+// (disabled for PyAI, whose model is fixed / server-ignored).
+function refreshCorrectionModels() {
+  const provider = config.correctionProvider;
+  const models = correctionModels(provider);
+  const ids = models.map((m) => m.id);
+  const model = ids.includes(config.correctionModel) ? config.correctionModel : ids[0] ?? "";
+  fillSelect(correctionModelEl, models.map((m) => ({ value: m.id, label: m.label })), model);
+  correctionModelEl.disabled = models.length <= 1;
+  if (model !== config.correctionModel) {
+    void patchConfig({ correctionModel: model });
+  }
 }
 
 function updateLanguageHint() {
+  if (config.sttProvider !== "pyai" && config.autoDetectLanguage) {
+    languageHintEl.textContent = "Auto-detect is on — the spoken language is chosen automatically.";
+    return;
+  }
   languageHintEl.textContent = isEnglish(config.language)
     ? ""
-    : "Non-English: PyAI Hear can't transcribe this — pick Deepgram or OpenAI as the STT vendor above.";
+    : "Non-English: PyAI Hear can't transcribe this — pick Deepgram or OpenAI as the STT provider above.";
 }
 
 // ---- hotkey: click-to-record (this window IS focusable, unlike the overlay) ----
@@ -268,28 +416,51 @@ function refreshHotkeyUI() {
     b.classList.toggle("active", b.dataset.hk === config.hotkey));
 }
 
-let recording = false;
-function stopRecording() {
-  recording = false;
-  hotkeyCaptureEl.classList.remove("recording");
-  window.removeEventListener("keydown", onCaptureKeydown, true);
-}
-async function onCaptureKeydown(e: KeyboardEvent) {
-  e.preventDefault();
-  e.stopPropagation();
-  if (e.code === "Escape") { stopRecording(); refreshHotkeyUI(); return; }
-  if (MODIFIER_CODES.has(e.code)) return; // wait for the real key
-  const mods: string[] = [];
-  if (e.altKey) mods.push("Alt");
-  if (e.ctrlKey) mods.push("Control");
-  if (e.shiftKey) mods.push("Shift");
-  if (e.metaKey) mods.push("Meta");
-  if (!mods.length) {
-    hotkeyCaptureEl.value = "Add a modifier (⌥/⌃/⌘/⇧) + a key…";
-    return; // keep listening — a bare key isn't a safe global shortcut
+// Reusable click-to-record hotkey capture. Each instance owns its own recording flag +
+// keydown listener, so the toggle and paste-last inputs never clash. `onAccel` receives a
+// captured accelerator (e.g. "Alt+Shift+KeyD") on a valid combo; the caller persists it and
+// refreshes its own display. `onCancel` re-renders the input when capture is aborted (Esc).
+function makeHotkeyCapture(
+  inputEl: HTMLInputElement,
+  onAccel: (accel: string) => void | Promise<void>,
+  onCancel: () => void,
+) {
+  if (!inputEl) return;
+  let rec = false;
+  const cancel = () => {
+    rec = false;
+    inputEl.classList.remove("recording");
+    window.removeEventListener("keydown", onKeydown, true);
+  };
+  async function onKeydown(e: KeyboardEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.code === "Escape") { cancel(); onCancel(); return; }
+    if (MODIFIER_CODES.has(e.code)) return; // wait for the real key
+    const mods: string[] = [];
+    if (e.altKey) mods.push("Alt");
+    if (e.ctrlKey) mods.push("Control");
+    if (e.shiftKey) mods.push("Shift");
+    if (e.metaKey) mods.push("Meta");
+    if (!mods.length) {
+      inputEl.value = "Add a modifier (⌥/⌃/⌘/⇧) + a key…";
+      return; // keep listening — a bare key isn't a safe global shortcut
+    }
+    const accel = [...mods, e.code].join("+");
+    cancel();
+    await onAccel(accel);
   }
-  const accel = [...mods, e.code].join("+");
-  stopRecording();
+  inputEl.onclick = () => {
+    if (rec) return;
+    rec = true;
+    inputEl.classList.add("recording");
+    inputEl.value = "Press a key combo… (Esc to cancel)";
+    window.addEventListener("keydown", onKeydown, true);
+  };
+}
+
+// ---- toggle hotkey capture (re-expressed through the factory) ----
+makeHotkeyCapture(hotkeyCaptureEl, async (accel) => {
   try {
     await invoke("set_toggle_hotkey", { id: accel });
     config = { ...config, hotkey: accel };
@@ -299,14 +470,57 @@ async function onCaptureKeydown(e: KeyboardEvent) {
     return;
   }
   refreshHotkeyUI();
-}
-hotkeyCaptureEl.onclick = () => {
-  if (recording) return;
-  recording = true;
-  hotkeyCaptureEl.classList.add("recording");
-  hotkeyCaptureEl.value = "Press a key combo… (Esc to cancel)";
-  window.addEventListener("keydown", onCaptureKeydown, true);
+}, refreshHotkeyUI);
+
+// ---- paste last transcript hotkey (2.1) — a second capture row; persisted as
+// config.pasteLastHotkey (Rust registers a global accelerator that re-injects the last
+// finalized transcript). "" = unset. A soft collision guard rejects the dictation toggle
+// and the reserved ⌥⇧V paste-test combo. ----
+const TEST_PASTE_ACCEL = "Alt+Shift+KeyV"; // reserved demo/paste-test hotkey (main.rs)
+const PRESET_ACCEL: Record<string, string> = {
+  "alt-space": "Alt+Space",
+  "ctrl-space": "Control+Space",
+  "cmd-shift-d": "Meta+Shift+KeyD",
+  "ctrl-alt-d": "Control+Alt+KeyD",
+  "alt-grave": "Alt+Backquote",
 };
+// Canonical "MOD+…+CODE" (mods normalized + sorted) from a preset id OR a captured accel,
+// so collisions compare regardless of modifier order / preset-vs-accel form.
+function canonHotkey(id: string): string {
+  if (!id) return "";
+  const accel = PRESET_ACCEL[id] ?? id;
+  const parts = accel.split("+").map((p) => p.trim()).filter(Boolean);
+  const code = parts.pop() ?? "";
+  const mods = parts.map((m) => (m === "Super" || m === "Cmd" ? "Meta" : m)).sort();
+  return [...mods, code].join("+");
+}
+function pasteLastCollision(accel: string): string | null {
+  const c = canonHotkey(accel);
+  if (c && c === canonHotkey(config.hotkey)) return "That's your dictation toggle — pick another.";
+  if (c && c === canonHotkey(TEST_PASTE_ACCEL)) return "⌥⇧V is reserved — pick another.";
+  return null;
+}
+function refreshPasteLastUI() {
+  if (!pasteLastCaptureEl) return;
+  const hk = config.pasteLastHotkey;
+  pasteLastCaptureEl.value = hk ? describeHotkey(hk) : "Click, then press a combo";
+}
+makeHotkeyCapture(pasteLastCaptureEl, async (accel) => {
+  const conflict = pasteLastCollision(accel);
+  if (conflict) {
+    pasteLastCaptureEl.value = conflict;
+    setTimeout(refreshPasteLastUI, 1600);
+    return;
+  }
+  await patchConfig({ pasteLastHotkey: accel });
+  refreshPasteLastUI();
+}, refreshPasteLastUI);
+if (pasteLastClearEl) {
+  pasteLastClearEl.onclick = async () => {
+    await patchConfig({ pasteLastHotkey: "" });
+    refreshPasteLastUI();
+  };
+}
 hotkeyClearEl.onclick = async () => {
   try {
     await invoke("set_toggle_hotkey", { id: "alt-space" });
@@ -349,8 +563,23 @@ async function refreshAxStatus() {
     axStatusEl.textContent = "Couldn't check: " + String(e);
   }
 }
+// Wave 4 — Input Monitoring status (mirrors refreshAxStatus). Powers the Permissions row.
+async function refreshImStatus() {
+  if (!imStatusEl) return;
+  try {
+    const ok = await invoke<boolean>("input_monitoring_trusted");
+    imStatusEl.textContent = ok
+      ? "✓ Granted — push-to-talk can watch the key"
+      : "Not granted — push-to-talk is disabled until you allow it (then relaunch)";
+    imStatusEl.classList.toggle("ok", ok);
+    imStatusEl.classList.toggle("bad", !ok);
+  } catch (e) {
+    imStatusEl.textContent = "Couldn't check: " + String(e);
+  }
+}
 openMicEl.onclick = () => { void invoke("open_mic_settings").catch(() => {}); setTimeout(() => void refreshMicStatus(), 1200); };
 openAxEl.onclick = () => { void invoke("open_accessibility_settings").catch(() => {}); setTimeout(() => void refreshAxStatus(), 1200); };
+if (openImEl) openImEl.onclick = () => { void invoke("open_input_monitoring_settings").catch(() => {}); setTimeout(() => void refreshImStatus(), 1200); };
 
 // ---- nav: sidebar sections ↔ content panes ----
 function initNav() {
@@ -362,7 +591,7 @@ function initNav() {
     document.querySelector(".content")?.scrollTo({ top: 0 });
   };
   items.forEach((b) => (b.onclick = () => b.dataset.pane && show(b.dataset.pane)));
-  show("models"); // land on our headline feature
+  show("preferences"); // consolidated home for dictation + correction
 
   // Sidebar search filters nav items by label.
   const search = $<HTMLInputElement>("navSearch");
@@ -375,60 +604,320 @@ function initNav() {
   };
 }
 
-// ---- theme: light / dark / system, persisted in localStorage ----
+// ---- theme: light / dark / system — config is the source of truth; localStorage is a
+// synchronous fast-path so the window doesn't flash the wrong theme before get_config. ----
+const THEME_ORDER = ["system", "light", "dark"] as const;
+type Theme = (typeof THEME_ORDER)[number];
+function applyThemeUI(t: Theme) {
+  document.body.dataset.theme = t;
+  const labelEl = document.getElementById("themeLabel");
+  if (labelEl) labelEl.textContent = t[0].toUpperCase() + t.slice(1);
+  document.querySelectorAll<HTMLButtonElement>("[data-theme-opt]")
+    .forEach((b) => b.classList.toggle("active", b.dataset.themeOpt === t));
+  try { localStorage.setItem("verbatim.theme", t); } catch {}
+}
+function cachedTheme(): Theme {
+  try { return (localStorage.getItem("verbatim.theme") as Theme) || "system"; } catch { return "system"; }
+}
+function currentTheme(): Theme {
+  const t = (config.theme as Theme) || cachedTheme();
+  return (THEME_ORDER as readonly string[]).includes(t) ? t : "system";
+}
 function initTheme() {
-  const order = ["system", "light", "dark"] as const;
-  type Theme = (typeof order)[number];
-  const labelEl = $("themeLabel");
-  const seg = document.querySelectorAll<HTMLButtonElement>("[data-theme-opt]");
-  const apply = (t: Theme) => {
-    document.body.dataset.theme = t;
-    labelEl.textContent = t[0].toUpperCase() + t.slice(1);
-    seg.forEach((b) => b.classList.toggle("active", b.dataset.themeOpt === t));
-    try { localStorage.setItem("verbatim.theme", t); } catch {}
+  applyThemeUI(currentTheme());
+  const set = (t: Theme) => { applyThemeUI(t); void patchConfig({ theme: t }); };
+  const toggle = document.getElementById("themeToggle") as HTMLButtonElement | null;
+  if (toggle) toggle.onclick = () => {
+    const cur = currentTheme();
+    set(THEME_ORDER[(THEME_ORDER.indexOf(cur) + 1) % THEME_ORDER.length]);
   };
-  let current = ((): Theme => {
-    try { return (localStorage.getItem("verbatim.theme") as Theme) || "system"; } catch { return "system"; }
-  })();
-  apply(current);
-  $<HTMLButtonElement>("themeToggle").onclick = () => {
-    current = order[(order.indexOf(current) + 1) % order.length];
-    apply(current);
-  };
-  seg.forEach((b) => (b.onclick = () => { current = (b.dataset.themeOpt as Theme); apply(current); }));
+  document.querySelectorAll<HTMLButtonElement>("[data-theme-opt]")
+    .forEach((b) => (b.onclick = () => b.dataset.themeOpt && set(b.dataset.themeOpt as Theme)));
 }
 
 // ---- dock icon toggle (real config field) ----
 function initDockIcon() {
-  const el = document.getElementById("dockIcon") as HTMLInputElement | null;
-  if (!el) return;
-  el.checked = !!config.dockIcon;
-  el.onchange = async () => { await patchConfig({ dockIcon: el.checked }); };
+  if (!dockIconEl) return;
+  dockIconEl.checked = !!config.dockIcon;
+  dockIconEl.onchange = async () => { await patchConfig({ dockIcon: dockIconEl.checked }); };
+}
+
+// ---- mute-others toggle (1.1) — Rust field/behaviour already exist; this is the UI ----
+function initMuteOthers() {
+  if (!muteOthersEl) return;
+  muteOthersEl.checked = !!config.muteOthers;
+  muteOthersEl.onchange = () => { void patchConfig({ muteOthers: muteOthersEl.checked }); };
+}
+
+// ---- launch at login (1.2) — Rust syncs the macOS login item as a set_config side-effect ----
+function initLaunchAtLogin() {
+  if (!launchAtLoginEl) return;
+  launchAtLoginEl.checked = !!config.launchAtLogin;
+  launchAtLoginEl.onchange = async () => { await patchConfig({ launchAtLogin: launchAtLoginEl.checked }); };
+}
+
+// ---- debug mode (1.4) — Rust restarts the sidecar with HEAR_DEBUG when this flips ----
+function initDebug() {
+  if (!debugEl) return;
+  debugEl.checked = !!config.debug;
+  debugEl.onchange = async () => { await patchConfig({ debug: debugEl.checked }); };
+}
+
+// ---- self-correction toggle (2.2) — travels on the WS start frame; backend skips the
+// correction pass when off (raw STT-only final, no diff). Default on. ----
+function initSelfCorrect() {
+  if (!selfCorrectEl) return;
+  selfCorrectEl.checked = config.correct !== false; // default on
+  selfCorrectEl.onchange = () => void patchConfig({ correct: selfCorrectEl.checked });
+}
+
+// ---- formatting toggle (2.3) — travels on the WS start frame; backend skips BOTH the LLM
+// formatter and the localFormat fallback when off. Default on. ----
+function initFormat() {
+  if (!formatToggleEl) return;
+  formatToggleEl.checked = config.format !== false; // default on
+  formatToggleEl.onchange = () => void patchConfig({ format: formatToggleEl.checked });
+}
+
+// ---- 3.1 microphone device picker — enumerate audioinput devices, persist micDeviceId
+// ("" = system default). enumerateDevices() returns BLANK labels until getUserMedia has
+// been granted once, so we show fallback names + a hint in that state. Enumerate ONCE
+// (avoid flicker on every config-changed); syncSelection() just re-selects the saved id. ----
+let micEnumerated = false;
+async function initMicDevice() {
+  if (!micDeviceEl) return;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter((d) => d.kind === "audioinput");
+    let anyBlank = false;
+    micDeviceEl.innerHTML = "";
+    const sysOpt = document.createElement("option");
+    sysOpt.value = "";
+    sysOpt.textContent = "System Default";
+    micDeviceEl.appendChild(sysOpt);
+    inputs.forEach((d, i) => {
+      const opt = document.createElement("option");
+      opt.value = d.deviceId;
+      if (!d.label) anyBlank = true;
+      opt.textContent = d.label || `Microphone ${i + 1}`;
+      micDeviceEl.appendChild(opt);
+    });
+    if (micHintEl) {
+      micHintEl.textContent = anyBlank
+        ? "Grant microphone access (and reopen Settings) to see device names."
+        : "";
+    }
+    micEnumerated = true;
+    syncMicSelection();
+  } catch {
+    if (micHintEl) micHintEl.textContent = "Couldn't list input devices.";
+  }
+  micDeviceEl.onchange = () => void patchConfig({ micDeviceId: micDeviceEl.value });
+  // Refresh the list on hot-plug (labels may also fill in after a permission grant).
+  try { navigator.mediaDevices.ondevicechange = () => { micEnumerated = false; void initMicDevice(); }; } catch {}
+}
+// Re-select the saved device without re-enumerating (a missing id silently falls back
+// to "" / System Default, matching the `ideal` capture constraint in main.ts).
+function syncMicSelection() {
+  if (!micDeviceEl) return;
+  micDeviceEl.value = config.micDeviceId ?? "";
+}
+
+// ---- 3.2 auto-detect language — travels on the WS start frame. Enable/disable and
+// forced-off state are driven by capabilities in refreshSttCapabilities(); toggling it
+// re-runs that to grey the language selector (rule 3). ----
+function initAutoDetect() {
+  if (!autoDetectEl) return;
+  autoDetectEl.checked = !!config.autoDetectLanguage;
+  autoDetectEl.onchange = async () => {
+    await patchConfig({ autoDetectLanguage: autoDetectEl.checked });
+    await refreshSttCapabilities();
+  };
+}
+
+// ---- 3.3 anonymous telemetry — default OFF. Metadata only; transport is PARKED (NoopSink),
+// so an ON toggle persists the preference but sends nothing yet. Copy stays honest. ----
+function initTelemetry() {
+  if (!telemetryEl) return;
+  telemetryEl.checked = !!config.telemetry;
+  telemetryEl.onchange = () => void patchConfig({ telemetry: telemetryEl.checked });
+}
+
+// ---- Wave 4 push-to-talk — enable toggle + bare-key picker. Rust starts/stops the
+// listen-only CGEventTap as a set_config side-effect; this only persists the two fields
+// and prompts for Input Monitoring the first time PTT is turned on. ----
+async function initPtt() {
+  if (!pttEnableEl || !pttKeyEl) return;
+  pttEnableEl.checked = !!config.fnPushToTalk;
+  pttKeyEl.value = config.pttKey ?? "fn";
+  pttKeyEl.disabled = !pttEnableEl.checked;
+  pttEnableEl.onchange = async () => {
+    // Prompt for Input Monitoring the first time PTT is turned on (proactive TCC dialog).
+    if (pttEnableEl.checked) { try { await invoke("request_input_monitoring"); } catch {} }
+    await patchConfig({ fnPushToTalk: pttEnableEl.checked });
+    pttKeyEl.disabled = !pttEnableEl.checked;
+    await refreshImStatus();
+    await refreshPttStatus();
+  };
+  pttKeyEl.onchange = async () => { await patchConfig({ pttKey: pttKeyEl.value }); };
+  await refreshPttStatus();
+}
+
+async function refreshPttStatus() {
+  if (!pttStatusEl) return;
+  const granted = await invoke<boolean>("input_monitoring_trusted").catch(() => false);
+  if (config.fnPushToTalk && !granted)
+    pttStatusEl.textContent = "Grant Input Monitoring in Permissions, then quit & relaunch.";
+  else pttStatusEl.textContent = "";
+}
+
+// ---- 3.4 vocabulary — a separate store (vocabulary.json) via vocab_* commands. Custom
+// terms are injected into the format prompt (+ Deepgram keyword boost). ----
+async function initVocabulary() {
+  if (!vocabListEl) return;
+  const render = async () => {
+    let terms: string[] = [];
+    try { terms = await invoke<string[]>("vocab_list"); } catch { terms = []; }
+    vocabListEl.innerHTML = "";
+    if (!terms.length) {
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.textContent = "No custom terms yet.";
+      vocabListEl.appendChild(empty);
+    }
+    for (const term of terms) {
+      const row = document.createElement("div");
+      row.className = "list-row";
+      const label = document.createElement("span");
+      label.className = "list-term";
+      label.textContent = term;
+      const del = document.createElement("button");
+      del.className = "btn ghost";
+      del.textContent = "Delete";
+      del.onclick = async () => { try { await invoke("vocab_delete", { term }); await render(); } catch {} };
+      row.append(label, del);
+      vocabListEl.appendChild(row);
+    }
+  };
+  const add = async () => {
+    const term = vocabInputEl?.value.trim() ?? "";
+    if (!term) return;
+    try { await invoke("vocab_add", { term }); if (vocabInputEl) vocabInputEl.value = ""; await render(); } catch {}
+  };
+  if (vocabAddEl) vocabAddEl.onclick = add;
+  if (vocabInputEl) vocabInputEl.onkeydown = (e) => { if (e.key === "Enter") void add(); };
+  await render();
+}
+
+// ---- 3.5 snippets — a separate store (snippets.json) via snip_* commands. Deterministic
+// trigger→expansion applied to the final text (post-format). ----
+async function initSnippets() {
+  if (!snipListEl) return;
+  const render = async () => {
+    let snips: Array<{ trigger: string; expansion: string }> = [];
+    try { snips = await invoke("snip_list"); } catch { snips = []; }
+    snipListEl.innerHTML = "";
+    if (!snips.length) {
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.textContent = "No snippets yet.";
+      snipListEl.appendChild(empty);
+    }
+    for (const s of snips) {
+      const row = document.createElement("div");
+      row.className = "list-row";
+      const label = document.createElement("span");
+      label.className = "list-term";
+      label.textContent = `${s.trigger} → ${s.expansion}`;
+      const del = document.createElement("button");
+      del.className = "btn ghost";
+      del.textContent = "Delete";
+      del.onclick = async () => { try { await invoke("snip_delete", { trigger: s.trigger }); await render(); } catch {} };
+      row.append(label, del);
+      snipListEl.appendChild(row);
+    }
+  };
+  const add = async () => {
+    const trigger = snipTriggerEl?.value.trim() ?? "";
+    const expansion = snipExpansionEl?.value.trim() ?? "";
+    if (!trigger || !expansion) return;
+    try {
+      await invoke("snip_add", { trigger, expansion });
+      if (snipTriggerEl) snipTriggerEl.value = "";
+      if (snipExpansionEl) snipExpansionEl.value = "";
+      await render();
+    } catch {}
+  };
+  if (snipAddEl) snipAddEl.onclick = add;
+  await render();
+}
+
+// Refresh every simple control from the current `config` (used on load, after Reset, and
+// on external config-changed writes).
+function refreshControls() {
+  initProviderControls();
+  initDockIcon();
+  initMuteOthers();
+  initLaunchAtLogin();
+  initDebug();
+  initSelfCorrect();
+  initFormat();
+  initAutoDetect();
+  initTelemetry();
+  if (micEnumerated) syncMicSelection(); else void initMicDevice();
+  applyThemeUI(currentTheme());
+  refreshHotkeyUI();
+  refreshPasteLastUI();
+  void initPtt();
+  renderCapabilityErrors();
+}
+
+// ---- reset settings (1.3) — restore defaults, keep API keys, live-update the form ----
+function initReset() {
+  if (!resetBtnEl) return;
+  resetBtnEl.onclick = async () => {
+    if (!confirm("Reset all settings to defaults? Your API keys are kept.")) return;
+    try {
+      // clear_config also emits config-changed (which refreshes the form); re-read the
+      // return value and refresh directly too, for immediacy.
+      config = await invoke<AppConfig>("clear_config");
+      refreshControls();
+    } catch {}
+  };
 }
 
 // `config-changed` fires from ANY writer (this window, or a future overlay/sidecar
 // listener) — keep the form in sync if the store changes from elsewhere.
 void listen<AppConfig>("config-changed", (e) => {
   config = e.payload;
-  initProviderControls();
-  initDockIcon();
-  refreshHotkeyUI();
-  renderCapabilityErrors();
+  refreshControls();
 });
 
 window.addEventListener("DOMContentLoaded", async () => {
+  // Fast-path: apply the cached theme immediately so the window doesn't flash before the
+  // config store resolves; initTheme() below re-applies from config (source of truth).
+  applyThemeUI(cachedTheme());
   initNav();
-  initTheme();
   try { config = await invoke<AppConfig>("get_config"); } catch {}
+  initTheme();
   initProviderControls();
   initDockIcon();
+  initMuteOthers();
+  initLaunchAtLogin();
+  initDebug();
+  initSelfCorrect();
+  initFormat();
+  initAutoDetect();
+  initTelemetry();
+  initReset();
   refreshHotkeyUI();
+  refreshPasteLastUI();
+  void initMicDevice();
+  void initVocabulary();
+  void initSnippets();
   void initVendorKeys();
   void refreshMicStatus();
   void refreshAxStatus();
-  // Phase 4.9: the mute-others toggle migrated here from the overlay's old inline panel.
-  muteOthersEl.checked = !!config?.muteOthers;
-  muteOthersEl.addEventListener("change", () => {
-    void invoke("set_config", { patch: { muteOthers: muteOthersEl.checked } });
-  });
+  void refreshImStatus();
+  void initPtt();
 });

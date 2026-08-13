@@ -19,6 +19,12 @@ export class PyAiSTT implements STTProvider {
   readonly audio = { sampleRate: 16000, encoding: "pcm_s16le", channels: 1 } as const;
 
   async startSession(cfg: STTSessionConfig): Promise<STTSession> {
+    // 3.2/3.4 — Hear is English-only and has no keyword-boost param, so `cfg.language`,
+    // `cfg.detectLanguage`, and `cfg.keywords` are intentionally ignored here (the URL
+    // below is identical with or without them). Auto-detect stays guarded at the
+    // capability layer (PyAI-English-only warning still fires).
+    // Phase 7 — `cfg.model` is likewise IGNORED: Hear is single-model, so the URL below
+    // always hardcodes model=pyai-hear regardless of any Settings model override.
     const wsUrl = process.env.PYAI_STT_WS_URL ?? DEFAULT_WS_URL; // read at call time (testable)
     const sep = wsUrl.includes("?") ? "&" : "?";
     const url =
@@ -32,10 +38,11 @@ export class PyAiSTT implements STTProvider {
 
   // Batch transcription of a full clip -> one clean transcript (the authoritative
   // final result; avoids reconstructing the live stream). POST /v1/audio/transcriptions.
-  async transcribeBatch(pcm: Uint8Array, cfg: { apiKey: string; sampleRate?: number }): Promise<string> {
+  async transcribeBatch(pcm: Uint8Array, cfg: { apiKey: string; sampleRate?: number; language?: string; detectLanguage?: boolean; model?: string; keywords?: string[] }): Promise<string> {
     const base = process.env.PYAI_BASE ?? "https://api.pyai.com/v1";
     const wav = pcmToWav(pcm, cfg.sampleRate ?? this.audio.sampleRate, 1);
     const form = new FormData();
+    // Phase 7 — single-model: `cfg.model` is a documented no-op here (always pyai-hear).
     form.append("model", "pyai-hear");
     form.append("file", new Blob([wav], { type: "audio/wav" }), "audio.wav");
     const res = await fetch(`${base}/audio/transcriptions`, {

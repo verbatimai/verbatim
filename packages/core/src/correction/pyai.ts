@@ -43,7 +43,10 @@ export class PyAiCorrection implements CorrectionProvider {
   }
 
   async correct(raw: string, ctx?: CorrectionContext): Promise<CorrectionResult> {
-    const model = process.env.PYAI_MODEL ?? "gpt-5.6-sol";
+    // Phase 7 — per-request override wins; empty never overrides. NOTE (F4): the PyAI
+    // server currently IGNORES `model` (always gpt-5.6-sol), but we send the resolved
+    // value on the wire for uniform threading — a documented no-op, not a regression.
+    const model = (ctx?.model && ctx.model.trim()) ? ctx.model : (process.env.PYAI_MODEL ?? "gpt-5.6-sol");
     const t0 = Date.now();
     const body = await this.messages(
       {
@@ -51,7 +54,7 @@ export class PyAiCorrection implements CorrectionProvider {
         max_tokens: 1024,
         temperature: 0,
         system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: userMessage(raw, ctx?.priorContext, ctx?.language) }],
+        messages: [{ role: "user", content: userMessage(raw, ctx?.priorContext, ctx?.language, ctx?.vocabulary) }],
       },
       "correction",
     );
@@ -64,15 +67,16 @@ export class PyAiCorrection implements CorrectionProvider {
     return { cleanText: valid ? cleanText : parsed?.clean_text ?? raw, edits, ops, latencyMs, valid };
   }
 
-  async format(text: string, language?: string): Promise<{ text: string }> {
-    const model = process.env.PYAI_MODEL ?? "gpt-5.6-sol";
+  async format(text: string, language?: string, vocabulary?: string[], model?: string): Promise<{ text: string }> {
+    // Phase 7 — same prefer-override resolution as correct() (F4: server ignores it).
+    const resolvedModel = (model && model.trim()) ? model : (process.env.PYAI_MODEL ?? "gpt-5.6-sol");
     const body = await this.messages(
       {
-        model,
+        model: resolvedModel,
         max_tokens: 2048, // whole formatted paragraph/list — give it room
         temperature: 0,
         system: FORMAT_PROMPT,
-        messages: [{ role: "user", content: formatMessage(text, language) }],
+        messages: [{ role: "user", content: formatMessage(text, language, vocabulary) }],
       },
       "format",
     );

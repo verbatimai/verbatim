@@ -153,12 +153,14 @@ describe("PyAiSTT adapter (against a faithful mock Hear server)", () => {
 
 // A mock that returns PyAI's Anthropic-Messages shape so the REAL PyAiCorrection
 // adapter's request/parse/reconstruct path is exercised without pyai.com.
-function mockMessagesServer(): Promise<{ base: string; server: Server }> {
+function mockMessagesServer(): Promise<{ base: string; server: Server; captured: { body: any } }> {
+  const captured: { body: any } = { body: null };
   return new Promise((resolve) => {
     const server = createServer((req, res) => {
       let raw = "";
       req.on("data", (c) => (raw += c));
       req.on("end", () => {
+        try { captured.body = JSON.parse(raw); } catch { captured.body = null; }
         const editsJson = JSON.stringify({
           clean_text: "The total is 55 dollars",
           edits: [
@@ -178,7 +180,7 @@ function mockMessagesServer(): Promise<{ base: string; server: Server }> {
     });
     server.listen(0, () => {
       const port = (server.address() as AddressInfo).port;
-      resolve({ base: `http://localhost:${port}`, server });
+      resolve({ base: `http://localhost:${port}`, server, captured });
     });
   });
 }
@@ -269,5 +271,69 @@ describe("PyAiCorrection adapter (against a mock /v1/messages)", () => {
     expect(result.cleanText).toBe("The total is 55 dollars");
     expect(result.edits.length).toBe(8);
     expect(result.ops.some((o) => o.type === "replace" && o.replacement === "55")).toBe(true);
+  });
+});
+
+// Phase 7 Fix 1 — PyAI STT is single-model: any `cfg.model` is a documented no-op,
+// the adapter always uses pyai-hear on both the streaming URL and the batch body.
+describe("PyAiSTT single-model no-op (Phase 7)", () => {
+  it("startSession ignores model and still connects with model=pyai-hear", async () => {
+    const wss = new WebSocketServer({ port: 0 });
+    cleanup.push(() => wss.close());
+    let seenUrl = "";
+    wss.on("connection", (ws: WebSocket, req) => { seenUrl = req.url ?? ""; setTimeout(() => ws.close(), 20); });
+    process.env.PYAI_STT_WS_URL = `ws://localhost:${(wss.address() as AddressInfo).port}`;
+    const session = await new PyAiSTT().startSession({ apiKey: "k", model: "some-other-model" });
+    await new Promise((r) => setTimeout(r, 60));
+    session.close();
+    expect(seenUrl).toContain("model=pyai-hear");
+    expect(seenUrl).not.toContain("some-other-model");
+  });
+
+  it("transcribeBatch ignores model and still posts model=pyai-hear", async () => {
+    let raw = "";
+    const server = await new Promise<{ base: string; server: Server }>((resolve) => {
+      const s = createServer((req, res) => {
+        req.on("data", (c) => (raw += c.toString()));
+        req.on("end", () => { res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ text: "ok" })); });
+      });
+      s.listen(0, () => resolve({ base: `http://localhost:${(s.address() as AddressInfo).port}`, server: s }));
+    });
+    cleanup.push(() => server.server.close());
+    process.env.PYAI_BASE = server.base;
+    await new PyAiSTT().transcribeBatch!(new Uint8Array(3200), { apiKey: "k", model: "some-other-model" });
+    expect(raw).toContain("pyai-hear");
+    expect(raw).not.toContain("some-other-model");
+  });
+});
+
+// Phase 7 Fix 1 — PyAI correction SENDS the resolved model on the wire (uniform
+// threading), even though the PyAI server ignores it (findings F4) — a documented no-op.
+describe("PyAiCorrection model override (Phase 7 — sent on the wire; server ignores, F4)", () => {
+  afterEach(() => { delete process.env.PYAI_MODEL; });
+
+  it("correct sends the per-request model in the request body", async () => {
+    const { base, server, captured } = await mockMessagesServer();
+    cleanup.push(() => server.close());
+    process.env.PYAI_BASE = base;
+    await new PyAiCorrection("k").correct("The the total is fifty five", { model: "custom-x" });
+    expect(captured.body.model).toBe("custom-x");
+  });
+
+  it("empty model does NOT override (default gpt-5.6-sol on the wire)", async () => {
+    const { base, server, captured } = await mockMessagesServer();
+    cleanup.push(() => server.close());
+    process.env.PYAI_BASE = base;
+    await new PyAiCorrection("k").correct("The the total is fifty five", { model: "" });
+    expect(captured.body.model).toBe("gpt-5.6-sol");
+  });
+
+  it("empty model falls through to PYAI_MODEL", async () => {
+    const { base, server, captured } = await mockMessagesServer();
+    cleanup.push(() => server.close());
+    process.env.PYAI_BASE = base;
+    process.env.PYAI_MODEL = "pyai-env-model";
+    await new PyAiCorrection("k").correct("The the total is fifty five", { model: "" });
+    expect(captured.body.model).toBe("pyai-env-model");
   });
 });

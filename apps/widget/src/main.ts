@@ -17,6 +17,16 @@ import { LogicalSize, LogicalPosition } from "@tauri-apps/api/dpi";
 const WS_URL = (import.meta as any).env?.VITE_WS_URL ?? "ws://127.0.0.1:8787";
 const TARGET_RATE = 16000;
 
+// ---- theme (1.5): the overlay/orb follows the config store, live via config-changed.
+// style.css defines the light/dark/system tokens; here we just set body[data-theme]. ----
+function applyOverlayTheme(t?: string) {
+  document.body.dataset.theme = t === "light" || t === "dark" ? t : "system";
+}
+void invoke<{ theme?: string }>("get_config")
+  .then((c) => applyOverlayTheme(c?.theme))
+  .catch(() => applyOverlayTheme("system"));
+void listen<{ theme?: string }>("config-changed", (e) => applyOverlayTheme(e.payload?.theme));
+
 type Op = { type: "keep" | "remove" | "replace"; text: string; replacement?: string; reason?: string };
 type ServerMsg =
   | { type: "ready"; stt: string; correction: string }
@@ -307,7 +317,15 @@ function handle(m: ServerMsg) {
 // sidecar's env, and owns the sidecar's lifecycle, so on a cold start the loopback port
 // may not be up yet → retry briefly before giving up.
 async function connect(mode: "demo" | "live", tries = 6): Promise<void> {
-  const cfg: any = mode === "live" ? await invoke("get_config").catch(() => ({})) : {};
+  // Live: fetch config + the vocabulary/snippet stores IN PARALLEL (no serial start
+  // latency). Demo mode uses no config/lists. (3.4/3.5 ride the WS start frame.)
+  const [cfg, vocabulary, snippets] = mode === "live"
+    ? await Promise.all([
+        invoke<any>("get_config").catch(() => ({})),
+        invoke<string[]>("vocab_list").catch(() => [] as string[]),
+        invoke<Array<{ trigger: string; expansion: string }>>("snip_list").catch(() => []),
+      ])
+    : [{} as any, [] as string[], [] as Array<{ trigger: string; expansion: string }>];
   return new Promise((resolve, reject) => {
     let opened = false;
     const attempt = (left: number) => {
@@ -321,6 +339,14 @@ async function connect(mode: "demo" | "live", tries = 6): Promise<void> {
           sttProvider: cfg.sttProvider,
           correctionProvider: cfg.correctionProvider,
           language: cfg.language,
+          correct: cfg.correct, // 2.2 — undefined in demo (cfg={}) => backend defaults on
+          format: cfg.format,   // 2.3 — undefined in demo => backend defaults on
+          autoDetect: cfg.autoDetectLanguage, // 3.2 — undefined in demo => backend defaults off
+          vocabulary, // 3.4 — custom terms (format prompt + Deepgram keyword boost)
+          snippets,   // 3.5 — deterministic trigger→expansion on the final text
+          telemetry: cfg.telemetry, // 3.3 — undefined in demo => backend defaults off (NoopSink)
+          sttModel: cfg.sttModel,               // Phase 7 — STT model override ("" = provider default)
+          correctionModel: cfg.correctionModel, // Phase 7 — correction model override ("" = default)
         }));
         resolve();
       };
@@ -356,7 +382,18 @@ function toInt16(f32: Float32Array): Int16Array {
 async function startLive() {
   clearBanner();
   try {
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+    // 3.1 — capture from the user's chosen input device (mic_device_id; "" = system
+    // default). Use `ideal` (not `exact`) so a removed/renamed device falls back to the
+    // system default instead of throwing OverconstrainedError → a false "No microphone".
+    const micId: string = (await invoke<any>("get_config").catch(() => ({}))).micDeviceId ?? "";
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        ...(micId ? { deviceId: { ideal: micId } } : {}),
+      },
+    });
   } catch (e) {
     // Only show the "access needed" banner for a REAL permission denial — otherwise we
     // were wrongly claiming the mic was blocked when it wasn't.

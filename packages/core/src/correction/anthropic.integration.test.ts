@@ -31,6 +31,7 @@ const cleanup: Array<() => void> = [];
 afterEach(() => {
   cleanup.splice(0).forEach((f) => f());
   delete process.env.ANTHROPIC_BASE;
+  delete process.env.ANTHROPIC_MODEL;
 });
 
 describe("AnthropicCorrection.correct (against a mock /v1/messages, forced tool-use)", () => {
@@ -131,5 +132,50 @@ describe("AnthropicCorrection.format (plain text pass, no tool)", () => {
     const out = await new AnthropicCorrection("k").format("here it is 1 phone 2 laptop");
     expect(out.text).toBe("Here it is:\n\n1. Phone\n2. Laptop");
     expect(requests[0].body.tools).toBeUndefined(); // format is a plain rewrite, no forced tool
+  });
+});
+
+// Phase 7 Fix 1 — per-request correction model override (Anthropic honours it).
+describe("AnthropicCorrection model override (Phase 7)", () => {
+  const toolBody = () => ({
+    role: "assistant",
+    stop_reason: "tool_use",
+    content: [{ type: "tool_use", name: "emit_correction", input: { clean_text: "x", edits: [] } }],
+  });
+
+  it("correct sends the per-request model in the body", async () => {
+    const { base, server, requests } = await mockMessagesServer(toolBody);
+    cleanup.push(() => server.close());
+    process.env.ANTHROPIC_BASE = base;
+    await new AnthropicCorrection("k").correct("some raw", { model: "claude-x" });
+    expect(requests[0].body.model).toBe("claude-x");
+  });
+
+  it("empty model does NOT override (default claude-sonnet-4-5)", async () => {
+    const { base, server, requests } = await mockMessagesServer(toolBody);
+    cleanup.push(() => server.close());
+    process.env.ANTHROPIC_BASE = base;
+    await new AnthropicCorrection("k").correct("some raw", { model: "" });
+    expect(requests[0].body.model).toBe("claude-sonnet-4-5");
+  });
+
+  it("empty model falls through to ANTHROPIC_MODEL", async () => {
+    const { base, server, requests } = await mockMessagesServer(toolBody);
+    cleanup.push(() => server.close());
+    process.env.ANTHROPIC_BASE = base;
+    process.env.ANTHROPIC_MODEL = "claude-env";
+    await new AnthropicCorrection("k").correct("some raw", { model: "" });
+    expect(requests[0].body.model).toBe("claude-env");
+  });
+
+  it("format's 4th model param reaches the body", async () => {
+    const { base, server, requests } = await mockMessagesServer(() => ({
+      role: "assistant",
+      content: [{ type: "text", text: "done" }],
+    }));
+    cleanup.push(() => server.close());
+    process.env.ANTHROPIC_BASE = base;
+    await new AnthropicCorrection("k").format("hello", "en", [], "claude-x");
+    expect(requests[0].body.model).toBe("claude-x");
   });
 });

@@ -25,7 +25,7 @@ import { pcmToWav } from "../audio/wav";
 // adapter DECLARES sampleRate 24000; the capture side feeds frames at the
 // provider's declared rate. Frames are base64-framed into `input_audio_buffer.append`.
 const DEFAULT_WS_URL = "wss://api.openai.com/v1/realtime?intent=transcription";
-const DEFAULT_MODEL = "gpt-live-transcribe"; // streaming model (vendor-apis.md §2); post-turn is "gpt-transcribe"
+const DEFAULT_MODEL = "gpt-4o-mini-transcribe"; // GA realtime transcription model (vendor-apis.md §2)
 
 export class OpenAiSTT implements STTProvider {
   readonly id = "openai";
@@ -34,26 +34,39 @@ export class OpenAiSTT implements STTProvider {
 
   async startSession(cfg: STTSessionConfig): Promise<STTSession> {
     const wsUrl = process.env.OPENAI_REALTIME_WS_URL ?? DEFAULT_WS_URL; // read at call time (testable)
-    const model = process.env.OPENAI_STT_MODEL ?? DEFAULT_MODEL;
+    // Phase 7 — per-session override applies to the STREAMING model only (see the
+    // transcribeBatch comment below for why batch keeps its own resolution). Empty
+    // never overrides — falls through to OPENAI_STT_MODEL then the default.
+    const model = (cfg.model && cfg.model.trim()) ? cfg.model : (process.env.OPENAI_STT_MODEL ?? DEFAULT_MODEL);
+    // GA Realtime API: do NOT send the `OpenAI-Beta: realtime=v1` header — the beta
+    // API was retired and now errors ("The Realtime Beta API is no longer supported.
+    // Please use /v1/realtime for the GA API."). GA authenticates with the Bearer key only.
     const ws = new WebSocket(wsUrl, {
-      headers: {
-        Authorization: `Bearer ${cfg.apiKey}`,
-        "OpenAI-Beta": "realtime=v1",
-      },
+      headers: { Authorization: `Bearer ${cfg.apiKey}` },
     });
-    return new OpenAiSession(ws, model, cfg.language);
+    return new OpenAiSession(ws, model, cfg.language, cfg.detectLanguage);
   }
 
   // Batch transcription of a full clip -> one clean transcript (the authoritative
   // finalize path). POST /v1/audio/transcriptions (multipart), model gpt-transcribe
   // (Whisper-family). OPENAI_BASE / OPENAI_BATCH_MODEL override endpoint/model.
-  async transcribeBatch(pcm: Uint8Array, cfg: { apiKey: string; sampleRate?: number }): Promise<string> {
+  async transcribeBatch(pcm: Uint8Array, cfg: { apiKey: string; sampleRate?: number; language?: string; detectLanguage?: boolean; model?: string; keywords?: string[] }): Promise<string> {
     const base = process.env.OPENAI_BASE ?? "https://api.openai.com/v1";
-    const model = process.env.OPENAI_BATCH_MODEL ?? "gpt-transcribe";
+    // Phase 7 — DELIBERATELY does NOT use cfg.model. The Settings model field maps to
+    // the STREAMING model (OPENAI_STT_MODEL, a Realtime model like gpt-live-transcribe),
+    // which is a DIFFERENT family from the batch /audio/transcriptions endpoint
+    // (Whisper-family, gpt-transcribe). Threading a streaming-only name here would 400
+    // the batch call. Batch keeps its own OPENAI_BATCH_MODEL ?? "gpt-transcribe".
+    const model = process.env.OPENAI_BATCH_MODEL ?? "gpt-4o-mini-transcribe";
     const wav = pcmToWav(pcm, cfg.sampleRate ?? this.audio.sampleRate, 1);
     const form = new FormData();
     form.append("model", model);
     form.append("file", new Blob([wav], { type: "audio/wav" }), "audio.wav");
+    // 3.2 — Whisper-family auto-detects when `language` is omitted; on a fixed choice
+    // we pass the ISO code. detectLanguage -> omit (let the model auto-detect).
+    if (!cfg.detectLanguage && cfg.language) {
+      form.append("language", cfg.language);
+    }
     const res = await fetch(`${base}/audio/transcriptions`, {
       method: "POST",
       headers: { Authorization: `Bearer ${cfg.apiKey}` },
@@ -73,17 +86,27 @@ class OpenAiSession implements STTSession {
   private uCounter = 0;
   private utteranceId = "u0";
 
-  constructor(ws: WebSocket, model: string, language?: string) {
+  constructor(ws: WebSocket, model: string, language?: string, detectLanguage?: boolean) {
     this.ws = ws;
     ws.on("open", () => {
       // Configure the transcription session: pcm16 input + the chosen model +
       // server-side VAD so the server segments utterances for us.
+      // 3.2 — auto-detect: OpenAI Realtime detects when `language` is OMITTED, so on
+      // detect we send no `language` key (model default). Off = today's behaviour.
+      // GA Realtime transcription config: `session.update` with the audio config nested
+      // under `audio.input` (the beta flat `transcription_session.update` +
+      // `input_audio_format`/`input_audio_transcription` shape was retired).
       this.send({
-        type: "transcription_session.update",
+        type: "session.update",
         session: {
-          input_audio_format: "pcm16",
-          input_audio_transcription: { model, ...(language ? { language } : {}) },
-          turn_detection: { type: "server_vad" },
+          type: "transcription",
+          audio: {
+            input: {
+              format: { type: "audio/pcm", rate: 24000 },
+              transcription: { model, ...(detectLanguage ? {} : language ? { language } : {}) },
+              turn_detection: { type: "server_vad" },
+            },
+          },
         },
       });
     });

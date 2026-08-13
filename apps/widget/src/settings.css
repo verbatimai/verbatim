@@ -1,6 +1,6 @@
 /* Verbatim — Settings. Glassy, nav-driven redesign.
    Real controls (providers, keys, hotkey, language, permissions) are wired to
-   Tauri in settings.ts; reference-only rows are tagged "Not in use". */
+   Tauri in settings.ts; not-yet-built rows are tagged "Planned". */
 
 :root {
   --bg-0: #eef1f6;
@@ -171,6 +171,7 @@ body[data-theme="dark"] .ico-moon { display: block; }
 .tag.off { color: var(--text-faint); background: var(--stroke-soft); border: 1px solid var(--stroke); }
 .tag.alpha { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
 .tag.cloud { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.tag.planned { color: var(--accent2); background: color-mix(in srgb, var(--accent2) 14%, transparent); }
 
 /* Controls — every dropdown/field on a settings row shares one fixed width */
 .control-col { display: flex; flex-direction: column; gap: 8px; width: var(--ctrl-w); flex: none; }
@@ -274,6 +275,16 @@ kbd { font: inherit; font-size: 11.5px; padding: 3px 8px; border-radius: 6px; ba
 .card.empty p { margin: 0 auto; color: var(--text-dim); max-width: 34ch; }
 
 .version { font-weight: 700; font-size: 15px; }
+
+/* 3.4 / 3.5 — vocabulary & snippets editable lists (add row + deletable rows). */
+.control-row.full { display: flex; gap: 8px; width: 100%; align-items: center; }
+.control-row.full input { flex: 1 1 auto; min-width: 0; }
+.control-row.full .btn { flex: none; }
+.editable-list { display: flex; flex-direction: column; }
+.editable-list:empty { display: none; }
+.editable-list .list-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 20px; border-top: 1px solid var(--stroke-soft); }
+.editable-list .list-term { font-size: 13.5px; color: var(--text); word-break: break-word; }
+.editable-list .hint { padding: 12px 20px; border-top: 1px solid var(--stroke-soft); }
 
 @media (max-width: 720px) {
   .shell { grid-template-columns: 1fr; }

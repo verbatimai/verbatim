@@ -17,8 +17,10 @@ arboard = "3"
 # Phase 3.5 — BYOK: store the vendor API key in the OS keychain (Security framework on macOS).
 keyring = { version = "3", features = ["apple-native"] }
 # Phase 4.3 — config store: persist non-secret settings (provider/language/hotkey/dockIcon)
-# as JSON in the app config dir. Secrets stay in the Keychain above.
+# as JSON in the app config dir. Secrets live in secrets.rs (local file / keychain adapter).
 tauri-plugin-store = "2"
+# Settings 1.2 — "Launch at login": a real macOS login item (LaunchAgent).
+tauri-plugin-autostart = "2"
 
 # Spike A — non-activating NSPanel overlay. macOS-only; keep it target-gated so the
 # widget still compiles on other platforms (which no-op the panel code below).

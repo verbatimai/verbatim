@@ -7,3 +7,5 @@ export * from "./segmenter";
 export * from "./pipeline";
 export * from "./audio/wav";
 export * from "./settings";
+export * from "./snippets";
+export * from "./telemetry/telemetry";

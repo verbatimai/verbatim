@@ -6,9 +6,14 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 
 mod inject;
+mod secrets;
 
 #[cfg(target_os = "macos")]
 mod axinject;
+
+// Wave 4 — Fn / bare-modifier push-to-talk (listen-only CGEventTap). macOS-only.
+#[cfg(target_os = "macos")]
+mod fnkey;
 
 // Hotkey dictation state. A quick tap toggles (hands-free); a hold is push-to-talk
 // (record while held, stop on release).
@@ -17,11 +22,21 @@ static PRESS_AT: Mutex<Option<Instant>> = Mutex::new(None);
 static STARTED_THIS_PRESS: Mutex<bool> = Mutex::new(false);
 const HOLD_MS: u128 = 300; // ≥ this held = push-to-talk; below = a tap (toggle)
 
+// The last finalized transcript that was injected — retained so the paste-last global
+// hotkey (2.1) can re-inject it with NO webview involvement. Recorded inside inject_text,
+// whose sole caller is the webview's injectFinal with the finalized formatted text.
+static LAST_RESULT: Mutex<Option<String>> = Mutex::new(None);
+
 // The toggle hotkey currently registered. It's configurable at runtime (set_toggle_hotkey
 // swaps the registration), so the handler compares the fired shortcut against THIS rather
 // than a compile-time constant.
 #[cfg(desktop)]
 static CURRENT_TOGGLE: Mutex<Option<tauri_plugin_global_shortcut::Shortcut>> = Mutex::new(None);
+
+// 2.1 — the paste-last accelerator currently registered (configurable at runtime; "" = none).
+// Mirrors CURRENT_TOGGLE so the global-shortcut handler recognises the fired shortcut.
+#[cfg(desktop)]
+static CURRENT_PASTE_LAST: Mutex<Option<tauri_plugin_global_shortcut::Shortcut>> = Mutex::new(None);
 
 // Inject the finalized text into the focused field — but only when it makes sense.
 // Returns a status the UI reacts to:
@@ -30,6 +45,7 @@ static CURRENT_TOGGLE: Mutex<Option<tauri_plugin_global_shortcut::Shortcut>> = M
 //   "no_field"  — nothing editable was focused; text copied to the clipboard instead
 #[tauri::command]
 fn inject_text(text: String) -> Result<String, String> {
+    *LAST_RESULT.lock().unwrap() = Some(text.clone()); // remember for paste-last (2.1)
     #[cfg(target_os = "macos")]
     {
         Ok(axinject::inject(&text))
@@ -102,6 +118,18 @@ struct AppConfig {
     hotkey: String,              // preset id or captured accelerator (e.g. "Alt+Space")
     dock_icon: bool,
     mute_others: bool,           // mute system audio output while dictating (restored on stop)
+    launch_at_login: bool,       // 1.2 — macOS login item (synced via tauri-plugin-autostart)
+    debug: bool,                 // 1.4 — inject HEAR_DEBUG=1 into the backend sidecar
+    theme: String,               // 1.5 — "system" | "light" | "dark" (themes all webviews)
+    key_storage: String,         // 1.6 — HIDDEN, no UI: secret backend, "local" | "keychain"
+    correct: bool,               // 2.2 — run the self-correction pass on finalize (default true)
+    format: bool,                // 2.3 — run the formatting pass on finalize (default true)
+    paste_last_hotkey: String,   // 2.1 — global accelerator to paste last transcript ("" = unset)
+    mic_device_id: String,       // 3.1 — chosen input device deviceId ("" = system default)
+    auto_detect_language: bool,  // 3.2 — auto-detect spoken language (Deepgram/OpenAI streaming)
+    telemetry: bool,             // 3.3 — anonymous, metadata-only telemetry (default off; transport parked)
+    fn_push_to_talk: bool,       // Wave 4 — hold a bare key (Fn) to dictate (needs Input Monitoring)
+    ptt_key: String,             // Wave 4 — which bare key: "fn" | "right_cmd" | "right_opt"
 }
 
 impl Default for AppConfig {
@@ -115,6 +143,18 @@ impl Default for AppConfig {
             hotkey: "alt-space".into(),
             dock_icon: false,
             mute_others: true,
+            launch_at_login: false,
+            debug: false,
+            theme: "system".into(),
+            key_storage: "local".into(),
+            correct: true,
+            format: true,
+            paste_last_hotkey: String::new(),
+            mic_device_id: String::new(),
+            auto_detect_language: false,
+            telemetry: false,
+            fn_push_to_talk: false,
+            ptt_key: "fn".into(),
         }
     }
 }
@@ -150,7 +190,8 @@ fn get_config(app: tauri::AppHandle) -> AppConfig {
 // changed, and broadcast `config-changed` so the overlay/pipeline refresh live.
 #[tauri::command]
 fn set_config(app: tauri::AppHandle, patch: serde_json::Value) -> Result<AppConfig, String> {
-    let mut cur = serde_json::to_value(read_config(&app)).map_err(|e| e.to_string())?;
+    let old = read_config(&app); // typed snapshot for change-guards (autostart, debug restart)
+    let mut cur = serde_json::to_value(&old).map_err(|e| e.to_string())?;
     if let (Some(base), Some(p)) = (cur.as_object_mut(), patch.as_object()) {
         for (k, v) in p {
             base.insert(k.clone(), v.clone());
@@ -165,8 +206,79 @@ fn set_config(app: tauri::AppHandle, patch: serde_json::Value) -> Result<AppConf
         let _ = apply_hotkey(&app, &next.hotkey);
     }
 
+    // 1.2 — sync the macOS login item only when the toggle actually flips.
+    if next.launch_at_login != old.launch_at_login {
+        apply_autostart(&app, next.launch_at_login);
+    }
+    // 1.4 — restart the sidecar when Debug flips so it picks up / drops HEAR_DEBUG.
+    if next.debug != old.debug {
+        restart_backend(&app);
+    }
+    // 2.1 — re-register the paste-last accelerator only when it changes ("" = unregister).
+    #[cfg(desktop)]
+    if next.paste_last_hotkey != old.paste_last_hotkey {
+        let _ = apply_paste_last_hotkey(&app, &next.paste_last_hotkey);
+    }
+    // Wave 4 — start/stop the Fn PTT event tap when the toggle OR the key changes. Only
+    // runs the tap when enabled, so a user who never turns PTT on is never prompted for
+    // Input Monitoring.
+    #[cfg(target_os = "macos")]
+    if next.fn_push_to_talk != old.fn_push_to_talk || next.ptt_key != old.ptt_key {
+        fnkey::set_enabled(&app, next.fn_push_to_talk, &next.ptt_key);
+    }
+    // Phase 7 (Fix 3) — apply the Dock-icon activation policy live when it flips (no
+    // restart). The overlay panel's non-key behaviour is unaffected by the policy.
+    #[cfg(target_os = "macos")]
+    if next.dock_icon != old.dock_icon {
+        let _ = app.set_activation_policy(desired_activation_policy(next.dock_icon));
+    }
+
     let _ = app.emit("config-changed", &next);
     Ok(next)
+}
+
+// 1.2 — reflect the config's launch-at-login into the OS login item. Driven from Rust
+// (set_config side-effect + startup reconcile), so the frontend never invokes the plugin.
+#[cfg(desktop)]
+fn apply_autostart(app: &tauri::AppHandle, enabled: bool) {
+    use tauri_plugin_autostart::ManagerExt;
+    let m = app.autolaunch();
+    if enabled {
+        let _ = m.enable();
+    } else {
+        let _ = m.disable();
+    }
+}
+#[cfg(not(desktop))]
+fn apply_autostart(_app: &tauri::AppHandle, _enabled: bool) {}
+
+// 1.3 — Reset: restore ALL config to defaults, KEEP secrets (secrets.json / Keychain are
+// untouched), and broadcast so every open webview live-updates. Re-registers the default
+// hotkey, clears the login item, and restarts the sidecar if it was running in debug.
+#[tauri::command]
+fn clear_config(app: tauri::AppHandle) -> Result<AppConfig, String> {
+    let was_debug = read_config(&app).debug;
+    let def = AppConfig::default();
+    write_config(&app, &def)?;
+    #[cfg(desktop)]
+    {
+        let _ = apply_hotkey(&app, &def.hotkey); // re-register default ⌥Space
+        let _ = apply_paste_last_hotkey(&app, &def.paste_last_hotkey); // 2.1 — default "" unregisters
+    }
+    apply_autostart(&app, def.launch_at_login); // default false → remove login item
+    // Wave 4 — default fn_push_to_talk=false, so tear the PTT event tap down on reset.
+    #[cfg(target_os = "macos")]
+    fnkey::set_enabled(&app, def.fn_push_to_talk, &def.ptt_key);
+    // Phase 7 (Fix 3) — re-apply the default Dock-icon policy so a Reset that clears a
+    // previously-on dock icon takes effect live (default dock_icon=false ⇒ Accessory).
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(desired_activation_policy(def.dock_icon));
+    if was_debug {
+        restart_backend(&app); // drop HEAR_DEBUG from the sidecar env
+    }
+    // Secrets are DELIBERATELY not touched here — API keys survive a reset (Settings §1.6).
+    let _ = app.emit("config-changed", &def);
+    Ok(def)
 }
 
 // One-time seed: if the store has no config yet, create it from defaults, importing the
@@ -192,40 +304,142 @@ fn migrate_legacy_config(app: &tauri::AppHandle) {
     let _ = write_config(app, &cfg);
 }
 
-// ── Phase 3.5: BYOK — vendor API keys in the OS keychain ──────────────────────
-// `account` is the vendor key name (e.g. "PYAI_API_KEY"). Keys never touch disk/env
-// beyond the keychain, and are never logged.
+// ── Phase 3.4 / 3.5: vocabulary + snippets list stores ─────────────────────────
+// LIST data (not scalar config), so — like secrets — each lives in its OWN
+// tauri-plugin-store file (vocabulary.json / snippets.json), NOT in AppConfig. That
+// means Reset (clear_config) leaves them intact, matching the secrets policy. The
+// backend never reads these files; the overlay sends the lists on the WS `start` frame.
+const VOCAB_FILE: &str = "vocabulary.json";
+const VOCAB_KEY: &str = "terms";
+const SNIPPETS_FILE: &str = "snippets.json";
+const SNIPPETS_KEY: &str = "snippets";
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+struct Snippet {
+    trigger: String,
+    expansion: String,
+}
+
+fn read_vocab(app: &tauri::AppHandle) -> Vec<String> {
+    use tauri_plugin_store::StoreExt;
+    let Ok(store) = app.store(VOCAB_FILE) else {
+        return Vec::new();
+    };
+    store
+        .get(VOCAB_KEY)
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default()
+}
+
+fn write_vocab(app: &tauri::AppHandle, terms: &[String]) -> Result<(), String> {
+    use tauri_plugin_store::StoreExt;
+    let store = app.store(VOCAB_FILE).map_err(|e| e.to_string())?;
+    store.set(VOCAB_KEY, serde_json::to_value(terms).map_err(|e| e.to_string())?);
+    store.save().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn vocab_list(app: tauri::AppHandle) -> Vec<String> {
+    read_vocab(&app)
+}
+
+#[tauri::command]
+fn vocab_add(app: tauri::AppHandle, term: String) -> Result<Vec<String>, String> {
+    let t = term.trim().to_string();
+    if t.is_empty() {
+        return Err("empty term".into()); // reject blanks (avoids a match-everything term)
+    }
+    let mut terms = read_vocab(&app);
+    // Case-insensitive de-dupe so the same word isn't stored twice.
+    if !terms.iter().any(|x| x.eq_ignore_ascii_case(&t)) {
+        terms.push(t);
+        write_vocab(&app, &terms)?;
+    }
+    Ok(terms)
+}
+
+#[tauri::command]
+fn vocab_delete(app: tauri::AppHandle, term: String) -> Result<Vec<String>, String> {
+    let mut terms = read_vocab(&app);
+    terms.retain(|x| !x.eq_ignore_ascii_case(term.trim()));
+    write_vocab(&app, &terms)?;
+    Ok(terms)
+}
+
+fn read_snippets(app: &tauri::AppHandle) -> Vec<Snippet> {
+    use tauri_plugin_store::StoreExt;
+    let Ok(store) = app.store(SNIPPETS_FILE) else {
+        return Vec::new();
+    };
+    store
+        .get(SNIPPETS_KEY)
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default()
+}
+
+fn write_snippets(app: &tauri::AppHandle, snips: &[Snippet]) -> Result<(), String> {
+    use tauri_plugin_store::StoreExt;
+    let store = app.store(SNIPPETS_FILE).map_err(|e| e.to_string())?;
+    store.set(SNIPPETS_KEY, serde_json::to_value(snips).map_err(|e| e.to_string())?);
+    store.save().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn snip_list(app: tauri::AppHandle) -> Vec<Snippet> {
+    read_snippets(&app)
+}
+
+#[tauri::command]
+fn snip_add(app: tauri::AppHandle, trigger: String, expansion: String) -> Result<Vec<Snippet>, String> {
+    let trig = trigger.trim().to_string();
+    let exp = expansion.trim().to_string();
+    // An empty/whitespace trigger would match everything — reject it (risk §3.5).
+    if trig.is_empty() || exp.is_empty() {
+        return Err("trigger and expansion are required".into());
+    }
+    let mut snips = read_snippets(&app);
+    // Replace an existing trigger (case-insensitive) rather than duplicating it.
+    snips.retain(|s| !s.trigger.eq_ignore_ascii_case(&trig));
+    snips.push(Snippet { trigger: trig, expansion: exp });
+    write_snippets(&app, &snips)?;
+    Ok(snips)
+}
+
+#[tauri::command]
+fn snip_delete(app: tauri::AppHandle, trigger: String) -> Result<Vec<Snippet>, String> {
+    let mut snips = read_snippets(&app);
+    snips.retain(|s| !s.trigger.eq_ignore_ascii_case(trigger.trim()));
+    write_snippets(&app, &snips)?;
+    Ok(snips)
+}
+
+// ── Phase 3.5: BYOK — vendor API keys ─────────────────────────────────────────
+// `account` is the vendor key name (e.g. "PYAI_API_KEY"). Keys are never logged. Storage
+// is chosen by the hidden `key_storage` flag (Settings §1.6): "local" (default) writes a
+// 0600 secrets.json; "keychain" uses the OS keychain. Every command below routes through
+// the `secrets` adapter — the JS-facing signatures are unchanged (Tauri injects `app`).
+// KEYCHAIN_SERVICE is consumed by the keychain backend in secrets.rs.
 const KEYCHAIN_SERVICE: &str = "co.saaslabs.verbatim";
 
 #[tauri::command]
-fn key_save(account: String, secret: String) -> Result<(), String> {
-    keyring::Entry::new(KEYCHAIN_SERVICE, &account)
-        .and_then(|e| e.set_password(&secret))
-        .map_err(|e| e.to_string())
+fn key_save(app: tauri::AppHandle, account: String, secret: String) -> Result<(), String> {
+    secrets::secret_set(&app, &account, &secret)
 }
 
 #[tauri::command]
-fn key_get(account: String) -> Result<Option<String>, String> {
-    match keyring::Entry::new(KEYCHAIN_SERVICE, &account).and_then(|e| e.get_password()) {
-        Ok(p) => Ok(Some(p)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(e.to_string()),
-    }
+fn key_get(app: tauri::AppHandle, account: String) -> Result<Option<String>, String> {
+    Ok(secrets::secret_get(&app, &account))
 }
 
 #[tauri::command]
-fn key_has(account: String) -> bool {
-    keyring::Entry::new(KEYCHAIN_SERVICE, &account)
-        .and_then(|e| e.get_password())
-        .is_ok()
+fn key_has(app: tauri::AppHandle, account: String) -> bool {
+    secrets::secret_has(&app, &account)
 }
 
 #[tauri::command]
-fn key_delete(account: String) -> Result<(), String> {
-    match keyring::Entry::new(KEYCHAIN_SERVICE, &account).and_then(|e| e.delete_credential()) {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(e.to_string()),
-    }
+fn key_delete(app: tauri::AppHandle, account: String) -> Result<(), String> {
+    secrets::secret_delete(&app, &account)
 }
 
 // Save a key that's ALREADY on the clipboard into the Keychain.
@@ -245,9 +459,7 @@ fn key_save_clipboard(app: tauri::AppHandle, account: String) -> Result<String, 
     if secret.is_empty() {
         return Err("Clipboard is empty — copy your key first.".into());
     }
-    keyring::Entry::new(KEYCHAIN_SERVICE, &account)
-        .and_then(|e| e.set_password(&secret))
-        .map_err(|e| e.to_string())?;
+    secrets::secret_set(&app, &account, &secret)?;
     let n = secret.chars().count();
     let last4: String = secret.chars().skip(n.saturating_sub(4)).collect();
     restart_backend(&app); // sidecar picks up the new key from its env (Phase 4.8)
@@ -272,31 +484,22 @@ fn vendor_key_name(vendor: &str) -> Option<&'static str> {
 #[tauri::command]
 fn set_key(app: tauri::AppHandle, vendor: String, secret: String) -> Result<(), String> {
     let acct = vendor_key_name(&vendor).ok_or_else(|| format!("unknown vendor: {vendor}"))?;
-    keyring::Entry::new(KEYCHAIN_SERVICE, acct)
-        .and_then(|e| e.set_password(&secret))
-        .map_err(|e| e.to_string())?;
+    secrets::secret_set(&app, acct, &secret)?;
     restart_backend(&app); // sidecar picks up the new key from its env (Phase 4.8)
     Ok(())
 }
 
 #[tauri::command]
-fn has_key(vendor: String) -> bool {
+fn has_key(app: tauri::AppHandle, vendor: String) -> bool {
     vendor_key_name(&vendor)
-        .map(|acct| {
-            keyring::Entry::new(KEYCHAIN_SERVICE, acct)
-                .and_then(|e| e.get_password())
-                .is_ok()
-        })
+        .map(|acct| secrets::secret_has(&app, acct))
         .unwrap_or(false)
 }
 
 #[tauri::command]
-fn delete_key(vendor: String) -> Result<(), String> {
+fn delete_key(app: tauri::AppHandle, vendor: String) -> Result<(), String> {
     let acct = vendor_key_name(&vendor).ok_or_else(|| format!("unknown vendor: {vendor}"))?;
-    match keyring::Entry::new(KEYCHAIN_SERVICE, acct).and_then(|e| e.delete_credential()) {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(e.to_string()),
-    }
+    secrets::secret_delete(&app, acct)
 }
 
 // ── Phase 4.8: the app owns the backend (sidecar) ─────────────────────────────
@@ -308,23 +511,23 @@ fn delete_key(vendor: String) -> Result<(), String> {
 static BACKEND: Mutex<Option<std::process::Child>> = Mutex::new(None);
 const VENDOR_KEYS: [&str; 4] = ["PYAI_API_KEY", "DEEPGRAM_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"];
 
-fn keychain_read(account: &str) -> Option<String> {
-    keyring::Entry::new(KEYCHAIN_SERVICE, account)
-        .and_then(|e| e.get_password())
-        .ok()
-}
-
-fn inject_keys(cmd: &mut std::process::Command) {
+// Inject the backend sidecar's env: loopback host/port, the verbose-log flag when Debug
+// is on (Settings §1.4 — the sidecar gates on HEAR_DEBUG==="1"), and every present vendor
+// key from the storage adapter (Settings §1.6 — local file or keychain). Secret VALUES are
+// never logged here.
+fn inject_keys(app: &tauri::AppHandle, cmd: &mut std::process::Command) {
     cmd.env("HOST", "127.0.0.1").env("PORT", "8787");
+    if read_config(app).debug {
+        cmd.env("HEAR_DEBUG", "1");
+    }
     for k in VENDOR_KEYS {
-        if let Some(secret) = keychain_read(k) {
+        if let Some(secret) = secrets::secret_get(app, k) {
             cmd.env(k, secret);
         }
     }
 }
 
 fn spawn_backend(app: &tauri::AppHandle) {
-    let _ = app;
     #[cfg(debug_assertions)]
     let spawned: Result<std::process::Child, String> = {
         // Dev: run the workspace backend via npm from the repo root
@@ -334,7 +537,7 @@ fn spawn_backend(app: &tauri::AppHandle) {
                 let mut cmd = std::process::Command::new("npm");
                 cmd.args(["run", "start", "--workspace", "@verbatim/backend"])
                     .current_dir(root);
-                inject_keys(&mut cmd);
+                inject_keys(app, &mut cmd);
                 cmd.spawn().map_err(|e| e.to_string())
             }
             None => Err("can't locate repo root".to_string()),
@@ -347,7 +550,7 @@ fn spawn_backend(app: &tauri::AppHandle) {
         match std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("verbatim-backend"))) {
             Some(bin) => {
                 let mut cmd = std::process::Command::new(bin);
-                inject_keys(&mut cmd);
+                inject_keys(app, &mut cmd);
                 cmd.spawn().map_err(|e| e.to_string())
             }
             None => Err("can't locate app dir for sidecar".to_string()),
@@ -356,7 +559,7 @@ fn spawn_backend(app: &tauri::AppHandle) {
     match spawned {
         Ok(child) => {
             *BACKEND.lock().unwrap() = Some(child);
-            println!("[backend] spawned + keyed from Keychain");
+            println!("[backend] spawned + keyed from local secret store");
         }
         Err(e) => eprintln!("[backend] spawn failed: {e}"),
     }
@@ -419,6 +622,43 @@ fn ax_trusted() -> bool {
     #[cfg(not(target_os = "macos"))]
     {
         true
+    }
+}
+
+// Wave 4 — Input Monitoring (TCC kTCCServiceListenEvent) permission. Separate service from
+// Accessibility; gates the session-level CGEventTap that Fn/PTT relies on. These mirror the
+// ax_trusted / open_accessibility_settings pattern above.
+#[tauri::command]
+fn input_monitoring_trusted() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        fnkey::input_monitoring_status()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
+}
+
+#[tauri::command]
+fn open_input_monitoring_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        open_privacy_pane("Privacy_ListenEvent")
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(())
+    }
+}
+
+// Proactively prompt for / add Verbatim to the Input Monitoring list when PTT is first
+// enabled (friendlier than a silent tap-create failure).
+#[tauri::command]
+fn request_input_monitoring() {
+    #[cfg(target_os = "macos")]
+    {
+        fnkey::request_input_monitoring();
     }
 }
 
@@ -625,6 +865,25 @@ fn apply_hotkey(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
     Ok(())
 }
 
+// 2.1 — Register / re-register the paste-last global accelerator. Unlike the toggle it
+// accepts the empty string (unset → unregister only, no error). The handler fires it on
+// Released so the physical modifiers are up before the synthetic ⌘V (matches the paste-test).
+#[cfg(desktop)]
+fn apply_paste_last_hotkey(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    let gs = app.global_shortcut();
+    if let Some(old) = CURRENT_PASTE_LAST.lock().unwrap().take() {
+        let _ = gs.unregister(old);
+    }
+    if id.trim().is_empty() {
+        return Ok(()); // "" = disabled (unregister only)
+    }
+    let sc = parse_accelerator(id).ok_or_else(|| format!("unrecognized hotkey: {id}"))?;
+    gs.register(sc).map_err(|e| e.to_string())?;
+    *CURRENT_PASTE_LAST.lock().unwrap() = Some(sc);
+    Ok(())
+}
+
 #[tauri::command]
 fn set_toggle_hotkey(app: tauri::AppHandle, id: String) -> Result<(), String> {
     // Store-backed: set_config persists the hotkey, re-registers it (apply_hotkey), and
@@ -659,6 +918,21 @@ tauri_nspanel::tauri_panel! {
     })
 }
 
+// Phase 7 (Fix 3) — map the `dock_icon` config flag to a macOS activation policy.
+// `Regular` = the app shows a Dock icon and can become frontmost / join the app
+// switcher; `Accessory` = menu-bar-only, no Dock icon. This is ORTHOGONAL to the
+// overlay's non-activating/non-key behaviour, which comes from the SpikePanel class
+// (NonactivatingPanel style mask + can_become_key_window:false), so injection must
+// keep working under `Regular` — see docs/product/settings/phase-7-plan.md Fix 3.
+#[cfg(target_os = "macos")]
+fn desired_activation_policy(dock_icon: bool) -> tauri::ActivationPolicy {
+    if dock_icon {
+        tauri::ActivationPolicy::Regular
+    } else {
+        tauri::ActivationPolicy::Accessory
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn configure_non_activating_panel(app: &mut tauri::App) {
     // `objc2_app_kit` is re-exported by tauri-nspanel, so we use its exact version
@@ -668,8 +942,10 @@ fn configure_non_activating_panel(app: &mut tauri::App) {
         WebviewWindowExt,
     };
 
-    // Accessory app: no Dock icon; the app never becomes the active/frontmost app.
-    let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    // Phase 7 (Fix 3) — honour the configured `dock_icon` at startup (default false ⇒
+    // Accessory: no Dock icon, app never becomes frontmost). The panel reclass + style
+    // mask below keep the overlay non-activating regardless of the policy chosen here.
+    let _ = app.set_activation_policy(desired_activation_policy(read_config(app.handle()).dock_icon));
 
     let window = match app.get_webview_window("main") {
         Some(w) => w,
@@ -709,6 +985,17 @@ fn main() {
     // Phase 4.3: config store (settings.json in the app config dir).
     builder = builder.plugin(tauri_plugin_store::Builder::new().build());
 
+    // 1.2: autostart — backs the "Launch at login" toggle with a real macOS login item.
+    // Driven from Rust (set_config side-effect + startup reconcile); no JS invoke, so no
+    // capabilities entry is needed.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![]),
+        ));
+    }
+
     builder
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -725,8 +1012,12 @@ fn main() {
                         if let Some(w) = app_h.get_webview_window("settings") {
                             let _ = w.hide();
                         }
+                        // Phase 7 (Fix 3) — revert to the CONFIGURED policy, not a hard
+                        // Accessory: with the Dock icon on, open+close Settings must NOT
+                        // hide it. open_settings_window bumps to Regular for keyboard focus;
+                        // this lands back on whatever `dock_icon` says.
                         #[cfg(target_os = "macos")]
-                        let _ = app_h.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                        let _ = app_h.set_activation_policy(desired_activation_policy(read_config(&app_h).dock_icon));
                     }
                 });
             }
@@ -746,6 +1037,9 @@ fn main() {
                 // at runtime via set_config/set_toggle_hotkey. On first run, migrate the
                 // legacy <app_config_dir>/hotkey file into the store.
                 migrate_legacy_config(app.handle());
+                // 1.2 — reconcile the OS login item with config once at startup, so it
+                // matches even if the user changed it in System Settings while we were off.
+                apply_autostart(app.handle(), read_config(app.handle()).launch_at_login);
                 let hotkey_id = read_config(app.handle()).hotkey;
                 let toggle = parse_accelerator(&hotkey_id)
                     .unwrap_or_else(|| Shortcut::new(Some(Modifiers::ALT), Code::Space));
@@ -774,6 +1068,31 @@ fn main() {
                                         );
                                         let status = axinject::inject(DEMO);
                                         eprintln!("[axinject] test paste status = {}", status);
+                                    }
+                                }
+                                return;
+                            }
+
+                            // 2.1 — paste-last accelerator: re-inject the last finalized
+                            // transcript into the focused field, with no backend/webview
+                            // involvement. Fires on Released (like the paste-test) so the
+                            // physical modifiers are up before the synthetic ⌘V. Empty/None
+                            // LAST_RESULT = graceful no-op (nothing dictated yet).
+                            let is_paste_last = CURRENT_PASTE_LAST
+                                .lock()
+                                .unwrap()
+                                .as_ref()
+                                .map_or(false, |t| t == shortcut);
+                            if is_paste_last {
+                                if event.state() == ShortcutState::Released {
+                                    #[cfg(target_os = "macos")]
+                                    {
+                                        let last = LAST_RESULT.lock().unwrap().clone();
+                                        if let Some(text) = last {
+                                            if !text.trim().is_empty() {
+                                                let _ = axinject::inject(&text);
+                                            }
+                                        }
                                     }
                                 }
                                 return;
@@ -840,6 +1159,22 @@ fn main() {
 
                 app.global_shortcut().register(toggle)?;
                 app.global_shortcut().register(test_paste)?;
+                // 2.1 — register the paste-last accelerator from config (AFTER the global-
+                // shortcut plugin is built, so app.global_shortcut() is available). "" = unset,
+                // in which case apply_paste_last_hotkey is a no-op.
+                let _ = apply_paste_last_hotkey(
+                    app.handle(),
+                    &read_config(app.handle()).paste_last_hotkey,
+                );
+
+                // Wave 4 — reconcile the Fn/PTT event tap from config at startup, so a user
+                // who had PTT enabled gets the tap back on relaunch; a user who never enabled
+                // it is never prompted for Input Monitoring. Body gated to macOS.
+                #[cfg(target_os = "macos")]
+                {
+                    let c = read_config(app.handle());
+                    fnkey::set_enabled(app.handle(), c.fn_push_to_talk, &c.ptt_key);
+                }
 
                 // Menu-bar (tray) icon — the always-visible "the widget is available"
                 // indicator, since the window itself stays hidden until summoned. ⌥Space
@@ -900,6 +1235,9 @@ fn main() {
             open_mic_settings,
             open_accessibility_settings,
             ax_trusted,
+            input_monitoring_trusted,
+            open_input_monitoring_settings,
+            request_input_monitoring,
             get_output_muted,
             set_output_muted,
             get_toggle_hotkey,
@@ -909,6 +1247,13 @@ fn main() {
             show_settings_window,
             get_config,
             set_config,
+            clear_config,
+            vocab_list,
+            vocab_add,
+            vocab_delete,
+            snip_list,
+            snip_add,
+            snip_delete,
             key_save,
             key_save_clipboard,
             key_get,

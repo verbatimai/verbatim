@@ -50,14 +50,15 @@ export class AnthropicCorrection implements CorrectionProvider {
   }
 
   async correct(raw: string, ctx?: CorrectionContext): Promise<CorrectionResult> {
-    const model = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-5";
+    // Phase 7 — per-request override wins; empty never overrides (env then default).
+    const model = (ctx?.model && ctx.model.trim()) ? ctx.model : (process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-5");
     const t0 = Date.now();
     const body = await this.messages({
       model,
       max_tokens: 1024,
       temperature: 0,
       system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userMessage(raw, ctx?.priorContext, ctx?.language) }],
+      messages: [{ role: "user", content: userMessage(raw, ctx?.priorContext, ctx?.language, ctx?.vocabulary) }],
       tools: [{ name: TOOL_NAME, description: "Emit the compact disfluency edits for the transcript.", input_schema: EDIT_SCHEMA }],
       tool_choice: { type: "tool", name: TOOL_NAME },
     });
@@ -70,14 +71,15 @@ export class AnthropicCorrection implements CorrectionProvider {
     return { cleanText: valid ? cleanText : input.clean_text ?? raw, edits, ops, latencyMs, valid };
   }
 
-  async format(text: string, language?: string): Promise<{ text: string }> {
-    const model = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-5";
+  async format(text: string, language?: string, vocabulary?: string[], model?: string): Promise<{ text: string }> {
+    // Phase 7 — same prefer-override resolution as correct().
+    const resolvedModel = (model && model.trim()) ? model : (process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-5");
     const body = await this.messages({
-      model,
+      model: resolvedModel,
       max_tokens: 2048, // whole formatted paragraph/list — give it room
       temperature: 0,
       system: FORMAT_PROMPT,
-      messages: [{ role: "user", content: formatMessage(text, language) }],
+      messages: [{ role: "user", content: formatMessage(text, language, vocabulary) }],
     });
     let out = (body.content ?? []).find((b: any) => b.type === "text")?.text ?? text;
     out = String(out).replace(/^```[a-z]*\n?|\n?```$/g, "").trim(); // strip stray code fences

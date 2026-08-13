@@ -9,7 +9,7 @@
 import { readFileSync, existsSync, appendFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import { getSTTProvider, getCorrectionProvider, TranscriptAccumulator, localFormat, type STTSession, type STTProvider, type CorrectionProvider } from "@verbatim/core";
+import { getSTTProvider, getCorrectionProvider, TranscriptAccumulator, localFormat, expandSnippets, Telemetry, type STTSession, type STTProvider, type CorrectionProvider, type Snippet } from "@verbatim/core";
 
 // ── Complete PyAI error log ───────────────────────────────────────────────────
 // The widget's banner truncates long responses (e.g. a 401 HTML body), so every raw
@@ -64,6 +64,11 @@ const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? "127.0.0.1";
 const DEFAULT_STT = process.env.STT_PROVIDER ?? "pyai";
 const DEFAULT_CORR = process.env.CORRECTION_PROVIDER ?? "pyai";
+// Settings §1.4 — Debug mode. The Rust host injects HEAR_DEBUG=1 into this sidecar's env
+// when the Settings "Debug mode" toggle is on (and restarts us so it takes effect). Gate
+// the verbose lines below on it. NEVER log a secret/API-key value, even in debug.
+const DEBUG = process.env.HEAR_DEBUG === "1";
+const dbg = (...args: unknown[]) => { if (DEBUG) console.log("[hear]", ...args); };
 const norm = (s: string) => s.replace(/\s+/g, " ").trim();
 const send = (ws: WebSocket, obj: unknown) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); };
 
@@ -80,6 +85,7 @@ wss.on("error", (e: any) => {
 });
 
 wss.on("connection", (ws) => {
+  dbg("ws connection opened");
   let session: STTSession | null = null;
   let stt: STTProvider | null = null;
   let correction: CorrectionProvider | null = null;
@@ -87,6 +93,17 @@ wss.on("connection", (ws) => {
   let demo = false;
   let sttId = "";   // remembered on start so finalize()/error logs know the providers
   let corrId = "";
+  let doCorrect = true; // 2.2 — self-correction toggle (parsed on `start`; !== false => on)
+  let doFormat = true;  // 2.3 — formatting toggle (parsed on `start`; !== false => on)
+  let langTag = "en";   // 3.4 — language tag, forwarded into the format prompt
+  let autoDetect = false; // 3.2 — auto-detect language (Deepgram/OpenAI streaming)
+  let vocabulary: string[] = []; // 3.4 — custom terms → format prompt (+ Deepgram keyword boost)
+  let sttModel: string | undefined;  // Phase 7 — STT model override ("" ⇒ undefined ⇒ default)
+  let corrModel: string | undefined; // Phase 7 — correction model override ("" ⇒ undefined ⇒ default)
+  let snippets: Snippet[] = [];  // 3.5 — deterministic trigger→expansion on the final text
+  // 3.3 — one telemetry emitter per connection. Default NoopSink (transport PARKED),
+  // enabled from the start frame. METADATA ONLY — never transcript/audio content.
+  let telemetry = new Telemetry({ enabled: false });
   const audio: Uint8Array[] = []; // buffered PCM (live only)
   let acc = new TranscriptAccumulator(); // growing live-display transcript
   let finalizing = false;
@@ -100,9 +117,13 @@ wss.on("connection", (ws) => {
     if (!demo && stt?.transcribeBatch && audio.length) {
       try {
         const pcm = concat(audio);
-        raw = norm(await stt.transcribeBatch(pcm, { apiKey: apiKey ?? "", sampleRate: 16000 }));
+        dbg("batch transcribe:", pcm.length, "bytes");
+        // Phase 7 — thread the STT model override + (Fix 2) the vocabulary as the
+        // Deepgram keyword boost on the AUTHORITATIVE batch path (other adapters ignore both).
+        raw = norm(await stt.transcribeBatch(pcm, { apiKey: apiKey ?? "", sampleRate: 16000, language: langTag, detectLanguage: autoDetect, model: sttModel, keywords: vocabulary }));
       } catch (e: any) {
         logPyaiError("stt.transcribeBatch", e, { sttId, bytes: audio.reduce((n, c) => n + c.length, 0) });
+        telemetry.emit({ type: "error", errorPhase: "stt.transcribeBatch", sttProvider: sttId });
         send(ws, { type: "error", message: "batch transcribe: " + (e?.message ?? e), file: LOG_FILE });
       }
     }
@@ -110,31 +131,59 @@ wss.on("connection", (ws) => {
     if (raw && correction) {
       // 1) Cleanup -> drives the "what was removed" diff. If it fails, we keep
       //    going with the raw transcript as the clean text (no diff shown).
+      //    2.2 — when self-correction is toggled off, skip the pass entirely: no
+      //    correct() call, no `correction` message, cleanText = raw (STT-only).
       let cleanText = raw;
-      try {
-        const result = await correction.correct(raw);
-        cleanText = norm(result.cleanText) || raw;
-        send(ws, { type: "correction", raw, cleanText, ops: result.ops, valid: result.valid });
-      } catch (e: any) {
-        logPyaiError("correction.cleanup", e, { corrId, rawLen: raw.length });
-        send(ws, { type: "error", message: "cleanup failed: " + (e?.message ?? String(e)), file: LOG_FILE });
+      if (doCorrect) {
+        try {
+          // 3.4 — vocabulary carried for parity (correction forbids re-spelling; harmless).
+          const result = await correction.correct(raw, { language: langTag, vocabulary, model: corrModel });
+          cleanText = norm(result.cleanText) || raw;
+          send(ws, { type: "correction", raw, cleanText, ops: result.ops, valid: result.valid });
+        } catch (e: any) {
+          logPyaiError("correction.cleanup", e, { corrId, rawLen: raw.length });
+          telemetry.emit({ type: "error", errorPhase: "correction.cleanup", correctionProvider: corrId });
+          send(ws, { type: "error", message: "cleanup failed: " + (e?.message ?? String(e)), file: LOG_FILE });
+        }
       }
       // 2) Formatting -> the final inserted text. GUARANTEED to be at least the
       //    cleaned text: if the LLM formatter fails (PyAI flaky under load), fall
       //    back to a deterministic local formatter — never to the raw transcript.
       //    Do NOT norm() here: formatted output may contain intentional newlines.
+      //    2.3 — when formatting is toggled off, skip BOTH the LLM formatter AND the
+      //    localFormat fallback: finalText = cleanText (unformatted / raw-clean).
       let finalText = cleanText;
-      if (correction.format) {
-        try {
-          finalText = (await correction.format(cleanText)).text.trim() || cleanText;
-        } catch (e: any) {
-          logPyaiError("correction.format", e, { corrId, cleanLen: cleanText.length });
-          send(ws, { type: "error", message: "format failed (used local fallback): " + (e?.message ?? String(e)), file: LOG_FILE });
+      if (doFormat) {
+        if (correction.format) {
+          try {
+            // 3.4 — vocabulary is the effective prompt-side lever (format permits re-spelling).
+            finalText = (await correction.format(cleanText, langTag, vocabulary, corrModel)).text.trim() || cleanText;
+          } catch (e: any) {
+            logPyaiError("correction.format", e, { corrId, cleanLen: cleanText.length });
+            telemetry.emit({ type: "error", errorPhase: "correction.format", correctionProvider: corrId });
+            send(ws, { type: "error", message: "format failed (used local fallback): " + (e?.message ?? String(e)), file: LOG_FILE });
+            finalText = localFormat(cleanText);
+          }
+        } else {
           finalText = localFormat(cleanText);
         }
-      } else {
-        finalText = localFormat(cleanText);
       }
+      // 3.5 — deterministic snippet expansion on the FINAL text (after formatting), so the
+      // expansion is inserted verbatim and isn't re-punctuated. No-op when the list is empty.
+      if (snippets.length) finalText = expandSnippets(finalText, snippets);
+      dbg("formatted:", finalText.length, "chars");
+      // 3.3 — metadata only (character COUNTS, never text): provider ids + lengths.
+      telemetry.emit({
+        type: "session_finalize",
+        sttProvider: sttId,
+        correctionProvider: corrId,
+        language: langTag,
+        autoDetect,
+        correct: doCorrect,
+        format: doFormat,
+        rawLen: raw.length,
+        cleanLen: finalText.length,
+      });
       send(ws, { type: "formatted", text: finalText });
     }
     try { session?.close(); } catch {}
@@ -159,6 +208,23 @@ wss.on("connection", (ws) => {
       sttId = demo ? "fixture" : (msg.sttProvider ?? DEFAULT_STT);
       corrId = demo ? "mock" : (msg.correctionProvider ?? DEFAULT_CORR);
       const language = typeof msg.language === "string" && msg.language ? msg.language : "en";
+      langTag = language;
+      // 2.2 / 2.3 — behaviour toggles from the widget config; undefined (old/demo client) => on.
+      doCorrect = msg.correct !== false;
+      doFormat = msg.format !== false;
+      // 3.2 / 3.4 / 3.5 — new runtime data on the start frame (store-agnostic backend).
+      autoDetect = msg.autoDetect === true;
+      vocabulary = Array.isArray(msg.vocabulary) ? msg.vocabulary.filter((t: unknown) => typeof t === "string") : [];
+      // Phase 7 — per-session model overrides. Empty/whitespace ⇒ undefined so the
+      // adapter falls through to its env var then its default (empty never overrides).
+      sttModel  = typeof msg.sttModel === "string"        && msg.sttModel.trim()        ? msg.sttModel        : undefined;
+      corrModel = typeof msg.correctionModel === "string" && msg.correctionModel.trim() ? msg.correctionModel : undefined;
+      snippets = Array.isArray(msg.snippets)
+        ? msg.snippets.filter((s: any) => s && typeof s.trigger === "string" && typeof s.expansion === "string")
+        : [];
+      // 3.3 — telemetry gate: NoopSink default (transport PARKED), enabled only when the
+      // config flag rode the start frame. Never emit before this is read.
+      telemetry = new Telemetry({ enabled: msg.telemetry === true });
       try {
         stt = getSTTProvider(sttId);
         // A bad correction vendor in the config must NOT kill the STT/live session —
@@ -179,17 +245,23 @@ wss.on("connection", (ws) => {
           return;
         }
         send(ws, { type: "ready", stt: sttId, correction: corrId });
+        // 3.3 — session_start metadata (no content). NoopSink unless telemetry enabled.
+        telemetry.emit({ type: "session_start", sttProvider: sttId, correctionProvider: corrId, language, autoDetect, correct: doCorrect, format: doFormat });
         console.log(`[backend] session start: stt=${sttId} correction=${corrId} lang=${language} demo=${demo}`);
-        session = await stt.startSession({ apiKey: apiKey ?? "", language });
+        // 3.2 — forward auto-detect to the streaming adapter; 3.4 — vocabulary as the
+        // Deepgram-only keyword boost (other adapters ignore `keywords`).
+        session = await stt.startSession({ apiKey: apiKey ?? "", language, detectLanguage: autoDetect, keywords: vocabulary, model: sttModel });
         session.onTranscript((e) => {
           // Growing live display via the accumulator (utterance-scoped: committed
           // finals + current utterance's live text). Authoritative final still
           // comes from batch transcription on stop (below).
           const { transcript, active } = acc.push(e);
+          dbg("live:", JSON.stringify({ active, len: transcript.length }));
           send(ws, { type: "live", transcript, active });
         });
         session.onError((err) => {
           logPyaiError("stt.stream", err, { sttId });
+          telemetry.emit({ type: "error", errorPhase: "stt.stream", sttProvider: sttId });
           send(ws, { type: "error", message: err.message, file: LOG_FILE });
         });
         session.onClose(() => { void finalize(); }); // demo/fixture self-closes -> finalize
@@ -219,3 +291,4 @@ console.log(`[backend] listening on ws://${HOST}:${PORT}  (browser connects via 
 console.log(`[backend] live defaults: stt=${DEFAULT_STT} correction=${DEFAULT_CORR}`);
 console.log(`[backend] PYAI_API_KEY=${process.env.PYAI_API_KEY ? "set" : "MISSING"}  (Demo mode needs no key)`);
 console.log(`[backend] PyAI error log: ${LOG_FILE}`);
+if (DEBUG) console.log(`[backend] HEAR_DEBUG=1 — verbose [hear] logging ON`);

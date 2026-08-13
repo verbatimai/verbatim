@@ -23,12 +23,19 @@ export interface AppSettings {
   correctionProvider: CorrectionVendor;
   /** BCP-47 / ISO-639-1 language tag. Default "en". */
   language: string;
+  /**
+   * 3.2 — let the STT vendor auto-detect the spoken language (Deepgram/OpenAI).
+   * Default false. PyAI Hear ignores this (English-only) and the guard below keeps
+   * warning; the UI greys the toggle when STT = pyai.
+   */
+  autoDetectLanguage?: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   sttProvider: "pyai",
   correctionProvider: "pyai",
   language: "en",
+  autoDetectLanguage: false,
 };
 
 export interface ResolvedProviders {
@@ -91,9 +98,17 @@ export function capabilityErrors(
   }
 
   // Multilingual guard: PyAI Hear only accepts English (docs/architecture/multilingual.md).
+  // 3.2 — auto-detect NEVER silences the PyAI-English-only warning: PyAI Hear ignores
+  // detect and stays English-only, so the fixed-language error still fires (with an extra
+  // note that auto-detect doesn't apply). For non-PyAI vendors, auto-detect relaxes the
+  // fixed-language mismatch (there is no such error today — this is forward-safety + the
+  // shared helper the widget mirrors).
   if (settings.sttProvider === "pyai" && !isEnglish(settings.language)) {
+    const note = settings.autoDetectLanguage
+      ? " (Auto-detect doesn't apply — PyAI Hear is English-only.)"
+      : "";
     errors.push(
-      `PyAI Hear is English-only — choose Deepgram or OpenAI as the STT vendor for language '${settings.language}'.`,
+      `PyAI Hear is English-only — choose Deepgram or OpenAI as the STT vendor for language '${settings.language}'.${note}`,
     );
   }
 

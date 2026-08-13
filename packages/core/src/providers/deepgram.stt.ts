@@ -31,7 +31,9 @@ export class DeepgramSTT implements STTProvider {
 
   async startSession(cfg: STTSessionConfig): Promise<STTSession> {
     const base = process.env.DEEPGRAM_WS_URL ?? DEFAULT_WS_URL; // read at call time (testable)
-    const model = process.env.DEEPGRAM_STT_MODEL ?? DEFAULT_MODEL;
+    // Phase 7 — per-session model override wins; empty/whitespace never overrides
+    // (falls through to env then the default). Deepgram uses this on streaming AND batch.
+    const model = (cfg.model && cfg.model.trim()) ? cfg.model : (process.env.DEEPGRAM_STT_MODEL ?? DEFAULT_MODEL);
     const q = new URLSearchParams({
       model,
       encoding: "linear16",
@@ -44,7 +46,28 @@ export class DeepgramSTT implements STTProvider {
       endpointing: "300", // ms of silence → speech_final on the Results message
       utterance_end_ms: "1000", // gap → a separate UtteranceEnd message
     });
-    if (cfg.language) q.set("language", cfg.language);
+    // 3.2 — language on the STREAMING socket. Deepgram does NOT support
+    // `detect_language` on streaming — it 400s the handshake (docs: "Language
+    // Detection is not currently supported for streaming"). For multilingual live
+    // audio Deepgram's guidance is the multilingual models via `language=multi`
+    // (best on nova-3; nova-2 multi is es/en only). The AUTHORITATIVE final comes
+    // from transcribeBatch() below, which uses real detect_language, so an imperfect
+    // multi live-preview is acceptable. Off = today's fixed language.
+    if (cfg.detectLanguage) {
+      q.set("language", "multi");
+    } else if (cfg.language) {
+      q.set("language", cfg.language);
+    }
+    // 3.4 — STT-side keyword boost. The param name depends on the RESOLVED model:
+    // nova-2 uses `keywords` (repeatable `keywords=term:intensity`), nova-3 uses
+    // `keyterm`. Getting this wrong is a silent no-op, so we branch on `model`.
+    if (cfg.keywords && cfg.keywords.length) {
+      const param = /nova-3/i.test(model) ? "keyterm" : "keywords";
+      for (const term of cfg.keywords) {
+        const t = term.trim();
+        if (t) q.append(param, t);
+      }
+    }
     const ws = new WebSocket(`${base}?${q.toString()}`, {
       headers: { Authorization: `Token ${cfg.apiKey}` },
     });
@@ -54,11 +77,32 @@ export class DeepgramSTT implements STTProvider {
   // Batch transcription of a full clip → one clean transcript (the authoritative
   // finalize path, parity with PyAI/OpenAI). Deepgram prerecorded: POST /v1/listen
   // with the WAV body. DEEPGRAM_BASE / DEEPGRAM_STT_MODEL override endpoint/model.
-  async transcribeBatch(pcm: Uint8Array, cfg: { apiKey: string; sampleRate?: number }): Promise<string> {
+  async transcribeBatch(pcm: Uint8Array, cfg: { apiKey: string; sampleRate?: number; language?: string; detectLanguage?: boolean; model?: string; keywords?: string[] }): Promise<string> {
     const base = process.env.DEEPGRAM_BASE ?? "https://api.deepgram.com/v1";
-    const model = process.env.DEEPGRAM_STT_MODEL ?? DEFAULT_MODEL;
+    // Phase 7 — same prefer-cfg model resolution as streaming (empty never overrides).
+    const model = (cfg.model && cfg.model.trim()) ? cfg.model : (process.env.DEEPGRAM_STT_MODEL ?? DEFAULT_MODEL);
     const wav = pcmToWav(pcm, cfg.sampleRate ?? this.audio.sampleRate, 1);
     const q = new URLSearchParams({ model, smart_format: "true", punctuate: "true" });
+    // 3.2 — this is the AUTHORITATIVE final path, so language MUST apply here or
+    // non-English dictation silently returns English. Pre-recorded DOES support
+    // detect_language (unlike streaming): auto-detect -> detect_language=true;
+    // otherwise pin the chosen language (default "en").
+    if (cfg.detectLanguage) {
+      q.set("detect_language", "true");
+    } else if (cfg.language) {
+      q.set("language", cfg.language);
+    }
+    // Fix 2 (Phase 7) — apply the SAME STT-side keyword boost as streaming on the
+    // AUTHORITATIVE batch path (the inserted text = batch output). Deepgram's
+    // prerecorded /v1/listen supports both `keywords` (nova-2) and `keyterm` (nova-3);
+    // branch on the resolved model exactly like the streaming socket does.
+    if (cfg.keywords && cfg.keywords.length) {
+      const param = /nova-3/i.test(model) ? "keyterm" : "keywords";
+      for (const term of cfg.keywords) {
+        const t = term.trim();
+        if (t) q.append(param, t);
+      }
+    }
     const res = await fetch(`${base}/listen?${q.toString()}`, {
       method: "POST",
       headers: { Authorization: `Token ${cfg.apiKey}`, "Content-Type": "audio/wav" },

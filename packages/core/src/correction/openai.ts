@@ -82,7 +82,8 @@ export class OpenAiCorrection implements CorrectionProvider {
   }
 
   async correct(raw: string, ctx?: CorrectionContext): Promise<CorrectionResult> {
-    const model = process.env.OPENAI_CORRECTION_MODEL ?? "gpt-4o-mini";
+    // Phase 7 — per-request override wins; empty never overrides (env then default).
+    const model = (ctx?.model && ctx.model.trim()) ? ctx.model : (process.env.OPENAI_CORRECTION_MODEL ?? "gpt-4o-mini");
     const t0 = Date.now();
     const body = await this.chat(
       {
@@ -90,7 +91,7 @@ export class OpenAiCorrection implements CorrectionProvider {
         temperature: 0,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userMessage(raw, ctx?.priorContext, ctx?.language) },
+          { role: "user", content: userMessage(raw, ctx?.priorContext, ctx?.language, ctx?.vocabulary) },
         ],
         response_format: { type: "json_schema", json_schema: CORRECTION_SCHEMA },
       },
@@ -107,15 +108,16 @@ export class OpenAiCorrection implements CorrectionProvider {
     return { cleanText: valid ? cleanText : parsed?.clean_text ?? raw, edits, ops, latencyMs, valid };
   }
 
-  async format(text: string, language?: string): Promise<{ text: string }> {
-    const model = process.env.OPENAI_CORRECTION_MODEL ?? "gpt-4o-mini";
+  async format(text: string, language?: string, vocabulary?: string[], model?: string): Promise<{ text: string }> {
+    // Phase 7 — same prefer-override resolution as correct().
+    const resolvedModel = (model && model.trim()) ? model : (process.env.OPENAI_CORRECTION_MODEL ?? "gpt-4o-mini");
     const body = await this.chat(
       {
-        model,
+        model: resolvedModel,
         temperature: 0,
         messages: [
           { role: "system", content: FORMAT_PROMPT },
-          { role: "user", content: formatMessage(text, language) },
+          { role: "user", content: formatMessage(text, language, vocabulary) },
         ],
       },
       "format",

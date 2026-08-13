@@ -1,5 +1,6 @@
 import type { STTProvider, TranscriptEvent } from "./providers/types";
 import type { CorrectionProvider, CorrectionResult } from "./correction/types";
+import { expandSnippets, type Snippet } from "./snippets";
 
 export interface LiveUpdate {
   /** The clean, accumulated transcript so far (locked text). */
@@ -20,7 +21,7 @@ export interface PipelineHandlers {
   onDone?(): void;
 }
 export interface RunOptions {
-  sttConfig?: { apiKey?: string; language?: string };
+  sttConfig?: { apiKey?: string; language?: string; detectLanguage?: boolean; keywords?: string[] };
   frames?: Buffer[];
   frameMs?: number;
 }
@@ -28,6 +29,19 @@ export interface RunOptions {
 export interface StreamHandle {
   pushAudio(frame: ArrayBufferView | ArrayBuffer): void;
   finish(): Promise<void>;
+}
+
+/**
+ * Behaviour toggles for the finalize pass (Settings §2.2 / §2.3). Both default to
+ * ON (`!== false` semantics): an omitted / undefined flag keeps today's behaviour.
+ * These are pipeline BEHAVIOUR, not provider selection — they deliberately live
+ * here (and in the widget config / WS `start` frame), NOT in core `AppSettings`.
+ */
+export interface PipelineOptions {
+  correct?: boolean; // 2.2 — run the self-correction pass on finalize (default true)
+  format?: boolean;  // 2.3 — run the formatting pass on finalize (default true)
+  vocabulary?: string[]; // 3.4 — custom terms injected into the format prompt (preserve/spell)
+  snippets?: Snippet[];  // 3.5 — deterministic trigger→expansion applied to the final text
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -215,10 +229,16 @@ export class Pipeline {
     private stt: STTProvider,
     private correction: CorrectionProvider,
     private h: PipelineHandlers = {},
+    private opts: PipelineOptions = {},
   ) {}
 
   async startStreaming(sttConfig?: RunOptions["sttConfig"]): Promise<StreamHandle> {
-    const session = await this.stt.startSession({ apiKey: sttConfig?.apiKey ?? "", language: sttConfig?.language });
+    const session = await this.stt.startSession({
+      apiKey: sttConfig?.apiKey ?? "",
+      language: sttConfig?.language,
+      detectLanguage: sttConfig?.detectLanguage, // 3.2 — forwarded to the vendor adapter
+      keywords: sttConfig?.keywords,             // 3.4 — Deepgram-only keyword boost
+    });
     const acc = new TranscriptAccumulator();
     let resolveClosed!: () => void;
     const closed = new Promise<void>((r) => (resolveClosed = r));
@@ -230,6 +250,15 @@ export class Pipeline {
     });
     session.onError((err) => this.h.onError?.(err));
 
+    // 3.5 — ALL three onFormatted paths (LLM-formatted / unformatted-clean / catch→raw)
+    // route through here so snippet expansion runs exactly once, on the final text, on
+    // every path including the error fallback. Expansion is deterministic + verbatim.
+    const snippets = this.opts.snippets;
+    const emitFormatted = (text: string) => {
+      const expanded = snippets && snippets.length ? expandSnippets(text, snippets) : text;
+      this.h.onFormatted?.({ text: expanded });
+    };
+
     const finalizeOnce = async () => {
       if (doneFired) return;
       doneFired = true;
@@ -237,18 +266,27 @@ export class Pipeline {
       if (raw) {
         try {
           const language = sttConfig?.language;
-          const result = await this.correction.correct(raw, { language }); // full-transcript cleanup -> diff
-          this.h.onCorrection?.({ raw, result });
-          const cleaned = result.cleanText || raw;
-          if (this.correction.format) {
-            const f = await this.correction.format(cleaned, language);
-            this.h.onFormatted?.({ text: f.text });
+          const vocabulary = this.opts.vocabulary; // 3.4 — into the format prompt
+          const doCorrect = this.opts.correct !== false; // 2.2 — default true
+          const doFormat = this.opts.format !== false;    // 2.3 — default true
+          let cleaned = raw;
+          if (doCorrect) {
+            // vocabulary passed for parity; correction forbids re-spelling (harmless there).
+            const result = await this.correction.correct(raw, { language, vocabulary }); // full-transcript cleanup -> diff
+            this.h.onCorrection?.({ raw, result });
+            cleaned = result.cleanText || raw;
+          }
+          // Skip correction off => cleaned = raw (STT-only, no diff). Format off => emit
+          // the unformatted cleaned text (which is raw when correction is also off).
+          if (doFormat && this.correction.format) {
+            const f = await this.correction.format(cleaned, language, vocabulary); // 3.4 vocab lever
+            emitFormatted(f.text);
           } else {
-            this.h.onFormatted?.({ text: cleaned });
+            emitFormatted(cleaned);
           }
         } catch (e) {
           this.h.onError?.(e as Error);
-          this.h.onFormatted?.({ text: raw });
+          emitFormatted(raw);
         }
       }
       this.h.onDone?.();

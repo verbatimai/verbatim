@@ -1,11 +1,48 @@
 /* Verbatim widget — M2 visual language, refined for a floating macOS panel.
    The Tauri window is transparent; the .card is the widget surface. */
 :root{
+  /* Base palette = DARK (the overlay's default glass look). Surface colours used by the
+     card/final/inputs/etc. are tokenised so a theme flip only re-declares these vars. */
   --ink:#eef2f7; --dim:#8b95a5; --active:#aab4c4; --faint:#6b7480;
   --line:rgba(255,255,255,.09); --line-2:rgba(255,255,255,.06);
   --accent:#4c9df0; --accent-2:#3b7fd4;
   --filler:#e3b341; --repetition:#4c9df0; --false_start:#a371f7;
   --self_correction:#f87171; --grammar:#3fb0a3;
+  /* themeable surfaces */
+  --card-1:rgba(28,33,44,.97); --card-2:rgba(18,21,29,.98);
+  --card-shadow:0 18px 44px rgba(0,0,0,.5),0 2px 8px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.06);
+  --titlebar-bg:rgba(255,255,255,.015);
+  --panel:rgba(10,13,19,.6);
+  --btn:rgba(255,255,255,.06); --btn-hover:rgba(255,255,255,.11);
+  --final-ink:#fff;
+  --scroll:rgba(255,255,255,.13); --scroll-hover:rgba(255,255,255,.22);
+}
+
+/* ── Light theme (1.5). Base :root is dark; these re-declare the tokens for light. The
+   `system` variant follows the OS via the media query below. Mirrors settings.css. ── */
+body[data-theme="light"]{
+  --ink:#1a1f2e; --dim:#5a6172; --active:#5a6172; --faint:#8b91a2;
+  --line:rgba(20,24,40,.12); --line-2:rgba(20,24,40,.07);
+  --card-1:rgba(255,255,255,.97); --card-2:rgba(244,247,251,.98);
+  --card-shadow:0 18px 44px rgba(30,40,80,.16),0 2px 8px rgba(30,40,80,.10),inset 0 1px 0 rgba(255,255,255,.7);
+  --titlebar-bg:rgba(20,24,40,.02);
+  --panel:rgba(20,24,40,.04);
+  --btn:rgba(20,24,40,.05); --btn-hover:rgba(20,24,40,.10);
+  --final-ink:#0b0e14;
+  --scroll:rgba(20,24,40,.16); --scroll-hover:rgba(20,24,40,.28);
+}
+@media (prefers-color-scheme: light){
+  body[data-theme="system"]{
+    --ink:#1a1f2e; --dim:#5a6172; --active:#5a6172; --faint:#8b91a2;
+    --line:rgba(20,24,40,.12); --line-2:rgba(20,24,40,.07);
+    --card-1:rgba(255,255,255,.97); --card-2:rgba(244,247,251,.98);
+    --card-shadow:0 18px 44px rgba(30,40,80,.16),0 2px 8px rgba(30,40,80,.10),inset 0 1px 0 rgba(255,255,255,.7);
+    --titlebar-bg:rgba(20,24,40,.02);
+    --panel:rgba(20,24,40,.04);
+    --btn:rgba(20,24,40,.05); --btn-hover:rgba(20,24,40,.10);
+    --final-ink:#0b0e14;
+    --scroll:rgba(20,24,40,.16); --scroll-hover:rgba(20,24,40,.28);
+  }
 }
 *{box-sizing:border-box}
 /* the `hidden` attribute must win over element display rules (e.g. .banner-actions{display:flex}) */
@@ -32,9 +69,9 @@ body{padding:11px}
   0%,100%{box-shadow:0 8px 22px rgba(0,0,0,.5),0 0 0 3px rgba(76,157,240,.18),inset 0 1px 0 rgba(255,255,255,.35)}
   50%{box-shadow:0 8px 22px rgba(0,0,0,.5),0 0 0 8px rgba(76,157,240,.05),inset 0 1px 0 rgba(255,255,255,.35)}}
 
-.icon-btn{flex:none;background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--ink);
+.icon-btn{flex:none;background:var(--btn);border:1px solid var(--line);color:var(--ink);
   width:26px;height:26px;border-radius:8px;cursor:pointer;font-size:12px;line-height:1;display:grid;place-items:center}
-.icon-btn:hover{background:rgba(255,255,255,.11)}
+.icon-btn:hover{background:var(--btn-hover)}
 .titlebar .icon-btn{margin-left:6px;pointer-events:auto} /* beat .titlebar>*{pointer-events:none} */
 .titlebar #settingsBtn{margin-left:8px}
 
@@ -45,7 +82,7 @@ body{padding:11px}
 .settings-title{font-weight:650;font-size:13px}
 .settings-field{display:flex;flex-direction:column;gap:5px}
 .settings-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint)}
-.settings-field input{padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:rgba(10,13,19,.6);color:var(--ink);font-size:13px}
+.settings-field input{padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:13px}
 .settings-field input:focus{outline:none;border-color:var(--accent)}
 .settings-status{font-size:11.5px;color:var(--dim)}
 .settings-status.ok{color:var(--grammar)}
@@ -79,16 +116,16 @@ body{padding:11px}
 
 .card{
   height:calc(100% - 22px);display:flex;flex-direction:column;
-  background:linear-gradient(180deg,rgba(28,33,44,.97),rgba(18,21,29,.98));
+  background:linear-gradient(180deg,var(--card-1),var(--card-2));
   -webkit-backdrop-filter:blur(20px) saturate(1.4);backdrop-filter:blur(20px) saturate(1.4);
   border:1px solid var(--line);border-radius:16px;
-  box-shadow:0 18px 44px rgba(0,0,0,.5),0 2px 8px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.06);
+  box-shadow:var(--card-shadow);
   overflow:hidden;
 }
 
 /* ── title bar (drag handle) ── */
 .titlebar{display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:grab;user-select:none;
-  border-bottom:1px solid var(--line-2);background:rgba(255,255,255,.015)}
+  border-bottom:1px solid var(--line-2);background:var(--titlebar-bg)}
 .titlebar:active{cursor:grabbing}
 /* children pass clicks through so the whole bar is a drag handle (nothing here is interactive) */
 .titlebar > *{pointer-events:none}
@@ -138,15 +175,15 @@ body{padding:11px}
 .r-self_correction{background:rgba(248,113,113,.16);text-decoration-color:var(--self_correction);color:var(--self_correction)}
 .r-grammar{text-decoration-color:var(--grammar)}
 
-.final{flex:none;background:rgba(10,13,19,.6);border:1px solid var(--line-2);border-radius:11px;padding:9px 12px}
+.final{flex:none;background:var(--panel);border:1px solid var(--line-2);border-radius:11px;padding:9px 12px}
 .final .lbl{display:flex;align-items:center;gap:8px;font-size:9.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--faint);margin-bottom:5px}
 .final .lbl > span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .copy-btn{flex:none;text-transform:none;letter-spacing:0;font-size:11px;font-weight:600;padding:3px 10px;border-radius:7px;
-  border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);cursor:pointer;transition:background .12s ease,color .12s ease}
-.copy-btn:hover:not(:disabled){background:rgba(255,255,255,.11)}
+  border:1px solid var(--line);background:var(--btn);color:var(--ink);cursor:pointer;transition:background .12s ease,color .12s ease}
+.copy-btn:hover:not(:disabled){background:var(--btn-hover)}
 .copy-btn:disabled{opacity:.38;cursor:default}
 .copy-btn.copied{background:rgba(63,176,163,.22);border-color:rgba(63,176,163,.5);color:#83e3d5}
-.final .txt{font-size:14px;color:#fff;min-height:19px;max-height:60px;overflow:auto;white-space:pre-wrap;line-height:1.5}
+.final .txt{font-size:14px;color:var(--final-ink);min-height:19px;max-height:60px;overflow:auto;white-space:pre-wrap;line-height:1.5}
 
 .controls{flex:none;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 button{border:0;border-radius:9px;padding:8px 13px;font-size:12.5px;font-weight:620;cursor:pointer;
@@ -156,8 +193,8 @@ button:disabled{opacity:.4;cursor:default;filter:none;transform:none}
 button.primary{color:#04121f;background:linear-gradient(180deg,#5aa6f2,var(--accent-2));
   box-shadow:0 2px 8px rgba(59,127,212,.4),inset 0 1px 0 rgba(255,255,255,.4)}
 button.primary:hover{filter:brightness(1.06)}
-button.ghost{background:rgba(255,255,255,.05);color:var(--ink);border:1px solid var(--line);font-weight:560}
-button.ghost:hover:not(:disabled){background:rgba(255,255,255,.09)}
+button.ghost{background:var(--btn);color:var(--ink);border:1px solid var(--line);font-weight:560}
+button.ghost:hover:not(:disabled){background:var(--btn-hover)}
 button.small{padding:6px 10px;font-size:11.5px}
 .toggle{margin-left:auto;color:var(--dim);font-size:11.5px;display:flex;align-items:center;gap:6px;user-select:none}
 .toggle input{accent-color:var(--accent)}
@@ -183,6 +220,6 @@ button.small{padding:6px 10px;font-size:11.5px}
 
 /* thin scrollbars */
 ::-webkit-scrollbar{width:7px;height:7px}
-::-webkit-scrollbar-thumb{background:rgba(255,255,255,.13);border-radius:6px}
-::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.22)}
+::-webkit-scrollbar-thumb{background:var(--scroll);border-radius:6px}
+::-webkit-scrollbar-thumb:hover{background:var(--scroll-hover)}
 ::-webkit-scrollbar-track{background:transparent}

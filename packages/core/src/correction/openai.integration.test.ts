@@ -125,6 +125,46 @@ describe("OpenAiCorrection.format", () => {
   });
 });
 
+// Phase 7 Fix 1 — per-request correction model override (OpenAI honours it).
+describe("OpenAiCorrection model override (Phase 7)", () => {
+  it("correct sends the per-request model in the body", async () => {
+    let seen: Captured | undefined;
+    const { base, server } = await mockChatServer((cap, res) => { seen = cap; okChat(EDITS_JSON, res); });
+    cleanup.push(() => server.close());
+    process.env.OPENAI_BASE = base;
+    await new OpenAiCorrection("k").correct(RAW, { model: "gpt-4o-custom" });
+    expect(seen?.body.model).toBe("gpt-4o-custom");
+  });
+
+  it("empty model does NOT override (default gpt-4o-mini)", async () => {
+    let seen: Captured | undefined;
+    const { base, server } = await mockChatServer((cap, res) => { seen = cap; okChat(EDITS_JSON, res); });
+    cleanup.push(() => server.close());
+    process.env.OPENAI_BASE = base;
+    await new OpenAiCorrection("k").correct(RAW, { model: "" });
+    expect(seen?.body.model).toBe("gpt-4o-mini");
+  });
+
+  it("empty model falls through to OPENAI_CORRECTION_MODEL", async () => {
+    let seen: Captured | undefined;
+    const { base, server } = await mockChatServer((cap, res) => { seen = cap; okChat(EDITS_JSON, res); });
+    cleanup.push(() => server.close());
+    process.env.OPENAI_BASE = base;
+    process.env.OPENAI_CORRECTION_MODEL = "gpt-4o-env";
+    await new OpenAiCorrection("k").correct(RAW, { model: "" });
+    expect(seen?.body.model).toBe("gpt-4o-env");
+  });
+
+  it("format's 4th model param reaches the body", async () => {
+    let seen: Captured | undefined;
+    const { base, server } = await mockChatServer((cap, res) => { seen = cap; okChat("done", res); });
+    cleanup.push(() => server.close());
+    process.env.OPENAI_BASE = base;
+    await new OpenAiCorrection("k").format("hello", "en", [], "gpt-4o-custom");
+    expect(seen?.body.model).toBe("gpt-4o-custom");
+  });
+});
+
 describe("OpenAiCorrection retry", () => {
   it("retries a transient 429 then succeeds", async () => {
     let hits = 0;
