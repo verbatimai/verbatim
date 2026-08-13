@@ -316,6 +316,22 @@
                 ><input type="checkbox" id="formatToggle" checked /><span></span
               ></label>
             </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>Formatting mode</h3>
+                <p>
+                  How the formatter shapes your text. <b>Prose</b> for polished
+                  writing, <b>Message</b> for casual chat, <b>Code</b> to preserve
+                  symbols and casing, <b>Raw</b> to skip formatting (cleanup only).
+                </p>
+              </div>
+              <select id="formatMode">
+                <option value="prose">Prose</option>
+                <option value="message">Message</option>
+                <option value="code">Code</option>
+                <option value="raw">Raw (no formatting)</option>
+              </select>
+            </div>
           </div>
         </section>
 
@@ -393,6 +409,30 @@
                     value="Click, then press a combo"
                   />
                   <button id="pasteLastClear" class="btn ghost" title="Clear">
+                    Clear
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>Revert to raw</h3>
+                <p>
+                  Global shortcut to re-insert the RAW (uncorrected) transcript
+                  when a correction over-edited. Needs at least one modifier
+                  (⌥/⌃/⌘/⇧).
+                </p>
+              </div>
+              <div class="control-col align-end">
+                <div class="hotkey-row">
+                  <input
+                    id="revertRawCapture"
+                    class="hotkey"
+                    type="text"
+                    readonly
+                    value="Click, then press a combo"
+                  />
+                  <button id="revertRawClear" class="btn ghost" title="Clear">
                     Clear
                   </button>
                 </div>

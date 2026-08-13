@@ -18,6 +18,11 @@ pub static CURRENT_TOGGLE: std::sync::Mutex<Option<tauri_plugin_global_shortcut:
 pub static CURRENT_PASTE_LAST: std::sync::Mutex<Option<tauri_plugin_global_shortcut::Shortcut>> =
     std::sync::Mutex::new(None);
 
+/// 5.4 — the revert-to-raw accelerator currently registered ("" = none).
+#[cfg(desktop)]
+pub static CURRENT_REVERT_RAW: std::sync::Mutex<Option<tauri_plugin_global_shortcut::Shortcut>> =
+    std::sync::Mutex::new(None);
+
 /// Map a preset id → an actual Shortcut. Keep this list in sync with the buttons in the
 /// Settings UI (main.ts HOTKEYS).
 #[cfg(desktop)]
@@ -191,6 +196,24 @@ pub fn apply_paste_last_hotkey(app: &tauri::AppHandle, id: &str) -> Result<(), S
     let sc = parse_accelerator(id).ok_or_else(|| format!("unrecognized hotkey: {id}"))?;
     gs.register(sc).map_err(|e| e.to_string())?;
     *CURRENT_PASTE_LAST.lock().unwrap() = Some(sc);
+    Ok(())
+}
+
+/// 5.4 — Register / re-register the revert-to-raw global accelerator (mirrors paste-last:
+/// accepts "" to mean unset → unregister only; fires on Released so modifiers are up).
+#[cfg(desktop)]
+pub fn apply_revert_raw_hotkey(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    let gs = app.global_shortcut();
+    if let Some(old) = CURRENT_REVERT_RAW.lock().unwrap().take() {
+        let _ = gs.unregister(old);
+    }
+    if id.trim().is_empty() {
+        return Ok(()); // "" = disabled (unregister only)
+    }
+    let sc = parse_accelerator(id).ok_or_else(|| format!("unrecognized hotkey: {id}"))?;
+    gs.register(sc).map_err(|e| e.to_string())?;
+    *CURRENT_REVERT_RAW.lock().unwrap() = Some(sc);
     Ok(())
 }
 

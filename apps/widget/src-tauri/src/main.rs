@@ -95,6 +95,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             text::inject_text,
             text::copy_text,
+            text::set_last_raw,
+            text::revert_to_raw,
             system::open_mic_settings,
             system::open_accessibility_settings,
             system::ax_trusted,

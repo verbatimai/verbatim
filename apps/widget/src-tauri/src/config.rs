@@ -30,7 +30,9 @@ pub struct AppConfig {
     pub key_storage: String,         // 1.6 — HIDDEN, no UI: secret backend, "local" | "keychain"
     pub correct: bool,               // 2.2 — run the self-correction pass on finalize (default true)
     pub format: bool,                // 2.3 — run the formatting pass on finalize (default true)
+    pub format_mode: String,         // 5.3 — "prose" | "message" | "code" | "raw" (default "prose")
     pub paste_last_hotkey: String,   // 2.1 — global accelerator to paste last transcript ("" = unset)
+    pub revert_raw_hotkey: String,   // 5.4 — global accelerator to re-inject the RAW transcript ("" = unset)
     pub mic_device_id: String,       // 3.1 — chosen input device deviceId ("" = system default)
     pub auto_detect_language: bool,  // 3.2 — auto-detect spoken language (Deepgram/OpenAI streaming)
     pub telemetry: bool,             // 3.3 — anonymous, metadata-only telemetry (default off; transport parked)
@@ -55,7 +57,9 @@ impl Default for AppConfig {
             key_storage: "local".into(),
             correct: true,
             format: true,
+            format_mode: "prose".into(),
             paste_last_hotkey: String::new(),
+            revert_raw_hotkey: String::new(),
             mic_device_id: String::new(),
             auto_detect_language: false,
             telemetry: false,
@@ -125,6 +129,11 @@ pub fn set_config(app: tauri::AppHandle, patch: serde_json::Value) -> Result<App
     if next.paste_last_hotkey != old.paste_last_hotkey {
         let _ = crate::hotkey::apply_paste_last_hotkey(&app, &next.paste_last_hotkey);
     }
+    // 5.4 — re-register the revert-to-raw accelerator only when it changes ("" = unregister).
+    #[cfg(desktop)]
+    if next.revert_raw_hotkey != old.revert_raw_hotkey {
+        let _ = crate::hotkey::apply_revert_raw_hotkey(&app, &next.revert_raw_hotkey);
+    }
     // Wave 4 — start/stop the Fn PTT event tap when the toggle OR the key changes. Only
     // runs the tap when enabled, so a user who never turns PTT on is never prompted for
     // Input Monitoring.
@@ -170,6 +179,7 @@ pub fn clear_config(app: tauri::AppHandle) -> Result<AppConfig, String> {
     {
         let _ = crate::hotkey::apply_hotkey(&app, &def.hotkey); // re-register default ⌥Space
         let _ = crate::hotkey::apply_paste_last_hotkey(&app, &def.paste_last_hotkey); // 2.1 — default "" unregisters
+        let _ = crate::hotkey::apply_revert_raw_hotkey(&app, &def.revert_raw_hotkey); // 5.4 — default "" unregisters
     }
     apply_autostart(&app, def.launch_at_login); // default false → remove login item
     // Wave 4 — default fn_push_to_talk=false, so tear the PTT event tap down on reset.

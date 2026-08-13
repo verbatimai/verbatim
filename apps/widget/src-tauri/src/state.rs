@@ -22,3 +22,8 @@ pub const HOLD_MS: u128 = 300;
 /// `text::inject_text`, whose sole caller is the webview's injectFinal with the
 /// finalized formatted text.
 pub static LAST_RESULT: Mutex<Option<String>> = Mutex::new(None);
+
+/// 5.4 — the last RAW (pre-correction) transcript, retained so "revert to raw" can
+/// re-inject the uncorrected text when the correction/format pass over-edited. Set by
+/// the webview via `text::set_last_raw` on the `correction` frame.
+pub static LAST_RAW: Mutex<Option<String>> = Mutex::new(None);

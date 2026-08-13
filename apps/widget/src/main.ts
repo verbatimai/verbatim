@@ -281,6 +281,7 @@ function handle(m: ServerMsg) {
   else if (m.type === "live") renderLive(m);
   else if (m.type === "correction") {
     void animateCorrection(m);
+    void invoke("set_last_raw", { text: m.raw }).catch(() => {}); // 5.4 — remember raw for revert-to-raw
     setStatus("fix", "polishing…");
     // Show the cleaned text immediately (before the formatter finishes) so the output
     // isn't a long blank spinner — the polished version replaces it on `formatted`.
@@ -341,6 +342,7 @@ async function connect(mode: "demo" | "live", tries = 6): Promise<void> {
           language: cfg.language,
           correct: cfg.correct, // 2.2 — undefined in demo (cfg={}) => backend defaults on
           format: cfg.format,   // 2.3 — undefined in demo => backend defaults on
+          formatMode: cfg.formatMode, // 5.3 — prose|message|code|raw (undefined in demo => prose)
           autoDetect: cfg.autoDetectLanguage, // 3.2 — undefined in demo => backend defaults off
           vocabulary, // 3.4 — custom terms (format prompt + Deepgram keyword boost)
           snippets,   // 3.5 — deterministic trigger→expansion on the final text

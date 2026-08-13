@@ -14,8 +14,8 @@ pub fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
     use crate::config::{apply_autostart, migrate_legacy_config, read_config};
-    use crate::hotkey::{apply_paste_last_hotkey, parse_accelerator, CURRENT_PASTE_LAST, CURRENT_TOGGLE};
-    use crate::state::{HOLD_MS, LAST_RESULT, PRESS_AT, RECORDING, STARTED_THIS_PRESS};
+    use crate::hotkey::{apply_paste_last_hotkey, apply_revert_raw_hotkey, parse_accelerator, CURRENT_PASTE_LAST, CURRENT_REVERT_RAW, CURRENT_TOGGLE};
+    use crate::state::{HOLD_MS, LAST_RAW, LAST_RESULT, PRESS_AT, RECORDING, STARTED_THIS_PRESS};
 
     // The toggle hotkey — from the config store (default ⌥Space), configurable
     // at runtime via set_config/set_toggle_hotkey. On first run, migrate the
@@ -69,6 +69,29 @@ pub fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                         #[cfg(target_os = "macos")]
                         {
                             let last = LAST_RESULT.lock().unwrap().clone();
+                            if let Some(text) = last {
+                                if !text.trim().is_empty() {
+                                    let _ = crate::axinject::inject(&text);
+                                }
+                            }
+                        }
+                    }
+                    return;
+                }
+
+                // 5.4 — revert-to-raw accelerator: re-inject the last RAW (uncorrected)
+                // transcript, for when the correction/format pass over-edited. Same
+                // no-webview path as paste-last; empty/None LAST_RAW = graceful no-op.
+                let is_revert_raw = CURRENT_REVERT_RAW
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .map_or(false, |t| t == shortcut);
+                if is_revert_raw {
+                    if event.state() == ShortcutState::Released {
+                        #[cfg(target_os = "macos")]
+                        {
+                            let last = LAST_RAW.lock().unwrap().clone();
                             if let Some(text) = last {
                                 if !text.trim().is_empty() {
                                     let _ = crate::axinject::inject(&text);
@@ -144,6 +167,8 @@ pub fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // shortcut plugin is built, so app.global_shortcut() is available). "" = unset,
     // in which case apply_paste_last_hotkey is a no-op.
     let _ = apply_paste_last_hotkey(app.handle(), &read_config(app.handle()).paste_last_hotkey);
+    // 5.4 — register the revert-to-raw accelerator from config ("" = unset → no-op).
+    let _ = apply_revert_raw_hotkey(app.handle(), &read_config(app.handle()).revert_raw_hotkey);
 
     // Wave 4 — reconcile the Fn/PTT event tap from config at startup, so a user
     // who had PTT enabled gets the tap back on relaunch; a user who never enabled

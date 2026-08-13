@@ -28,7 +28,9 @@ type AppConfig = {
   keyStorage?: string; // hidden (§1.6) — no UI; kept for type-completeness
   correct?: boolean; // 2.2 — run self-correction on finalize (default true)
   format?: boolean; // 2.3 — run formatting on finalize (default true)
+  formatMode?: "prose" | "message" | "code" | "raw"; // 5.3 — formatting mode (default "prose")
   pasteLastHotkey?: string; // 2.1 — global accelerator to paste last transcript ("" = unset)
+  revertRawHotkey?: string; // 5.4 — global accelerator to re-inject the RAW transcript ("" = unset)
   micDeviceId?: string; // 3.1 — chosen input device deviceId ("" = system default)
   autoDetectLanguage?: boolean; // 3.2 — auto-detect spoken language (Deepgram/OpenAI)
   telemetry?: boolean; // 3.3 — anonymous, metadata-only telemetry (default off; transport parked)
@@ -71,8 +73,11 @@ const hotkeyClearEl = $<HTMLButtonElement>("hotkeyClear");
 const hotkeyPresetsEl = $("hotkeyPresets");
 const selfCorrectEl = $<HTMLInputElement>("selfCorrect");
 const formatToggleEl = $<HTMLInputElement>("formatToggle");
+const formatModeEl = $<HTMLSelectElement>("formatMode");
 const pasteLastCaptureEl = $<HTMLInputElement>("pasteLastCapture");
 const pasteLastClearEl = $<HTMLButtonElement>("pasteLastClear");
+const revertRawCaptureEl = $<HTMLInputElement>("revertRawCapture");
+const revertRawClearEl = $<HTMLButtonElement>("revertRawClear");
 const micDeviceEl = $<HTMLSelectElement>("micDevice");
 const micHintEl = $("micHint");
 const autoDetectEl = $<HTMLInputElement>("autoDetect");
@@ -521,6 +526,28 @@ if (pasteLastClearEl) {
     refreshPasteLastUI();
   };
 }
+
+// 5.4 — revert-to-raw accelerator (re-inject the RAW/uncorrected transcript). Mirrors
+// paste-last: same collision guard, "" = unset. Rust registers the global shortcut.
+function refreshRevertRawUI() {
+  if (!revertRawCaptureEl) return;
+  const hk = config.revertRawHotkey;
+  revertRawCaptureEl.value = hk ? describeHotkey(hk) : "Click, then press a combo";
+}
+if (revertRawCaptureEl) {
+  makeHotkeyCapture(revertRawCaptureEl, async (accel) => {
+    const conflict = pasteLastCollision(accel);
+    if (conflict) { revertRawCaptureEl.value = conflict; setTimeout(refreshRevertRawUI, 1600); return; }
+    await patchConfig({ revertRawHotkey: accel });
+    refreshRevertRawUI();
+  }, refreshRevertRawUI);
+}
+if (revertRawClearEl) {
+  revertRawClearEl.onclick = async () => {
+    await patchConfig({ revertRawHotkey: "" });
+    refreshRevertRawUI();
+  };
+}
 hotkeyClearEl.onclick = async () => {
   try {
     await invoke("set_toggle_hotkey", { id: "alt-space" });
@@ -677,6 +704,14 @@ function initFormat() {
   if (!formatToggleEl) return;
   formatToggleEl.checked = config.format !== false; // default on
   formatToggleEl.onchange = () => void patchConfig({ format: formatToggleEl.checked });
+}
+
+// ---- 5.3 formatting mode — prose | message | code | raw. Travels on the WS start frame;
+// "raw" makes the backend skip the format pass (cleanup only). Default "prose". ----
+function initFormatMode() {
+  if (!formatModeEl) return;
+  formatModeEl.value = config.formatMode ?? "prose";
+  formatModeEl.onchange = () => void patchConfig({ formatMode: formatModeEl.value as AppConfig["formatMode"] });
 }
 
 // ---- 3.1 microphone device picker — enumerate audioinput devices, persist micDeviceId
@@ -862,12 +897,14 @@ function refreshControls() {
   initDebug();
   initSelfCorrect();
   initFormat();
+  initFormatMode();
   initAutoDetect();
   initTelemetry();
   if (micEnumerated) syncMicSelection(); else void initMicDevice();
   applyThemeUI(currentTheme());
   refreshHotkeyUI();
   refreshPasteLastUI();
+  refreshRevertRawUI();
   void initPtt();
   renderCapabilityErrors();
 }
@@ -907,11 +944,13 @@ window.addEventListener("DOMContentLoaded", async () => {
   initDebug();
   initSelfCorrect();
   initFormat();
+  initFormatMode();
   initAutoDetect();
   initTelemetry();
   initReset();
   refreshHotkeyUI();
   refreshPasteLastUI();
+  refreshRevertRawUI();
   void initMicDevice();
   void initVocabulary();
   void initSnippets();
