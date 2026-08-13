@@ -2,14 +2,20 @@
 
 How to produce a distributable, signed, notarized `Verbatim.app` — including the bundled
 backend **sidecar**. Pairs with `../product/m4.8-sidecar-plan.md` (the transport) and the
-`bundle.macOS` + `externalBin` config in `apps/widget/src-tauri/tauri.conf.json`.
+`bundle.macOS` + `externalBin` config in `apps/widget/src-tauri/tauri.release.conf.json`.
+
+> **Why a separate release config?** `externalBin` makes Tauri require the compiled sidecar
+> to exist for *any* build — which would break `cargo build` / `tauri dev` (dev spawns the
+> backend via `node`, not the sidecar). So the base `tauri.conf.json` stays clean and the
+> `externalBin` + `macOS` signing bits live in **`tauri.release.conf.json`**, merged in only
+> for release with `tauri build --config src-tauri/tauri.release.conf.json`.
 
 ## What ships in the bundle
 
 - `Verbatim.app/Contents/MacOS/verbatim-widget` — the Tauri app.
 - `Verbatim.app/Contents/MacOS/verbatim-backend` — the **sidecar** (`externalBin`), a
   self-contained binary compiled from `apps/backend` by `scripts/build-sidecar.mjs`
-  (`beforeBuildCommand` runs it, so `tauri build` produces it automatically).
+  (the release config's `beforeBuildCommand` runs it, so the release build produces it).
 - Rust spawns the sidecar next to its own exe and injects the vendor keys from the Keychain
   (`main.rs` release branch) — the webview never sees a key.
 
@@ -35,7 +41,8 @@ export APPLE_PASSWORD="abcd-efgh-ijkl-mnop"   # the app-specific password
 export APPLE_TEAM_ID="TEAMID"
 
 cd apps/widget
-npm run tauri build          # → src-tauri/target/release/bundle/macos/Verbatim.app
+npm run tauri build -- --config src-tauri/tauri.release.conf.json
+#   → src-tauri/target/release/bundle/macos/Verbatim.app
 ```
 
 Verify:
@@ -49,7 +56,7 @@ spctl -a -vvv "…/Verbatim.app"                                   # "accepted /
 
 You don't need signing to try the release build locally:
 ```bash
-cd apps/widget && npm run tauri build       # unsigned .app
+cd apps/widget && npm run tauri build -- --config src-tauri/tauri.release.conf.json   # unsigned .app
 ```
 Right-click the `.app` → **Open** once to get past Gatekeeper. (Unsigned/un-notarized builds
 are for your machine only — don't distribute them.)
