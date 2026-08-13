@@ -14,9 +14,9 @@
 
 Progress is tracked in three places: **this file** (per-phase checklist — the detail), **`STATUS.md`** (handoff snapshot — read first for context), and **`roadmap.md`** (milestone level).
 
-- ✅ **4.0** decisions · ✅ **4.1** core config/capability · ✅ **4.2** settings window *(compiles on Mac; runtime pending)* · ✅ **4.3** config store + keychain *(compiles; committed `ea8ca9d`)* · ✅ **4.4** Deepgram STT *(cloud-tested)* · ✅ **4.5** OpenAI STT+correction *(cloud-tested)* · ✅ **4.6** Anthropic correction *(cloud-tested)* · ✅ **4.7** settings UI + multilingual *(compiles/builds on Mac; click-through pending)*
-- ⏳ **Remaining:** **4.8** overlay/pipeline via sidecar · **4.9** slim the overlay · **4.10** wire-up + exit demo
-- 🔎 **Pending verification (folds into 4.10):** on-Mac interactive click-through for 4.2/4.3/4.7 (compiled/built, not yet exercised); live-vendor runs for 4.4/4.5/4.6 (mock-tested only so far).
+- ✅ **4.0** decisions · ✅ **4.1** core config/capability · ✅ **4.2** settings window *(compiles on Mac; runtime pending)* · ✅ **4.3** config store + keychain *(compiles; committed `ea8ca9d`)* · ✅ **4.4** Deepgram STT *(cloud-tested)* · ✅ **4.5** OpenAI STT+correction *(cloud-tested)* · ✅ **4.6** Anthropic correction *(cloud-tested)* · ✅ **4.7** settings UI + multilingual *(compiles/builds on Mac; click-through pending)* · 🔶 **4.8** sidecar wiring *(dev code done, needs Mac verify; release packaging pending)*
+- ⏳ **Remaining:** **4.8** release sidecar packaging (compile+sign the backend binary) · **4.9** slim the overlay · **4.10** wire-up + exit demo
+- 🔎 **Pending verification (folds into 4.10):** on-Mac for 4.2/4.3/4.7/4.8 (compiled/built, not yet exercised — 4.8 dev spawn especially); live-vendor runs for 4.4/4.5/4.6 (mock-tested only so far).
 
 ---
 
@@ -133,13 +133,14 @@ Move settings into the focusable window with **real** controls. *(merges desktop
 - [x] Overlay gear → `show_settings_window` (already wired in 4.2).
 - **Acceptance:** type a key, pick STT/correction provider + model, capture an arbitrary hotkey, choose a language — invalid combo shows inline errors. **Verified:** `tsc --noEmit` + `vite build` clean for both windows, core suite 74/74 green, `cargo check`/`cargo build --release` clean, release `.app` launched standalone (stayed up, non-key panel reclass logged, no panic). **Not yet done:** clicking through the actual settings window on-Mac (folds into the 4.10 exit demo, same as 4.2/4.3's runtime checks).
 
-## Phase 4.8 — Wire overlay + pipeline to config, via the sidecar
+## Phase 4.8 — Wire overlay + pipeline to config, via the sidecar  ·  🔶 DEV DONE (needs Mac verify); release packaging pending (13 Aug 2026)
 
 Make settings changes take effect live, with keys never crossing the renderer. *(merges desktop-app Phase 4 + the "drop the dev backend" step — reconciled to the 4.0 sidecar transport, NOT the old desktop plan's `start`-message-carries-`apiKey` path.)* **Code-level implementation plan: `m4.8-sidecar-plan.md`.**
 
-- [ ] **App owns the sidecar:** the widget spawns the bundled Node backend as a Tauri sidecar; **Rust reads the Keychain and passes the selected keys to it via env/stdin** — the renderer never sees a key. The webview streams mic PCM over loopback as today. `apps/backend` remains an optional standalone proxy, clearly marked; the default run path no longer needs a manual `npm run`. Update `npm run widget` so the sidecar lifecycle is automatic.
-- [ ] **Live re-config:** on `config-changed`, the overlay re-registers the hotkey and the next dictation session uses the selected STT/correction provider + model + language. The `start` message carries **only** non-secret session config (provider/model/language) — the key is resolved Rust-side into the sidecar.
-- **Acceptance:** switching provider/model/hotkey/language in settings changes overlay behaviour **without a restart** and **without any key passing through the webview**.
+- [x] **App owns the backend (dev):** Rust `spawn_backend`/`kill_backend`/`restart_backend` in `main.rs` — spawns the Node backend, **injects every present Keychain key into its env** (so vendor-switching needs no restart), kills it on `RunEvent::ExitRequested`, and restarts on `set_key`/`key_save_clipboard` (new key). `scripts/widget.mjs` no longer launches the backend. **Dev path spawns `npm … @verbatim/backend`; the renderer never sees a key.**
+- [x] **No key in the renderer:** `server.ts` reads `sttProvider`/`correctionProvider`/`language` from the `start` message and keys **only from `process.env`** (`msg.apiKey` path removed); `main.ts` `connect()` sends the config selection (from `get_config`) with a startup retry — no `key_get` on the connect path.
+- [ ] **Release packaging (pending):** compile the backend to a self-contained sidecar binary (`bun --compile`/pkg/SEA), register as `externalBin` + spawn via `tauri-plugin-shell`, code-sign with the app. Until then the `#[cfg(not(debug_assertions))]` branch is a marked TODO — **dev works, `tauri build` has no backend yet.**
+- [ ] **On-Mac verify (pending):** `cargo build` + `npm run widget`; dictate with no manual backend; confirm the `start` frame carries no key; switch vendors without relaunch; new key → sidecar restarts; quit → no orphan on `:8787`.
 
 ## Phase 4.9 — Slim the overlay
 
@@ -190,4 +191,4 @@ The app is a **menu-bar app with a focusable settings window**: you can **type**
 
 `4.0 decisions (gate) → 4.1 config/capability (core) → 4.2 settings window → 4.3 config store + keychain (backbone) → { 4.4 Deepgram · 4.5 OpenAI · 4.6 Anthropic } in parallel → 4.7 settings UI + multilingual → 4.8 wire overlay+pipeline via sidecar → 4.9 slim the overlay → 4.10 wire-up + exit demo`
 
-**Done:** 4.0, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7 (see *Progress at a glance* above) — **all three vendor adapters and the settings UI complete**. **Remaining:** 4.8 (sidecar wiring), 4.9 (slim overlay), 4.10 (exit demo). The **4.10 exit demo needs the full chain**, including the on-Mac interactive click-through checks still pending for 4.2/4.3/4.7 and the live-vendor runs for 4.4/4.5/4.6.
+**Done:** 4.0, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7 (see *Progress at a glance* above) — **all three vendor adapters and the settings UI complete**. **4.8 dev code done** (Rust owns the backend + keychain env injection; no key in the renderer) — needs Mac verify + release sidecar packaging. **Remaining:** 4.8 release packaging (compile+sign the sidecar binary), 4.9 (slim overlay), 4.10 (exit demo). The **4.10 exit demo needs the full chain**, including the on-Mac click-through checks still pending for 4.2/4.3/4.7/4.8 and the live-vendor runs for 4.4/4.5/4.6.

@@ -155,24 +155,23 @@ wss.on("connection", (ws) => {
       audio.length = 0;
       acc = new TranscriptAccumulator();
       demo = msg.mode === "demo";
-      sttId = demo ? "fixture" : DEFAULT_STT;
-      corrId = demo ? "mock" : DEFAULT_CORR;
+      // Provider selection comes from the widget's config (Phase 4.8); env is the fallback.
+      sttId = demo ? "fixture" : (msg.sttProvider ?? DEFAULT_STT);
+      corrId = demo ? "mock" : (msg.correctionProvider ?? DEFAULT_CORR);
+      const language = typeof msg.language === "string" && msg.language ? msg.language : "en";
       try {
         stt = getSTTProvider(sttId);
         correction = getCorrectionProvider(corrId);
-        // BYOK: a key sent by the widget (from the OS keychain) takes precedence over .env.
-        // Set it into the process env so every provider/adapter that reads env picks it up.
-        if (!demo && msg.apiKey && stt.requiredKeys[0]) {
-          process.env[stt.requiredKeys[0]] = String(msg.apiKey);
-        }
+        // Keys come ONLY from process.env — injected by the Rust host from the OS Keychain
+        // (Phase 4.8), or a repo .env in standalone dev. The webview never sends a secret.
         apiKey = stt.requiredKeys[0] ? process.env[stt.requiredKeys[0]] : undefined;
         if (stt.requiredKeys.length && !apiKey) {
-          send(ws, { type: "error", message: `Live mode needs ${stt.requiredKeys.join(", ")}. Add it in the widget's Settings (⚙), or a repo .env, or use Demo mode.` });
+          send(ws, { type: "error", message: `Live mode needs ${stt.requiredKeys.join(", ")}. Add it in Settings (⚙), or a repo .env, or use Demo mode.` });
           return;
         }
         send(ws, { type: "ready", stt: sttId, correction: corrId });
-        console.log(`[backend] session start: stt=${sttId} correction=${corrId} demo=${demo}`);
-        session = await stt.startSession({ apiKey: apiKey ?? "" });
+        console.log(`[backend] session start: stt=${sttId} correction=${corrId} lang=${language} demo=${demo}`);
+        session = await stt.startSession({ apiKey: apiKey ?? "", language });
         session.onTranscript((e) => {
           // Growing live display via the accumulator (utterance-scoped: committed
           // finals + current utterance's live text). Authoritative final still

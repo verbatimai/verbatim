@@ -348,15 +348,36 @@ function handle(m: ServerMsg) {
   }
 }
 
-function connect(mode: "demo" | "live", apiKey?: string): Promise<void> {
+// Phase 4.8: the start frame carries only the provider/language SELECTION (from the
+// config store) — never a key. The Rust host injects the Keychain keys into the backend
+// sidecar's env, and owns the sidecar's lifecycle, so on a cold start the loopback port
+// may not be up yet → retry briefly before giving up.
+async function connect(mode: "demo" | "live", tries = 6): Promise<void> {
+  const cfg: any = mode === "live" ? await invoke("get_config").catch(() => ({})) : {};
   return new Promise((resolve, reject) => {
-    ws = new WebSocket(WS_URL);
-    ws.binaryType = "arraybuffer";
-    // apiKey (from the Keychain) is passed to the local backend for this session; never logged.
-    ws.onopen = () => { ws!.send(JSON.stringify({ type: "start", mode, apiKey })); resolve(); };
-    ws.onmessage = (e) => handle(JSON.parse(e.data) as ServerMsg);
-    ws.onerror = () => { setStatus("err", "no backend"); showBanner("err", "Can't reach the backend at " + WS_URL + " — run `npm run widget` (or `npm run backend`)."); reject(new Error("ws")); };
-    ws.onclose = () => { ws = null; };
+    let opened = false;
+    const attempt = (left: number) => {
+      ws = new WebSocket(WS_URL);
+      ws.binaryType = "arraybuffer";
+      ws.onopen = () => {
+        opened = true;
+        ws!.send(JSON.stringify({
+          type: "start",
+          mode,
+          sttProvider: cfg.sttProvider,
+          correctionProvider: cfg.correctionProvider,
+          language: cfg.language,
+        }));
+        resolve();
+      };
+      ws.onmessage = (e) => handle(JSON.parse(e.data) as ServerMsg);
+      ws.onerror = () => {
+        if (!opened && left > 0) { try { ws?.close(); } catch {} setTimeout(() => attempt(left - 1), 250); return; }
+        if (!opened) { setStatus("err", "no backend"); showBanner("err", "Can't reach the backend at " + WS_URL + " — quit & relaunch Verbatim."); reject(new Error("ws")); }
+      };
+      ws.onclose = () => { ws = null; };
+    };
+    attempt(tries);
   });
 }
 
@@ -402,10 +423,9 @@ async function startLive() {
   void muteOthersForSession(); // silence system output while dictating (if enabled)
   reset();
   buttonsBusy();
-  // BYOK: hand the Keychain key (if any) to the local backend for this session.
-  let apiKey: string | undefined;
-  try { apiKey = (await invoke<string | null>("key_get", { account: PYAI_KEY })) ?? undefined; } catch {}
-  await connect("live", apiKey);
+  // Phase 4.8: no key here — the Rust host injects the Keychain keys into the backend
+  // sidecar's env; the webview only sends the provider/language selection.
+  await connect("live");
   audioCtx = new AudioContext();
   const source = audioCtx.createMediaStreamSource(micStream);
   analyser = audioCtx.createAnalyser();

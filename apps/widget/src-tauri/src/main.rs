@@ -230,7 +230,7 @@ fn key_delete(account: String) -> Result<(), String> {
 // clipboard here in Rust (no keyboard focus required) and store it. Returns a masked
 // preview (last 4 chars) for confirmation; the full key is never returned or logged.
 #[tauri::command]
-fn key_save_clipboard(account: String) -> Result<String, String> {
+fn key_save_clipboard(app: tauri::AppHandle, account: String) -> Result<String, String> {
     let mut cb = arboard::Clipboard::new().map_err(|e| e.to_string())?;
     let raw = cb
         .get_text()
@@ -244,6 +244,7 @@ fn key_save_clipboard(account: String) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
     let n = secret.chars().count();
     let last4: String = secret.chars().skip(n.saturating_sub(4)).collect();
+    restart_backend(&app); // sidecar picks up the new key from its env (Phase 4.8)
     Ok(format!("••••{last4}"))
 }
 
@@ -263,11 +264,13 @@ fn vendor_key_name(vendor: &str) -> Option<&'static str> {
 }
 
 #[tauri::command]
-fn set_key(vendor: String, secret: String) -> Result<(), String> {
+fn set_key(app: tauri::AppHandle, vendor: String, secret: String) -> Result<(), String> {
     let acct = vendor_key_name(&vendor).ok_or_else(|| format!("unknown vendor: {vendor}"))?;
     keyring::Entry::new(KEYCHAIN_SERVICE, acct)
         .and_then(|e| e.set_password(&secret))
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    restart_backend(&app); // sidecar picks up the new key from its env (Phase 4.8)
+    Ok(())
 }
 
 #[tauri::command]
@@ -288,6 +291,74 @@ fn delete_key(vendor: String) -> Result<(), String> {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(e.to_string()),
     }
+}
+
+// ── Phase 4.8: the app owns the backend (sidecar) ─────────────────────────────
+// Rust spawns and supervises the Node backend, injecting the vendor API keys from the
+// Keychain into its ENV — so the secret never travels through the webview, and there's
+// no manual `npm run backend`. The webview only streams mic PCM + provider/language over
+// loopback. All present keys are injected so switching vendors needs no restart; adding a
+// NEW key (set_key / key_save_clipboard) triggers a restart. See m4.8-sidecar-plan.md.
+static BACKEND: Mutex<Option<std::process::Child>> = Mutex::new(None);
+const VENDOR_KEYS: [&str; 4] = ["PYAI_API_KEY", "DEEPGRAM_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"];
+
+fn keychain_read(account: &str) -> Option<String> {
+    keyring::Entry::new(KEYCHAIN_SERVICE, account)
+        .and_then(|e| e.get_password())
+        .ok()
+}
+
+fn inject_keys(cmd: &mut std::process::Command) {
+    cmd.env("HOST", "127.0.0.1").env("PORT", "8787");
+    for k in VENDOR_KEYS {
+        if let Some(secret) = keychain_read(k) {
+            cmd.env(k, secret);
+        }
+    }
+}
+
+fn spawn_backend(app: &tauri::AppHandle) {
+    let _ = app;
+    #[cfg(debug_assertions)]
+    let spawned: Result<std::process::Child, String> = {
+        // Dev: run the workspace backend via npm from the repo root
+        // (…/apps/widget/src-tauri → up 3 = repo root).
+        match std::path::Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3) {
+            Some(root) => {
+                let mut cmd = std::process::Command::new("npm");
+                cmd.args(["run", "start", "--workspace", "@verbatim/backend"])
+                    .current_dir(root);
+                inject_keys(&mut cmd);
+                cmd.spawn().map_err(|e| e.to_string())
+            }
+            None => Err("can't locate repo root".to_string()),
+        }
+    };
+    #[cfg(not(debug_assertions))]
+    let spawned: Result<std::process::Child, String> = {
+        // TODO(4.8 release packaging): spawn the bundled sidecar binary (externalBin) via
+        // tauri-plugin-shell, injecting keys the same way. Requires the compile+sign step
+        // (m4.8-sidecar-plan.md §4). Until then, release builds have no backend.
+        Err("release sidecar not packaged yet — see m4.8-sidecar-plan.md §4".to_string())
+    };
+    match spawned {
+        Ok(child) => {
+            *BACKEND.lock().unwrap() = Some(child);
+            println!("[backend] spawned + keyed from Keychain");
+        }
+        Err(e) => eprintln!("[backend] spawn failed: {e}"),
+    }
+}
+
+fn kill_backend() {
+    if let Some(mut c) = BACKEND.lock().unwrap().take() {
+        let _ = c.kill();
+    }
+}
+
+fn restart_backend(app: &tauri::AppHandle) {
+    kill_backend();
+    spawn_backend(app);
 }
 
 // Open System Settings to a specific Privacy pane so the user can grant access.
@@ -648,6 +719,11 @@ fn main() {
                 });
             }
 
+            // Phase 4.8: the app owns the backend — spawn + supervise it, injecting the
+            // vendor keys from the Keychain into its env (no key crosses the webview; no
+            // manual `npm run backend`).
+            spawn_backend(app.handle());
+
             #[cfg(desktop)]
             {
                 use tauri_plugin_global_shortcut::{
@@ -830,6 +906,12 @@ fn main() {
             has_key,
             delete_key
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running the Verbatim widget");
+        .build(tauri::generate_context!())
+        .expect("error while building the Verbatim widget")
+        .run(|_app, event| {
+            // Phase 4.8: kill the backend sidecar on exit so it never orphans / holds :8787.
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                kill_backend();
+            }
+        });
 }
