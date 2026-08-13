@@ -236,11 +236,12 @@ export class Pipeline {
       const raw = acc.final();
       if (raw) {
         try {
-          const result = await this.correction.correct(raw); // full-transcript cleanup -> diff
+          const language = sttConfig?.language;
+          const result = await this.correction.correct(raw, { language }); // full-transcript cleanup -> diff
           this.h.onCorrection?.({ raw, result });
           const cleaned = result.cleanText || raw;
           if (this.correction.format) {
-            const f = await this.correction.format(cleaned);
+            const f = await this.correction.format(cleaned, language);
             this.h.onFormatted?.({ text: f.text });
           } else {
             this.h.onFormatted?.({ text: cleaned });

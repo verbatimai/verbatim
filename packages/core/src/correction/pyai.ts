@@ -51,7 +51,7 @@ export class PyAiCorrection implements CorrectionProvider {
         max_tokens: 1024,
         temperature: 0,
         system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: userMessage(raw, ctx?.priorContext) }],
+        messages: [{ role: "user", content: userMessage(raw, ctx?.priorContext, ctx?.language) }],
       },
       "correction",
     );
@@ -64,7 +64,7 @@ export class PyAiCorrection implements CorrectionProvider {
     return { cleanText: valid ? cleanText : parsed?.clean_text ?? raw, edits, ops, latencyMs, valid };
   }
 
-  async format(text: string): Promise<{ text: string }> {
+  async format(text: string, language?: string): Promise<{ text: string }> {
     const model = process.env.PYAI_MODEL ?? "gpt-5.6-sol";
     const body = await this.messages(
       {
@@ -72,7 +72,7 @@ export class PyAiCorrection implements CorrectionProvider {
         max_tokens: 2048, // whole formatted paragraph/list — give it room
         temperature: 0,
         system: FORMAT_PROMPT,
-        messages: [{ role: "user", content: formatMessage(text) }],
+        messages: [{ role: "user", content: formatMessage(text, language) }],
       },
       "format",
     );

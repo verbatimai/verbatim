@@ -57,7 +57,7 @@ export class AnthropicCorrection implements CorrectionProvider {
       max_tokens: 1024,
       temperature: 0,
       system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userMessage(raw, ctx?.priorContext) }],
+      messages: [{ role: "user", content: userMessage(raw, ctx?.priorContext, ctx?.language) }],
       tools: [{ name: TOOL_NAME, description: "Emit the compact disfluency edits for the transcript.", input_schema: EDIT_SCHEMA }],
       tool_choice: { type: "tool", name: TOOL_NAME },
     });
@@ -70,14 +70,14 @@ export class AnthropicCorrection implements CorrectionProvider {
     return { cleanText: valid ? cleanText : input.clean_text ?? raw, edits, ops, latencyMs, valid };
   }
 
-  async format(text: string): Promise<{ text: string }> {
+  async format(text: string, language?: string): Promise<{ text: string }> {
     const model = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-5";
     const body = await this.messages({
       model,
       max_tokens: 2048, // whole formatted paragraph/list — give it room
       temperature: 0,
       system: FORMAT_PROMPT,
-      messages: [{ role: "user", content: formatMessage(text) }],
+      messages: [{ role: "user", content: formatMessage(text, language) }],
     });
     let out = (body.content ?? []).find((b: any) => b.type === "text")?.text ?? text;
     out = String(out).replace(/^```[a-z]*\n?|\n?```$/g, "").trim(); // strip stray code fences

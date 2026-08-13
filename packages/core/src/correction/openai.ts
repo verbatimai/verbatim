@@ -90,7 +90,7 @@ export class OpenAiCorrection implements CorrectionProvider {
         temperature: 0,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userMessage(raw, ctx?.priorContext) },
+          { role: "user", content: userMessage(raw, ctx?.priorContext, ctx?.language) },
         ],
         response_format: { type: "json_schema", json_schema: CORRECTION_SCHEMA },
       },
@@ -107,7 +107,7 @@ export class OpenAiCorrection implements CorrectionProvider {
     return { cleanText: valid ? cleanText : parsed?.clean_text ?? raw, edits, ops, latencyMs, valid };
   }
 
-  async format(text: string): Promise<{ text: string }> {
+  async format(text: string, language?: string): Promise<{ text: string }> {
     const model = process.env.OPENAI_CORRECTION_MODEL ?? "gpt-4o-mini";
     const body = await this.chat(
       {
@@ -115,7 +115,7 @@ export class OpenAiCorrection implements CorrectionProvider {
         temperature: 0,
         messages: [
           { role: "system", content: FORMAT_PROMPT },
-          { role: "user", content: formatMessage(text) },
+          { role: "user", content: formatMessage(text, language) },
         ],
       },
       "format",

@@ -31,6 +31,8 @@ export interface CorrectionResult {
 export interface CorrectionContext {
   /** Recently committed clean text, for cross-segment coherence. */
   priorContext?: string;
+  /** BCP-47 / ISO-639-1 tag of the transcript's language (default "en"). */
+  language?: string;
 }
 
 export interface CorrectionProvider {
@@ -42,6 +44,7 @@ export interface CorrectionProvider {
    * Whole-text formatting pass (grammar, punctuation, capitalization, and
    * structure like lists/paragraphs). This is a rewrite, not a diff, and runs
    * once on finalize to produce the polished output that gets inserted.
+   * `language` (BCP-47) tells non-English transcripts to stay untranslated.
    */
-  format?(text: string): Promise<{ text: string }>;
+  format?(text: string, language?: string): Promise<{ text: string }>;
 }

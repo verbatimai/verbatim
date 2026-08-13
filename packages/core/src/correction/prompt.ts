@@ -26,8 +26,24 @@ export const FORMAT_PROMPT = `You format a cleaned dictation transcript into pol
 Do NOT add new information, opinions, or content the speaker didn't say, and do not change meaning. Preserve the speaker's words.
 Return ONLY the formatted text as plain text with real newlines (no markdown code fences, no commentary).`;
 
-export function formatMessage(text: string): string {
-  return `Cleaned transcript to format:\n${text}`;
+/** True for "en" and any English region tag ("en-US", "en-GB", …), or unset. */
+function isEnglish(language?: string): boolean {
+  const l = (language || "en").toLowerCase();
+  return l === "en" || l.startsWith("en-") || l.startsWith("en_");
+}
+
+/**
+ * Appended to the user message for a non-English transcript (multilingual.md):
+ * the compact-edits/format prompts above are tuned on English disfluencies, so
+ * rather than localizing the filler vocabulary per language, we just tell the
+ * model to preserve whatever language the transcript is already in.
+ */
+function languageNote(language?: string): string {
+  return isEnglish(language) ? "" : `\n\nThe transcript is in language "${language}" — keep your output in that same language. Do not translate it to English.`;
+}
+
+export function formatMessage(text: string, language?: string): string {
+  return `Cleaned transcript to format:\n${text}${languageNote(language)}`;
 }
 
 /**
@@ -86,9 +102,9 @@ function extractNumberedList(t: string): { lead: string; items: string[] } | nul
   return items.length >= 2 ? { lead, items } : null;
 }
 
-export function userMessage(raw: string, priorContext?: string): string {
+export function userMessage(raw: string, priorContext?: string, language?: string): string {
   const ctx = priorContext ? `Prior context (already cleaned): ${priorContext}\n\n` : "";
-  return `${ctx}Raw transcript:\n${raw}`;
+  return `${ctx}Raw transcript:\n${raw}${languageNote(language)}`;
 }
 
 /** Extract the first JSON object from an LLM text response. */
