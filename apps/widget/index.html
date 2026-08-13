@@ -44,13 +44,14 @@
       </div>
 
       <div class="body">
+        <div class="lbl"><span>Live preview · rough, catches up as you speak</span></div>
         <div class="transcript" id="transcript">
           <span class="hint">Press <b>Demo</b> to replay a sample, or <b>Start</b> to dictate. ⌥Space toggles the widget.</span>
         </div>
 
         <div class="final">
           <div class="lbl">
-            <span>Final output · inserted into the focused field</span>
+            <span>Final output · clean &amp; inserted into the focused field</span>
             <button id="copyBtn" class="copy-btn" disabled>Copy</button>
           </div>
           <div class="txt" id="finalOut"></div>
@@ -66,14 +67,11 @@
 
       <!-- Settings (BYOK) — toggled by the gear or the tray "Settings…" item. -->
       <div class="settings" id="settings">
-        <div class="settings-title">Settings</div>
-        <label class="settings-field">
-          <span class="settings-label">PyAI API key</span>
-          <input type="password" id="keyInput" placeholder="Paste your PyAI API key" autocomplete="off" spellcheck="false" />
-        </label>
+        <div class="settings-title">Settings · PyAI API key</div>
         <div class="settings-status" id="keyStatus">Checking…</div>
+        <div class="settings-hint">The widget floats without ever taking keyboard focus (that's what lets it insert text into other apps) — so it can't accept a typed key. Instead: <b>copy your PyAI key</b>, then click below.</div>
         <div class="settings-actions">
-          <button id="saveKey" class="primary">Save to Keychain</button>
+          <button id="pasteKey" class="primary">Paste key from clipboard</button>
           <button id="clearKey" class="ghost">Clear</button>
           <button id="doneSettings" class="ghost">Done</button>
         </div>

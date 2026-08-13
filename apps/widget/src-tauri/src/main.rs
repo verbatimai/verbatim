@@ -85,6 +85,31 @@ fn key_delete(account: String) -> Result<(), String> {
     }
 }
 
+// Save a key that's ALREADY on the clipboard into the Keychain.
+// Why not just type it in the field? The widget is a non-activating, NON-KEY panel
+// (so it never steals keyboard focus from the app underneath — that's what makes
+// injection work). A non-key panel means its <input> can never receive typed or
+// pasted keystrokes. So instead of typing, the user copies their key and we read the
+// clipboard here in Rust (no keyboard focus required) and store it. Returns a masked
+// preview (last 4 chars) for confirmation; the full key is never returned or logged.
+#[tauri::command]
+fn key_save_clipboard(account: String) -> Result<String, String> {
+    let mut cb = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    let raw = cb
+        .get_text()
+        .map_err(|_| "Clipboard has no text — copy your key first.".to_string())?;
+    let secret = raw.trim().to_string();
+    if secret.is_empty() {
+        return Err("Clipboard is empty — copy your key first.".into());
+    }
+    keyring::Entry::new(KEYCHAIN_SERVICE, &account)
+        .and_then(|e| e.set_password(&secret))
+        .map_err(|e| e.to_string())?;
+    let n = secret.chars().count();
+    let last4: String = secret.chars().skip(n.saturating_sub(4)).collect();
+    Ok(format!("••••{last4}"))
+}
+
 // Open System Settings to a specific Privacy pane so the user can grant access.
 // macOS only; no-op elsewhere.
 #[cfg(target_os = "macos")]
@@ -345,6 +370,7 @@ fn main() {
             copy_text,
             hide_widget,
             key_save,
+            key_save_clipboard,
             key_get,
             key_has,
             key_delete

@@ -39,8 +39,8 @@ const root = $("root"), orb = $<HTMLButtonElement>("orb");
 const collapseBtn = $<HTMLButtonElement>("collapseBtn");
 const card = document.querySelector<HTMLElement>(".card")!;
 const settingsBtn = $<HTMLButtonElement>("settingsBtn"), doneSettings = $<HTMLButtonElement>("doneSettings");
-const keyInput = $<HTMLInputElement>("keyInput"), keyStatus = $("keyStatus");
-const saveKey = $<HTMLButtonElement>("saveKey"), clearKey = $<HTMLButtonElement>("clearKey");
+const keyStatus = $("keyStatus");
+const pasteKey = $<HTMLButtonElement>("pasteKey"), clearKey = $<HTMLButtonElement>("clearKey");
 const PYAI_KEY = "PYAI_API_KEY";
 
 async function refreshKeyStatus() {
@@ -50,7 +50,7 @@ async function refreshKeyStatus() {
     keyStatus.classList.toggle("ok", has);
   } catch (e) { keyStatus.textContent = "Keychain error: " + String(e); }
 }
-function openSettings() { card.classList.add("settings-open"); keyInput.value = ""; void refreshKeyStatus(); }
+function openSettings() { card.classList.add("settings-open"); void refreshKeyStatus(); }
 function closeSettings() { card.classList.remove("settings-open"); }
 
 // Two views: idle "orb" (small floating dot) and active "card" (full streaming UI).
@@ -384,11 +384,18 @@ bannerClose.onclick = () => clearBanner();
 // Settings (BYOK)
 settingsBtn.onclick = () => { if (card.classList.contains("settings-open")) closeSettings(); else openSettings(); };
 doneSettings.onclick = () => closeSettings();
-saveKey.onclick = async () => {
-  const k = keyInput.value.trim();
-  if (!k) { keyStatus.textContent = "Paste a key first."; return; }
-  try { await invoke("key_save", { account: PYAI_KEY, secret: k }); keyInput.value = ""; await refreshKeyStatus(); }
-  catch (e) { keyStatus.textContent = "Save failed: " + String(e); }
+// Non-key panel can't accept a typed key, so we read it straight from the clipboard
+// in Rust and store it in the Keychain. Rust returns a masked preview to confirm.
+pasteKey.onclick = async () => {
+  keyStatus.classList.remove("ok");
+  keyStatus.textContent = "Reading clipboard…";
+  try {
+    const masked = await invoke<string>("key_save_clipboard", { account: PYAI_KEY });
+    keyStatus.textContent = `✓ Saved to Keychain (${masked}).`;
+    keyStatus.classList.add("ok");
+  } catch (e) {
+    keyStatus.textContent = String(e);
+  }
 };
 clearKey.onclick = async () => {
   try { await invoke("key_delete", { account: PYAI_KEY }); await refreshKeyStatus(); }
