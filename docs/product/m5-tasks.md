@@ -39,7 +39,26 @@ Not started by the parallel work: **5.3 formatting modes**, **5.5 concurrency co
 
 ---
 
-## Phase 5.0 — Decisions / spike (do FIRST)
+## Implementation status — 13 Aug 2026 (build session)
+
+A dedicated build session implemented the remaining M5 code on top of the parallel settings-plan work. State now:
+
+- **5.0 ✅ decided/recorded** — `docs/architecture/reliability-undo-concurrency.md` (undo = revert-to-raw first; concurrency = keep batch-on-stop + a 4-rule contract; telemetry model already locked).
+- **5.1 ✅ implemented** (Mac verify) — shared `net/retry` helper; retry on Anthropic correction + all `transcribeBatch`; Deepgram `KeepAlive`; `startReconnectingSession()` live-socket wrapper (+ initial-connect retry) wired into the backend for live sessions; transient/terminal error kinds + `status` frames. 5 reconnect unit tests green.
+- **5.2 ✅ done** — vocabulary (from the settings-plan) + the residual OpenAI-STT keyword prompt-bias added.
+- **5.3 ✅ implemented** — `FormatMode` (prose|message|code|raw) + `FORMAT_PROMPTS` map threaded through all 3 adapters, pipeline, and backend; `raw` skips format; Rust `AppConfig.formatMode` + a Settings "Formatting mode" dropdown; sent on the WS start frame. Per-mode tests green. (Rust needs `cargo build` on the Mac.)
+- **5.4 ✅ implemented** — `LAST_RAW` state + `set_last_raw`/`revert_to_raw` commands; the webview records the raw transcript on the correction frame; a configurable revert-to-raw global accelerator (mirrors paste-last) with a Settings capture row. (Rust needs `cargo build` on the Mac.)
+- **5.5 ✅ implemented** — concurrency contract (doc) + backend guard: reject a `start` mid-finalize, ignore audio during finalize.
+- **5.6 ⏳ telemetry latency capture done** — `sttLatencyMs`/`correctionLatencyMs`/`formatLatencyMs` now populated on the `session_finalize` event; the real **perf pass (F9 memory/latency on the Mac) + F10 under reconnect** remains.
+- **5.7 ⏳ plan written** (`m5.7-dogfood-exit.md`); the two-week dogfood + on-Mac sign-off is the remaining human work.
+
+**Verification:** all 184 core unit tests green + typecheck clean across every workspace (run in a Linux harness — the Mac `node_modules` can't run vitest under the cloud VM). Rust `src-tauri` (5.3 config, 5.4 undo) compiles only on the Mac.
+
+**Remaining to close M5:** on-Mac `cargo build`/`npm run widget` verify of the Rust + live reconnect; the 5.6 perf pass; the 5.7 two-week dogfood; then the M6 gate (rotate the leaked PyAI test key).
+
+---
+
+## Phase 5.0 — Decisions / spike ✅ DONE
 
 Lock the few choices the rest depends on, before building.
 
@@ -48,7 +67,7 @@ Lock the few choices the rest depends on, before building.
 - [x] **Telemetry privacy model.** ✅ **DONE** — opt-in, metadata-only, local-first is implemented and documented in `telemetry.ts` (allow-list `ALLOWED_FIELDS`, `NoopSink`, no fetch/beacon). Transport endpoint deliberately **parked** (settings-plan §10.1). Settings toggle is off by default.
 - **Gate:** the remaining two decisions (undo, concurrency) are written down (here + `docs/architecture/`), so 5.1/5.4/5.5 build against fixed contracts. Telemetry gate already cleared.
 
-## Phase 5.1 — Reliability: reconnect + graceful errors (the backbone)
+## Phase 5.1 — Reliability: reconnect + graceful errors ✅ IMPLEMENTED (Mac verify)
 
 The single biggest daily-driver win — a dropped socket or a vendor 429 must never lose a dictation. **Partially seeded** (correction retry on 2 of 3 vendors); the streaming-reconnect core is the real remaining work.
 
@@ -69,7 +88,7 @@ Make it get *your* names, product terms, and jargon right. **Implemented by the 
 - [x] Tests — `vocabulary.test.ts` (prompt injection + Deepgram query params).
 - [ ] **On-Mac check:** add 5 terms in Settings; dictate a sentence using them; confirm they appear correctly spelled in the final output where they were garbled before.
 
-## Phase 5.3 — Punctuation / formatting modes (NOT started)
+## Phase 5.3 — Punctuation / formatting modes ✅ IMPLEMENTED (Rust: Mac compile)
 
 One size doesn't fit chat, prose, and code. **No `formatMode` in the code yet.** (Distinct from the parked, generative `draft-mode.md`.)
 
@@ -82,14 +101,14 @@ One size doesn't fit chat, prose, and code. **No `formatMode` in the code yet.**
 - [ ] Tests per mode over the same input.
 - **Acceptance:** the same spoken sentence yields appropriately different output in each mode; `code` leaves `myVar` and `()` intact.
 
-## Phase 5.4 — Undo / revert last result (partial — plumbing exists)
+## Phase 5.4 — Undo / revert-to-raw ✅ IMPLEMENTED (Rust: Mac compile)
 
 - [ ] Implement the 5.0 decision. Baseline: a **"revert to raw"** control on the last-result card + a hotkey — re-injects the *uncorrected* transcript (data we already hold), for when correction over-edited. **Reuse** the existing last-result state (`state.rs`) and paste-last accelerator (`shortcuts.rs`) — today they re-inject the *clean* result; add the *raw* variant.
 - [ ] (If AX proves reliable) **undo insertion** — remove the just-inserted text from the target field.
 - [ ] Guard: never touch a field the user has since edited (best-effort; fall back to clipboard).
 - **Acceptance:** after an over-aggressive correction, one action restores exactly what you said; no corruption of the target field in the common case.
 
-## Phase 5.5 — Edit-while-correcting / barge-in concurrency (NOT started)
+## Phase 5.5 — Edit-while-correcting / barge-in concurrency ✅ IMPLEMENTED (contract + guard)
 
 - [ ] Enforce the 5.0 contract in the pipeline/backend: corrections queue **per segment**, committed text is **never reordered**, and a new utterance started before the prior correction returns is handled deterministically.
 - [ ] (Optional spike, only if dogfood needs it) segment-level streaming correction with visible per-segment diffs — behind a flag; keep batch-on-stop as default.
@@ -104,7 +123,7 @@ One size doesn't fit chat, prose, and code. **No `formatMode` in the code yet.**
 - [ ] **(Deferred, needs a decision)** pick a telemetry transport/sink if/when opt-in metrics should leave the device; until then NoopSink stays.
 - **Acceptance:** a local metrics view shows sane numbers; latency at/near target on a typical sentence; no memory growth over a long dogfood session.
 
-## Phase 5.7 — Dogfood + exit (NOT started)
+## Phase 5.7 — Dogfood + exit (plan written; dogfood pending)
 
 - [ ] Team uses Verbatim as the daily dictation tool for **two weeks**; triage bugs; fix blockers.
 - [ ] Update `README`/docs with the new settings (vocabulary, snippets, telemetry toggle; modes + undo once built).

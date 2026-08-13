@@ -49,14 +49,20 @@ npm run dev            # → http://localhost:5173, click "Demo (no mic)"
 npm run widget         # ⌥Space toggles the overlay; enter keys in Settings (⚙)
 ```
 For live dictation, add a vendor key in the app's **Settings** window (stored in the OS
-keychain) — or, for standalone dev, `cp .env.example .env` and fill in a key.
+keychain) — or, for standalone dev, `cp .env.example .env` and fill in a key. Settings also
+has a custom **vocabulary** list, snippet **text-expansion**, a **formatting mode** (prose /
+message / code / raw), configurable **paste-last** and **revert-to-raw** hotkeys, and an
+opt-in, metadata-only **telemetry** toggle.
 
 ## Status
-**M4 in progress.** M0–M3 are done (headless core pipeline, live web demo, macOS
-focus-capture + injection). M4 adds the menu-bar desktop app, a focusable settings window,
-the Rust config store + keychain, and all four vendor adapters (PyAI / Deepgram / OpenAI /
-Anthropic). Remaining in M4: release sidecar packaging and the on-Mac exit demo. See
-`docs/product/roadmap.md` and `docs/product/m4-tasks.md`.
+**M4 functionally complete; M5 in progress.** M0–M3 are done (headless core pipeline, live
+web demo, macOS focus-capture + injection). M4 shipped the menu-bar desktop app, a focusable
+settings window, the Rust config store + keychain, all four vendor adapters (PyAI / Deepgram /
+OpenAI / Anthropic), and the release sidecar packaging. **M5 (daily-driver polish)** adds
+reliability (retry + auto-reconnect + keepalive), custom vocabulary, formatting modes,
+revert-to-raw undo, a concurrency contract, and opt-in metadata-only telemetry with latency
+capture — remaining is on-Mac verification, a perf pass, and a two-week dogfood. See
+`docs/product/roadmap.md`, `docs/product/m5-tasks.md`, and `docs/product/m5.7-dogfood-exit.md`.
 
 ## Security
 See [SECURITY.md](./SECURITY.md). Keys in the OS keychain, no content telemetry,
