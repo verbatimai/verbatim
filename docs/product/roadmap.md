@@ -77,11 +77,11 @@ The plan (`../product/product-plan.md`) is the *what* and *why*. This is the *in
 ## M4 — Desktop app + multi-vendor + configuration  ·  IN PROGRESS
 **Goal:** turn the widget into a real menu-bar app with a focusable settings window, and deliver on the vendor-agnostic promise and the BYOK key model. Full breakdown + live phase checklist in `../product/m4-tasks.md` (the former standalone `desktop-app-plan.md` is now folded into it).
 
-**Status (13 Aug 2026):** 4.0 decisions, 4.1 core config/capability, 4.2 settings window, and 4.3 config store + keychain are **done** (window/keychain code compiles on the Mac; runtime acceptance pending). OpenAI (4.5) and Anthropic (4.6) adapters are **done** (cloud-tested vs mocks). **Remaining:** finish Deepgram (4.4), settings UI + multilingual (4.7), sidecar wiring (4.8), slim the overlay (4.9), exit demo (4.10).
+**Status (13 Aug 2026):** 4.0 decisions, 4.1 core config/capability, 4.2 settings window, and 4.3 config store + keychain are **done** (window/keychain code compiles on the Mac; runtime acceptance pending). **All three vendor adapters are done** — Deepgram STT (4.4), OpenAI STT+correction (4.5), Anthropic correction (4.6) — cloud-tested vs mocks. **Remaining:** settings UI + multilingual (4.7), sidecar wiring (4.8), slim the overlay (4.9), exit demo (4.10).
 
 **Deliverables**
 - ✅ **Desktop app / window split:** single-window overlay split into a **menu-bar app + focusable settings window** (activation-policy switch), backed by one Rust config store with a `config-changed` live refresh. Unlocks typed API keys, arbitrary hotkey capture, and provider/model dropdowns. *(4.2 + 4.3 — compiles; runtime pending.)*
-- ⏳ Vendor adapters behind the existing interfaces: OpenAI STT+correction ✅ and Anthropic correction ✅ (cloud-tested); **Deepgram STT (finish) remaining** (4.4).
+- ✅ Vendor adapters behind the existing interfaces: **Deepgram STT** (4.4), **OpenAI STT+correction** (4.5), **Anthropic correction** (4.6) — all cloud-tested vs mocks. *(Deepgram is STT-only — no correction adapter, by design; pair it with a correction vendor.)*
 - ✅/⏳ **Keys in the OS keychain** (never plaintext/disk/bundle, never through the renderer) done via the config store (4.3); the **app-owned sidecar** that hands keys to the pipeline is 4.8. **Provider selection UI** is 4.7.
 - ✅ Startup capability check + mix-and-match (e.g. Deepgram STT + Anthropic correction) — core layer done in 4.1; surfaced in the UI in 4.7.
 - ⏳ **Multilingual** (see `../architecture/multilingual.md`): PyAI Hear is **English-only** today, so non-English dictation routes STT through Deepgram/OpenAI (PyAI stays the `en` default). Core `language` + English-only guard done in 4.1; the `language` setting UI + localized prompts land in 4.7.
