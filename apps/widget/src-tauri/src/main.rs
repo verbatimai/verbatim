@@ -342,10 +342,16 @@ fn spawn_backend(app: &tauri::AppHandle) {
     };
     #[cfg(not(debug_assertions))]
     let spawned: Result<std::process::Child, String> = {
-        // TODO(4.8 release packaging): spawn the bundled sidecar binary (externalBin) via
-        // tauri-plugin-shell, injecting keys the same way. Requires the compile+sign step
-        // (m4.8-sidecar-plan.md §4). Until then, release builds have no backend.
-        Err("release sidecar not packaged yet — see m4.8-sidecar-plan.md §4".to_string())
+        // Release: spawn the bundled sidecar (externalBin), which Tauri places next to the
+        // app executable with the target-triple stripped. Keys injected from the Keychain.
+        match std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("verbatim-backend"))) {
+            Some(bin) => {
+                let mut cmd = std::process::Command::new(bin);
+                inject_keys(&mut cmd);
+                cmd.spawn().map_err(|e| e.to_string())
+            }
+            None => Err("can't locate app dir for sidecar".to_string()),
+        }
     };
     match spawned {
         Ok(child) => {

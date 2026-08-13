@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Verbatim — macOS entitlements (Developer ID / hardened runtime; NOT App Store sandboxed).
+  The app is intentionally un-sandboxed: it reads the Accessibility API to inject text and
+  spawns the bundled backend sidecar — both of which the App Sandbox would block.
+-->
+<plist version="1.0">
+<dict>
+  <!-- Microphone access for dictation. -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+
+  <!-- The bundled backend sidecar (a bun-compiled JS binary) and the WKWebView run a
+       JIT'd JavaScript engine; the hardened runtime blocks JIT unless these are granted.
+       Applied to the app and, via Tauri, to the signed externalBin sidecar. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+</dict>
+</plist>
