@@ -39,55 +39,10 @@ const copyBtn = $<HTMLButtonElement>("copyBtn");
 const root = $("root"), orb = $<HTMLButtonElement>("orb");
 const collapseBtn = $<HTMLButtonElement>("collapseBtn");
 const card = document.querySelector<HTMLElement>(".card")!;
-const settingsBtn = $<HTMLButtonElement>("settingsBtn"), doneSettings = $<HTMLButtonElement>("doneSettings");
-const keyStatus = $("keyStatus");
-const pasteKey = $<HTMLButtonElement>("pasteKey"), clearKey = $<HTMLButtonElement>("clearKey");
-const hotkeyPicker = $("hotkeyPicker");
-const axStatus = $("axStatus"), openAxSettings = $<HTMLButtonElement>("openAxSettings");
-const muteOthersToggle = $<HTMLInputElement>("muteOthers");
-const PYAI_KEY = "PYAI_API_KEY";
-
-async function refreshKeyStatus() {
-  try {
-    const has = await invoke<boolean>("key_has", { account: PYAI_KEY });
-    keyStatus.textContent = has ? "✓ Key saved in your Keychain." : "No key saved — live dictation needs one (or a repo .env).";
-    keyStatus.classList.toggle("ok", has);
-  } catch (e) { keyStatus.textContent = "Keychain error: " + String(e); }
-}
-
-// Highlight the active preset. The hotkey can't be typed into (non-key panel), so it's
-// picked by clicking one of a fixed set of presets — Rust re-registers it live.
-async function refreshHotkey() {
-  let id = "alt-space";
-  try { id = await invoke<string>("get_toggle_hotkey"); } catch {}
-  hotkeyPicker.querySelectorAll<HTMLButtonElement>(".hk").forEach((b) =>
-    b.classList.toggle("active", b.dataset.hk === id));
-}
-
-async function refreshAxStatus() {
-  try {
-    const ok = await invoke<boolean>("ax_trusted");
-    axStatus.textContent = ok
-      ? "✓ Granted — text can be inserted into other apps."
-      : "Not granted — text will be copied to the clipboard until you grant it.";
-    axStatus.classList.toggle("ok", ok);
-    axStatus.classList.toggle("bad", !ok);
-    openAxSettings.hidden = ok;
-  } catch (e) { axStatus.textContent = "Couldn't check: " + String(e); }
-}
-
-async function refreshMuteOthers() {
-  try { const cfg = await invoke<any>("get_config"); muteOthersToggle.checked = !!cfg?.muteOthers; } catch {}
-}
-
-function openSettings() {
-  card.classList.add("settings-open");
-  void refreshKeyStatus();
-  void refreshHotkey();
-  void refreshAxStatus();
-  void refreshMuteOthers();
-}
-function closeSettings() { card.classList.remove("settings-open"); }
+const settingsBtn = $<HTMLButtonElement>("settingsBtn");
+// Phase 4.9: the overlay's inline settings panel is gone — all configuration (keys,
+// providers, hotkey, language, mute-others, permissions) lives in the focusable Settings
+// window (settings.html / settings.ts). The gear just opens it.
 
 // Two views: idle "orb" (small floating dot) and active "card" (full streaming UI).
 // Both sit bottom-center; resize + reposition on switch.
@@ -150,7 +105,6 @@ async function initOrbPosition() {
 // Open the full card and start a fresh dictation session (streaming visible throughout).
 function beginDictation() {
   clearBanner();
-  closeSettings();
   void setView("card");
   reset();
   if (ws) { try { ws.close(); } catch {} ws = null; }
@@ -489,44 +443,10 @@ startBtn.onclick = () => void startLive();
 stopBtn.onclick = () => stop();
 bannerClose.onclick = () => clearBanner();
 
-// Settings — Phase 4.2: the gear opens the separate, focusable Settings window (you
-// can't type into this non-key overlay). The old inline panel (openSettings/closeSettings
-// and the "open-settings" listener below) is now unreachable and gets removed in 4.9.
+// Settings — the gear opens the separate, focusable Settings window. This non-key overlay
+// can't take keyboard focus, so all configuration (keys, providers, hotkey, language,
+// mute-others, permissions) lives there. Phase 4.9 removed the old inline panel.
 settingsBtn.onclick = () => { void invoke("show_settings_window").catch(() => {}); };
-doneSettings.onclick = () => closeSettings();
-// Non-key panel can't accept a typed key, so we read it straight from the clipboard
-// in Rust and store it in the Keychain. Rust returns a masked preview to confirm.
-pasteKey.onclick = async () => {
-  keyStatus.classList.remove("ok");
-  keyStatus.textContent = "Reading clipboard…";
-  try {
-    const masked = await invoke<string>("key_save_clipboard", { account: PYAI_KEY });
-    keyStatus.textContent = `✓ Saved to Keychain (${masked}).`;
-    keyStatus.classList.add("ok");
-  } catch (e) {
-    keyStatus.textContent = String(e);
-  }
-};
-clearKey.onclick = async () => {
-  try { await invoke("key_delete", { account: PYAI_KEY }); await refreshKeyStatus(); }
-  catch (e) { keyStatus.textContent = "Clear failed: " + String(e); }
-};
-// Pick a hotkey preset (click, not keystroke). Rust persists + re-registers it live.
-hotkeyPicker.addEventListener("click", async (e) => {
-  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".hk");
-  if (!btn?.dataset.hk) return;
-  try { await invoke("set_toggle_hotkey", { id: btn.dataset.hk }); await refreshHotkey(); }
-  catch { await refreshHotkey(); }
-});
-openAxSettings.onclick = () => {
-  void invoke("open_accessibility_settings").catch(() => {});
-  // Re-check shortly after, in case they grant it and come back.
-  setTimeout(() => void refreshAxStatus(), 1200);
-};
-// Persist the "mute other audio while dictating" preference into the config store.
-muteOthersToggle.onchange = () => {
-  void invoke("set_config", { patch: { muteOthers: muteOthersToggle.checked } }).catch(() => {});
-};
 
 // Orb: click to dictate, drag to reposition. Distinguish the two by movement.
 let orbDown = false, orbMoved = false, orbPosReady = false;
@@ -566,7 +486,6 @@ collapseBtn.onclick = () => {
   teardownAudio();
   resetButtons();
   clearBanner();
-  closeSettings();
   void setView("orb");
 };
 copyBtn.onclick = async () => {
@@ -600,14 +519,10 @@ void listen<string>("dictation", (e) => {
   else if (e.payload === "stop") { if (ws) stop(); }
 });
 
-// Tray "Settings…" → open the card in settings mode.
-void listen("open-settings", () => { void setView("card").then(() => openSettings()); });
-
 // Tray "Show Last Result" → open the card showing the previous dictation (no new session),
 // so the user can re-copy it. lastResult survives reset() between sessions.
 async function showLastResult() {
   clearBanner();
-  closeSettings();
   await setView("card");
   reset();
   resetButtons();

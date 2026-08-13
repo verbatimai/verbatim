@@ -14,6 +14,7 @@ type AppConfig = {
   language: string;
   hotkey: string;
   dockIcon: boolean;
+  muteOthers?: boolean;
 };
 
 // Mirrors packages/core's provider registries' `requiredKeys` and Rust's
@@ -43,6 +44,7 @@ const languageCustomEl = $<HTMLInputElement>("languageCustom");
 const languageHintEl = $("languageHint");
 const capabilityErrorsEl = $("capabilityErrors");
 const vendorKeysEl = $("vendorKeys");
+const muteOthersEl = $<HTMLInputElement>("muteOthers");
 const hotkeyCaptureEl = $<HTMLInputElement>("hotkeyCapture");
 const hotkeyClearEl = $<HTMLButtonElement>("hotkeyClear");
 const hotkeyPresetsEl = $("hotkeyPresets");
@@ -333,4 +335,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   void initVendorKeys();
   void refreshMicStatus();
   void refreshAxStatus();
+  // Phase 4.9: the mute-others toggle migrated here from the overlay's old inline panel.
+  muteOthersEl.checked = !!config?.muteOthers;
+  muteOthersEl.addEventListener("change", () => {
+    void invoke("set_config", { patch: { muteOthers: muteOthersEl.checked } });
+  });
 });

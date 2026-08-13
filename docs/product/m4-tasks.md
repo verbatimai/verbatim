@@ -14,8 +14,8 @@
 
 Progress is tracked in three places: **this file** (per-phase checklist — the detail), **`STATUS.md`** (handoff snapshot — read first for context), and **`roadmap.md`** (milestone level).
 
-- ✅ **4.0** decisions · ✅ **4.1** core config/capability · ✅ **4.2** settings window *(compiles on Mac; runtime pending)* · ✅ **4.3** config store + keychain *(compiles; committed `ea8ca9d`)* · ✅ **4.4** Deepgram STT *(cloud-tested)* · ✅ **4.5** OpenAI STT+correction *(cloud-tested)* · ✅ **4.6** Anthropic correction *(cloud-tested)* · ✅ **4.7** settings UI + multilingual *(compiles/builds on Mac; click-through pending)* · 🔶 **4.8** sidecar wiring *(dev code done, needs Mac verify; release packaging pending)*
-- ⏳ **Remaining:** **4.8** release sidecar packaging (compile+sign the backend binary) · **4.9** slim the overlay · **4.10** wire-up + exit demo
+- ✅ **4.0** decisions · ✅ **4.1** core config/capability · ✅ **4.2** settings window *(compiles on Mac; runtime pending)* · ✅ **4.3** config store + keychain *(compiles; committed `ea8ca9d`)* · ✅ **4.4** Deepgram STT *(cloud-tested)* · ✅ **4.5** OpenAI STT+correction *(cloud-tested)* · ✅ **4.6** Anthropic correction *(cloud-tested)* · ✅ **4.7** settings UI + multilingual *(compiles/builds on Mac; click-through pending)* · 🔶 **4.8** sidecar wiring *(dev code done, needs Mac verify; release packaging pending)* · ✅ **4.9** slim the overlay *(code; needs Mac verify)*
+- ⏳ **Remaining:** **4.8** release sidecar packaging (compile+sign the backend binary) · **4.10** wire-up + exit demo
 - 🔎 **Pending verification (folds into 4.10):** on-Mac for 4.2/4.3/4.7/4.8 (compiled/built, not yet exercised — 4.8 dev spawn especially); live-vendor runs for 4.4/4.5/4.6 (mock-tested only so far).
 
 ---
@@ -142,10 +142,11 @@ Make settings changes take effect live, with keys never crossing the renderer. *
 - [ ] **Release packaging (pending):** compile the backend to a self-contained sidecar binary (`bun --compile`/pkg/SEA), register as `externalBin` + spawn via `tauri-plugin-shell`, code-sign with the app. Until then the `#[cfg(not(debug_assertions))]` branch is a marked TODO — **dev works, `tauri build` has no backend yet.**
 - [ ] **On-Mac verify (pending):** `cargo build` + `npm run widget`; dictate with no manual backend; confirm the `start` frame carries no key; switch vendors without relaunch; new key → sidecar restarts; quit → no orphan on `:8787`.
 
-## Phase 4.9 — Slim the overlay
+## Phase 4.9 — Slim the overlay  ·  ✅ DONE (code; needs Mac verify) (13 Aug 2026)
 
-- [ ] Delete the inline settings panel from `index.html`/`main.ts`/`style.css`; the overlay becomes purely orb + card + inject. Gear → `show_settings_window`.
-- **Acceptance:** overlay has no settings UI; all config is in the settings window; nothing regressed (still streams + injects, still non-key).
+- [x] Deleted the inline settings panel from `index.html` and all its handlers from `main.ts` (`openSettings`/`closeSettings`, `refreshKeyStatus`/`refreshHotkey`/`refreshAxStatus`/`refreshMuteOthers`, the paste/clear-key, hotkey-picker, ax, and mute handlers, and the dead `open-settings` tray listener). The overlay is now orb + card + inject; the gear calls `show_settings_window`. **Migrated** the "Mute other audio while listening" toggle into the Settings window (`settings.html`/`settings.ts`, wired to `get_config`/`set_config`) — `muteOthersForSession()` in the overlay already reads `config.muteOthers`, so dictation behaviour is unchanged. Verified no dangling references remain in `main.ts`.
+- [ ] *(minor)* Dead `.settings*` / `.hotkey-picker` / `.hk` / `.opt` rules in `style.css` are now unused (harmless); prune when convenient.
+- **Acceptance (on-Mac):** overlay has no settings UI; the gear opens the Settings window; mute-others still works from Settings; dictation still streams + injects and the panel stays non-key.
 
 ## Phase 4.10 — Wire-up, docs & exit demo
 
@@ -191,4 +192,4 @@ The app is a **menu-bar app with a focusable settings window**: you can **type**
 
 `4.0 decisions (gate) → 4.1 config/capability (core) → 4.2 settings window → 4.3 config store + keychain (backbone) → { 4.4 Deepgram · 4.5 OpenAI · 4.6 Anthropic } in parallel → 4.7 settings UI + multilingual → 4.8 wire overlay+pipeline via sidecar → 4.9 slim the overlay → 4.10 wire-up + exit demo`
 
-**Done:** 4.0, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7 (see *Progress at a glance* above) — **all three vendor adapters and the settings UI complete**. **4.8 dev code done** (Rust owns the backend + keychain env injection; no key in the renderer) — needs Mac verify + release sidecar packaging. **Remaining:** 4.8 release packaging (compile+sign the sidecar binary), 4.9 (slim overlay), 4.10 (exit demo). The **4.10 exit demo needs the full chain**, including the on-Mac click-through checks still pending for 4.2/4.3/4.7/4.8 and the live-vendor runs for 4.4/4.5/4.6.
+**Done:** 4.0, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7 (see *Progress at a glance* above) — **all three vendor adapters and the settings UI complete**. **4.8 dev code done** (Rust owns the backend + keychain env injection; no key in the renderer) — needs Mac verify + release sidecar packaging. **4.9 slim-the-overlay done** (inline panel removed; mute-others migrated to the Settings window). **Remaining:** 4.8 release packaging (compile+sign the sidecar binary), 4.10 (exit demo). The **4.10 exit demo needs the full chain**, including the on-Mac click-through checks still pending for 4.2/4.3/4.7/4.8/4.9 and the live-vendor runs for 4.4/4.5/4.6.

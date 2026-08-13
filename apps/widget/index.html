@@ -68,53 +68,6 @@
           <label class="toggle"><input type="checkbox" id="showRemoved" checked /> show removed</label>
         </div>
       </div>
-
-      <!-- Settings (BYOK) — toggled by the gear or the tray "Settings…" item. -->
-      <div class="settings" id="settings">
-        <div class="settings-title">Settings</div>
-
-        <div class="settings-group">
-          <div class="settings-label">PyAI API key</div>
-          <div class="settings-status" id="keyStatus">Checking…</div>
-          <div class="settings-hint">The widget floats without ever taking keyboard focus (that's what lets it insert text into other apps) — so it can't accept a typed key. <b>Copy your key</b>, then click Paste.</div>
-          <div class="settings-actions">
-            <button id="pasteKey" class="primary small">Paste key from clipboard</button>
-            <button id="clearKey" class="ghost small">Clear</button>
-          </div>
-        </div>
-
-        <div class="settings-group">
-          <div class="settings-label">Dictation hotkey</div>
-          <div class="hotkey-picker" id="hotkeyPicker">
-            <button class="hk" data-hk="alt-space">⌥ Space</button>
-            <button class="hk" data-hk="ctrl-space">⌃ Space</button>
-            <button class="hk" data-hk="cmd-shift-d">⌘⇧ D</button>
-            <button class="hk" data-hk="ctrl-alt-d">⌃⌥ D</button>
-            <button class="hk" data-hk="alt-grave">⌥ `</button>
-          </div>
-          <div class="settings-hint">Hold to talk (push-to-talk), or tap to toggle hands-free.</div>
-        </div>
-
-        <div class="settings-group">
-          <div class="settings-label">Accessibility permission</div>
-          <div class="settings-status" id="axStatus">Checking…</div>
-          <div class="settings-actions">
-            <button id="openAxSettings" class="ghost small">Open Accessibility Settings</button>
-          </div>
-          <div class="settings-hint">Needed to insert text into other apps. Grant Verbatim, then quit &amp; relaunch.</div>
-        </div>
-
-        <div class="settings-group">
-          <div class="settings-label">While dictating</div>
-          <label class="opt"><input type="checkbox" id="muteOthers" /> Mute other audio while listening</label>
-          <div class="settings-hint">Silences system output during dictation so music or video doesn't bleed into the mic. Your volume is restored when you stop.</div>
-        </div>
-
-        <div class="settings-actions">
-          <button id="doneSettings" class="primary">Done</button>
-        </div>
-        <div class="settings-hint">Keys are stored in the macOS Keychain — no <code>.env</code> needed.</div>
-      </div>
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>
