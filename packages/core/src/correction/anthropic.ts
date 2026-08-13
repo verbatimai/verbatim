@@ -1,5 +1,7 @@
 import type { CorrectionProvider, CorrectionResult, CorrectionContext, CorrectionEdit } from "./types";
-import { SYSTEM_PROMPT, userMessage, reconstruct, validate, FORMAT_PROMPT, formatMessage } from "./prompt";
+import { SYSTEM_PROMPT, userMessage, reconstruct, validate, formatPromptFor, formatMessage } from "./prompt";
+import type { FormatMode } from "./prompt";
+import { fetchWithRetry } from "../net/retry";
 
 // Anthropic Messages API correction adapter. Structured output = forced
 // tool-use (docs/architecture/vendor-apis.md §4): one tool whose input_schema
@@ -36,7 +38,9 @@ export class AnthropicCorrection implements CorrectionProvider {
 
   private async messages(body: unknown): Promise<any> {
     const base = process.env.ANTHROPIC_BASE ?? "https://api.anthropic.com/v1"; // read at call time (testable)
-    const res = await fetch(`${base}/messages`, {
+    // 5.1 — retry transient 5xx/429/network (parity with pyai/openai correction).
+    const attempts = Math.max(1, Number(process.env.ANTHROPIC_RETRIES ?? 3));
+    const res = await fetchWithRetry(`${base}/messages`, {
       method: "POST",
       headers: {
         "x-api-key": this.apiKey,
@@ -44,8 +48,7 @@ export class AnthropicCorrection implements CorrectionProvider {
         "content-type": "application/json",
       },
       body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`Anthropic messages ${res.status}: ${await res.text()}`);
+    }, { label: "Anthropic messages", attempts });
     return res.json();
   }
 
@@ -71,14 +74,14 @@ export class AnthropicCorrection implements CorrectionProvider {
     return { cleanText: valid ? cleanText : input.clean_text ?? raw, edits, ops, latencyMs, valid };
   }
 
-  async format(text: string, language?: string, vocabulary?: string[], model?: string): Promise<{ text: string }> {
+  async format(text: string, language?: string, vocabulary?: string[], model?: string, mode?: FormatMode): Promise<{ text: string }> {
     // Phase 7 — same prefer-override resolution as correct().
     const resolvedModel = (model && model.trim()) ? model : (process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-5");
     const body = await this.messages({
       model: resolvedModel,
       max_tokens: 2048, // whole formatted paragraph/list — give it room
       temperature: 0,
-      system: FORMAT_PROMPT,
+      system: formatPromptFor(mode),
       messages: [{ role: "user", content: formatMessage(text, language, vocabulary) }],
     });
     let out = (body.content ?? []).find((b: any) => b.type === "text")?.text ?? text;

@@ -1,5 +1,6 @@
 import type { CorrectionProvider, CorrectionResult, CorrectionContext } from "./types";
-import { SYSTEM_PROMPT, userMessage, parseJson, reconstruct, validate, FORMAT_PROMPT, formatMessage } from "./prompt";
+import { SYSTEM_PROMPT, userMessage, parseJson, reconstruct, validate, formatPromptFor, formatMessage } from "./prompt";
+import type { FormatMode } from "./prompt";
 
 const TRANSIENT = new Set([408, 425, 429, 500, 502, 503, 504]);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -67,7 +68,7 @@ export class PyAiCorrection implements CorrectionProvider {
     return { cleanText: valid ? cleanText : parsed?.clean_text ?? raw, edits, ops, latencyMs, valid };
   }
 
-  async format(text: string, language?: string, vocabulary?: string[], model?: string): Promise<{ text: string }> {
+  async format(text: string, language?: string, vocabulary?: string[], model?: string, mode?: FormatMode): Promise<{ text: string }> {
     // Phase 7 — same prefer-override resolution as correct() (F4: server ignores it).
     const resolvedModel = (model && model.trim()) ? model : (process.env.PYAI_MODEL ?? "gpt-5.6-sol");
     const body = await this.messages(
@@ -75,7 +76,7 @@ export class PyAiCorrection implements CorrectionProvider {
         model: resolvedModel,
         max_tokens: 2048, // whole formatted paragraph/list — give it room
         temperature: 0,
-        system: FORMAT_PROMPT,
+        system: formatPromptFor(mode),
         messages: [{ role: "user", content: formatMessage(text, language, vocabulary) }],
       },
       "format",

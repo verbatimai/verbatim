@@ -1,3 +1,5 @@
+import type { FormatMode } from "./prompt";
+
 export type EditReason =
   | "filler"
   | "false_start"
@@ -62,5 +64,5 @@ export interface CorrectionProvider {
    * `vocabulary` (3.4) is the custom-term list to preserve/spell exactly — this is
    * the effective prompt-side lever for OpenAI/PyAI (the correction pass can't re-spell).
    */
-  format?(text: string, language?: string, vocabulary?: string[], model?: string): Promise<{ text: string }>;
+  format?(text: string, language?: string, vocabulary?: string[], model?: string, mode?: FormatMode): Promise<{ text: string }>;
 }

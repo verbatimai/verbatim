@@ -6,6 +6,7 @@ import type {
   TranscriptEvent,
 } from "./types";
 import { pcmToWav } from "../audio/wav";
+import { fetchWithRetry } from "../net/retry";
 
 // Deepgram streaming adapter.
 //
@@ -103,12 +104,12 @@ export class DeepgramSTT implements STTProvider {
         if (t) q.append(param, t);
       }
     }
-    const res = await fetch(`${base}/listen?${q.toString()}`, {
+    // 5.1 — retry transient 5xx/429/network on the AUTHORITATIVE batch path.
+    const res = await fetchWithRetry(`${base}/listen?${q.toString()}`, {
       method: "POST",
       headers: { Authorization: `Token ${cfg.apiKey}`, "Content-Type": "audio/wav" },
       body: wav,
-    });
-    if (!res.ok) throw new Error(`Deepgram transcribe ${res.status}: ${await res.text()}`);
+    }, { label: "Deepgram transcribe" });
     const body = (await res.json()) as any;
     return String(
       body.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "",
@@ -124,11 +125,22 @@ class DeepgramSession implements STTSession {
   private utteranceId = "u0";
   private uCounter = 0;
   private finalizedThisSegment = false; // dedup guard for speech_final + UtteranceEnd
+  // 5.1 — Deepgram closes an idle socket after ~10s of no audio (m4.4-deepgram-plan.md).
+  // A periodic KeepAlive during silence keeps the live preview socket open across pauses.
+  private keepAlive?: ReturnType<typeof setInterval>;
 
   constructor(private ws: WebSocket) {
     ws.on("message", (d) => this.onMessage(d.toString()));
     ws.on("error", (e) => this.ecb?.(e as Error));
-    ws.on("close", () => this.ccb?.());
+    ws.on("close", () => { this.stopKeepAlive(); this.ccb?.(); });
+    this.keepAlive = setInterval(() => {
+      if (this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "KeepAlive" }));
+    }, 5000);
+    if (typeof this.keepAlive?.unref === "function") this.keepAlive.unref(); // never hold the event loop open
+  }
+
+  private stopKeepAlive() {
+    if (this.keepAlive) { clearInterval(this.keepAlive); this.keepAlive = undefined; }
   }
 
   // Close the current segment once: emit a single `final` with endpoint:true, then
@@ -198,6 +210,7 @@ class DeepgramSession implements STTSession {
   }
 
   async finalize() {
+    this.stopKeepAlive();
     if (this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: "Finalize" })); // flush pending audio → last final
     }
@@ -208,6 +221,7 @@ class DeepgramSession implements STTSession {
   }
 
   close() {
+    this.stopKeepAlive();
     if (
       this.ws.readyState === WebSocket.OPEN ||
       this.ws.readyState === WebSocket.CONNECTING

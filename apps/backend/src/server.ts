@@ -9,7 +9,7 @@
 import { readFileSync, existsSync, appendFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import { getSTTProvider, getCorrectionProvider, TranscriptAccumulator, localFormat, expandSnippets, Telemetry, type STTSession, type STTProvider, type CorrectionProvider, type Snippet } from "@verbatim/core";
+import { getSTTProvider, getCorrectionProvider, TranscriptAccumulator, localFormat, expandSnippets, Telemetry, startReconnectingSession, type STTSession, type STTProvider, type CorrectionProvider, type Snippet, type FormatMode } from "@verbatim/core";
 
 // ── Complete PyAI error log ───────────────────────────────────────────────────
 // The widget's banner truncates long responses (e.g. a 401 HTML body), so every raw
@@ -101,6 +101,11 @@ wss.on("connection", (ws) => {
   let sttModel: string | undefined;  // Phase 7 — STT model override ("" ⇒ undefined ⇒ default)
   let corrModel: string | undefined; // Phase 7 — correction model override ("" ⇒ undefined ⇒ default)
   let snippets: Snippet[] = [];  // 3.5 — deterministic trigger→expansion on the final text
+  let formatMode: FormatMode | undefined; // 5.3 — prose | message | code | raw ("raw" skips format)
+  // 5.6 — per-session latency capture (ms) for the telemetry session_finalize event.
+  let sttLatencyMs: number | undefined;
+  let correctionLatencyMs: number | undefined;
+  let formatLatencyMs: number | undefined;
   // 3.3 — one telemetry emitter per connection. Default NoopSink (transport PARKED),
   // enabled from the start frame. METADATA ONLY — never transcript/audio content.
   let telemetry = new Telemetry({ enabled: false });
@@ -120,11 +125,13 @@ wss.on("connection", (ws) => {
         dbg("batch transcribe:", pcm.length, "bytes");
         // Phase 7 — thread the STT model override + (Fix 2) the vocabulary as the
         // Deepgram keyword boost on the AUTHORITATIVE batch path (other adapters ignore both).
+        const tBatch = Date.now();
         raw = norm(await stt.transcribeBatch(pcm, { apiKey: apiKey ?? "", sampleRate: 16000, language: langTag, detectLanguage: autoDetect, model: sttModel, keywords: vocabulary }));
+        sttLatencyMs = Date.now() - tBatch; // 5.6 — batch STT latency
       } catch (e: any) {
         logPyaiError("stt.transcribeBatch", e, { sttId, bytes: audio.reduce((n, c) => n + c.length, 0) });
         telemetry.emit({ type: "error", errorPhase: "stt.transcribeBatch", sttProvider: sttId });
-        send(ws, { type: "error", message: "batch transcribe: " + (e?.message ?? e), file: LOG_FILE });
+        send(ws, { type: "error", kind: "terminal", message: "batch transcribe: " + (e?.message ?? e), file: LOG_FILE });
       }
     }
     raw = norm(raw);
@@ -138,12 +145,13 @@ wss.on("connection", (ws) => {
         try {
           // 3.4 — vocabulary carried for parity (correction forbids re-spelling; harmless).
           const result = await correction.correct(raw, { language: langTag, vocabulary, model: corrModel });
+          correctionLatencyMs = result.latencyMs; // 5.6 — correction pass latency
           cleanText = norm(result.cleanText) || raw;
           send(ws, { type: "correction", raw, cleanText, ops: result.ops, valid: result.valid });
         } catch (e: any) {
           logPyaiError("correction.cleanup", e, { corrId, rawLen: raw.length });
           telemetry.emit({ type: "error", errorPhase: "correction.cleanup", correctionProvider: corrId });
-          send(ws, { type: "error", message: "cleanup failed: " + (e?.message ?? String(e)), file: LOG_FILE });
+          send(ws, { type: "error", kind: "terminal", message: "cleanup failed: " + (e?.message ?? String(e)), file: LOG_FILE });
         }
       }
       // 2) Formatting -> the final inserted text. GUARANTEED to be at least the
@@ -152,16 +160,20 @@ wss.on("connection", (ws) => {
       //    Do NOT norm() here: formatted output may contain intentional newlines.
       //    2.3 — when formatting is toggled off, skip BOTH the LLM formatter AND the
       //    localFormat fallback: finalText = cleanText (unformatted / raw-clean).
+      // 5.3 — "raw" mode skips the format pass entirely (cleanup-only), like doFormat off.
+      const doFormatEff = doFormat && formatMode !== "raw";
       let finalText = cleanText;
-      if (doFormat) {
+      if (doFormatEff) {
         if (correction.format) {
           try {
-            // 3.4 — vocabulary is the effective prompt-side lever (format permits re-spelling).
-            finalText = (await correction.format(cleanText, langTag, vocabulary, corrModel)).text.trim() || cleanText;
+            // 3.4 — vocabulary is the effective prompt-side lever; 5.3 — mode selects the prompt.
+            const tFmt = Date.now();
+            finalText = (await correction.format(cleanText, langTag, vocabulary, corrModel, formatMode)).text.trim() || cleanText;
+            formatLatencyMs = Date.now() - tFmt; // 5.6 — format pass latency
           } catch (e: any) {
             logPyaiError("correction.format", e, { corrId, cleanLen: cleanText.length });
             telemetry.emit({ type: "error", errorPhase: "correction.format", correctionProvider: corrId });
-            send(ws, { type: "error", message: "format failed (used local fallback): " + (e?.message ?? String(e)), file: LOG_FILE });
+            send(ws, { type: "error", kind: "transient", message: "format failed (used local fallback): " + (e?.message ?? String(e)), file: LOG_FILE });
             finalText = localFormat(cleanText);
           }
         } else {
@@ -183,6 +195,10 @@ wss.on("connection", (ws) => {
         format: doFormat,
         rawLen: raw.length,
         cleanLen: finalText.length,
+        // 5.6 — latency metadata (ms), only when measured this session.
+        ...(sttLatencyMs !== undefined ? { sttLatencyMs } : {}),
+        ...(correctionLatencyMs !== undefined ? { correctionLatencyMs } : {}),
+        ...(formatLatencyMs !== undefined ? { formatLatencyMs } : {}),
       });
       send(ws, { type: "formatted", text: finalText });
     }
@@ -192,6 +208,7 @@ wss.on("connection", (ws) => {
 
   ws.on("message", async (data: Buffer, isBinary: boolean) => {
     if (isBinary) {
+      if (finalizing) return; // 5.5 — audio after stop/during finalize is ignored, not buffered
       session?.sendAudio(data);
       if (!demo) audio.push(new Uint8Array(data));
       return;
@@ -200,7 +217,11 @@ wss.on("connection", (ws) => {
     try { msg = JSON.parse(data.toString()); } catch { return; }
 
     if (msg.type === "start") {
+      // 5.5 — concurrency contract: never interleave two sessions on one connection.
+      // A start arriving mid-finalize is rejected (transient) rather than racing.
+      if (finalizing) { send(ws, { type: "error", kind: "transient", message: "Still finalizing the previous dictation — try again in a moment." }); return; }
       finalizing = false;
+      sttLatencyMs = correctionLatencyMs = formatLatencyMs = undefined; // 5.6 — reset per session
       audio.length = 0;
       acc = new TranscriptAccumulator();
       demo = msg.mode === "demo";
@@ -222,6 +243,8 @@ wss.on("connection", (ws) => {
       snippets = Array.isArray(msg.snippets)
         ? msg.snippets.filter((s: any) => s && typeof s.trigger === "string" && typeof s.expansion === "string")
         : [];
+      // 5.3 — formatting mode from the widget config; unknown/undefined ⇒ default (prose).
+      formatMode = (["prose", "message", "code", "raw"] as const).includes(msg.formatMode) ? msg.formatMode : undefined;
       // 3.3 — telemetry gate: NoopSink default (transport PARKED), enabled only when the
       // config flag rode the start frame. Never emit before this is read.
       telemetry = new Telemetry({ enabled: msg.telemetry === true });
@@ -250,7 +273,15 @@ wss.on("connection", (ws) => {
         console.log(`[backend] session start: stt=${sttId} correction=${corrId} lang=${language} demo=${demo}`);
         // 3.2 — forward auto-detect to the streaming adapter; 3.4 — vocabulary as the
         // Deepgram-only keyword boost (other adapters ignore `keywords`).
-        session = await stt.startSession({ apiKey: apiKey ?? "", language, detectLanguage: autoDetect, keywords: vocabulary, model: sttModel });
+        const sttCfg = { apiKey: apiKey ?? "", language, detectLanguage: autoDetect, keywords: vocabulary, model: sttModel };
+        // 5.1 — live sessions auto-reconnect on a dropped socket (preview stays alive; the
+        // backend keeps buffering audio for the authoritative batch-on-stop). Demo/fixture
+        // keeps the direct session (it self-closes at end-of-fixture to trigger finalize).
+        session = demo
+          ? await stt.startSession(sttCfg)
+          : await startReconnectingSession(stt, sttCfg, {
+              onStatus: (state) => send(ws, { type: "status", phase: "stt", state }),
+            });
         session.onTranscript((e) => {
           // Growing live display via the accumulator (utterance-scoped: committed
           // finals + current utterance's live text). Authoritative final still

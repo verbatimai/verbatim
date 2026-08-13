@@ -1,6 +1,7 @@
 import type { STTProvider, TranscriptEvent } from "./providers/types";
 import type { CorrectionProvider, CorrectionResult } from "./correction/types";
 import { expandSnippets, type Snippet } from "./snippets";
+import type { FormatMode } from "./correction/prompt";
 
 export interface LiveUpdate {
   /** The clean, accumulated transcript so far (locked text). */
@@ -42,6 +43,7 @@ export interface PipelineOptions {
   format?: boolean;  // 2.3 — run the formatting pass on finalize (default true)
   vocabulary?: string[]; // 3.4 — custom terms injected into the format prompt (preserve/spell)
   snippets?: Snippet[];  // 3.5 — deterministic trigger→expansion applied to the final text
+  formatMode?: FormatMode; // 5.3 — prose | message | code | raw ("raw" skips the format pass)
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -268,7 +270,8 @@ export class Pipeline {
           const language = sttConfig?.language;
           const vocabulary = this.opts.vocabulary; // 3.4 — into the format prompt
           const doCorrect = this.opts.correct !== false; // 2.2 — default true
-          const doFormat = this.opts.format !== false;    // 2.3 — default true
+          const mode = this.opts.formatMode;              // 5.3 — formatting mode
+          const doFormat = this.opts.format !== false && mode !== "raw"; // 2.3/5.3 — "raw" skips format
           let cleaned = raw;
           if (doCorrect) {
             // vocabulary passed for parity; correction forbids re-spelling (harmless there).
@@ -279,7 +282,7 @@ export class Pipeline {
           // Skip correction off => cleaned = raw (STT-only, no diff). Format off => emit
           // the unformatted cleaned text (which is raw when correction is also off).
           if (doFormat && this.correction.format) {
-            const f = await this.correction.format(cleaned, language, vocabulary); // 3.4 vocab lever
+            const f = await this.correction.format(cleaned, language, vocabulary, undefined, mode); // 3.4 vocab + 5.3 mode
             emitFormatted(f.text);
           } else {
             emitFormatted(cleaned);

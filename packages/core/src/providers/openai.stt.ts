@@ -6,6 +6,7 @@ import type {
   TranscriptEvent,
 } from "./types";
 import { pcmToWav } from "../audio/wav";
+import { fetchWithRetry } from "../net/retry";
 
 // OpenAI Realtime transcription adapter.
 //
@@ -44,7 +45,7 @@ export class OpenAiSTT implements STTProvider {
     const ws = new WebSocket(wsUrl, {
       headers: { Authorization: `Bearer ${cfg.apiKey}` },
     });
-    return new OpenAiSession(ws, model, cfg.language, cfg.detectLanguage);
+    return new OpenAiSession(ws, model, cfg.language, cfg.detectLanguage, cfg.keywords);
   }
 
   // Batch transcription of a full clip -> one clean transcript (the authoritative
@@ -62,17 +63,19 @@ export class OpenAiSTT implements STTProvider {
     const form = new FormData();
     form.append("model", model);
     form.append("file", new Blob([wav], { type: "audio/wav" }), "audio.wav");
+    // 5.2 — Whisper `prompt` biases spelling toward custom terms (best-effort).
+    if (cfg.keywords && cfg.keywords.length) form.append("prompt", `Terms to spell exactly: ${cfg.keywords.join(", ")}.`);
     // 3.2 — Whisper-family auto-detects when `language` is omitted; on a fixed choice
     // we pass the ISO code. detectLanguage -> omit (let the model auto-detect).
     if (!cfg.detectLanguage && cfg.language) {
       form.append("language", cfg.language);
     }
-    const res = await fetch(`${base}/audio/transcriptions`, {
+    // 5.1 — retry transient 5xx/429/network on the AUTHORITATIVE batch path.
+    const res = await fetchWithRetry(`${base}/audio/transcriptions`, {
       method: "POST",
       headers: { Authorization: `Bearer ${cfg.apiKey}` },
       body: form,
-    });
-    if (!res.ok) throw new Error(`OpenAI transcribe ${res.status}: ${await res.text()}`);
+    }, { label: "OpenAI transcribe" });
     const body = (await res.json()) as any;
     return String(body.text ?? "").trim();
   }
@@ -86,7 +89,7 @@ class OpenAiSession implements STTSession {
   private uCounter = 0;
   private utteranceId = "u0";
 
-  constructor(ws: WebSocket, model: string, language?: string, detectLanguage?: boolean) {
+  constructor(ws: WebSocket, model: string, language?: string, detectLanguage?: boolean, keywords?: string[]) {
     this.ws = ws;
     ws.on("open", () => {
       // Configure the transcription session: pcm16 input + the chosen model +
@@ -103,7 +106,13 @@ class OpenAiSession implements STTSession {
           audio: {
             input: {
               format: { type: "audio/pcm", rate: 24000 },
-              transcription: { model, ...(detectLanguage ? {} : language ? { language } : {}) },
+              // 5.2 — OpenAI has no keyword-boost param, but the transcription `prompt`
+              // biases spelling toward the given terms (best-effort; ignored if unsupported).
+              transcription: {
+                model,
+                ...(detectLanguage ? {} : language ? { language } : {}),
+                ...(keywords && keywords.length ? { prompt: `Terms to spell exactly: ${keywords.join(", ")}.` } : {}),
+              },
               turn_detection: { type: "server_vad" },
             },
           },

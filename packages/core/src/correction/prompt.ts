@@ -26,6 +26,34 @@ export const FORMAT_PROMPT = `You format a cleaned dictation transcript into pol
 Do NOT add new information, opinions, or content the speaker didn't say, and do not change meaning. Preserve the speaker's words.
 Return ONLY the formatted text as plain text with real newlines (no markdown code fences, no commentary).`;
 
+// 5.3 — Punctuation / formatting modes. One size doesn't fit chat, prose, and code.
+// `prose` is today's behaviour; `message` is a light casual touch; `code` preserves
+// casing/symbols; `raw` skips the format pass entirely (handled by the caller, which
+// simply doesn't call format() — so there is no `raw` prompt here).
+export type FormatMode = "prose" | "message" | "code" | "raw";
+
+// The `message` variant: keep it casual, minimal restructuring, no lists.
+const FORMAT_PROMPT_MESSAGE = `You lightly clean up a cleaned dictation transcript for a casual message (chat, DM, email). Fix obvious punctuation and capitalization and remove any leftover disfluency, but keep it casual and conversational — do NOT formalize the wording, restructure sentences, or turn anything into lists. Keep it short and natural, as if the speaker had typed it themselves. Do NOT add new information, opinions, or content the speaker didn't say, and do not change meaning. Return ONLY the text as plain text with real newlines (no markdown code fences, no commentary).`;
+
+// The `code` variant: preserve casing/symbols/identifiers; no auto-capitalization or
+// sentence punctuation; convert only unambiguous spoken tokens.
+const FORMAT_PROMPT_CODE = `You format a cleaned dictation transcript that is meant as code, an identifier, or technical input. Preserve casing, symbols, operators, and identifiers EXACTLY (e.g. myVar, snake_case, foo(), ===). Do NOT auto-capitalize words, do NOT add sentence punctuation, and do NOT rephrase or restructure. Convert obvious spoken tokens ONLY when unambiguous (e.g. "open paren"/"close paren" -> "()", "dot" -> ".", "equals equals" -> "=="); otherwise leave words as-is. Do NOT add new information or change meaning. Return ONLY the resulting text as plain text (no markdown code fences, no commentary).`;
+
+/**
+ * The system prompt for the formatting pass, per mode. `prose` is the existing
+ * FORMAT_PROMPT (byte-identical, so prompt.test.ts stays green); an unknown/undefined
+ * mode falls back to prose. `raw` is never routed here — the caller skips format().
+ */
+export const FORMAT_PROMPTS: Record<Exclude<FormatMode, "raw">, string> = {
+  prose: FORMAT_PROMPT,
+  message: FORMAT_PROMPT_MESSAGE,
+  code: FORMAT_PROMPT_CODE,
+};
+
+export function formatPromptFor(mode?: FormatMode): string {
+  return mode && mode !== "raw" && FORMAT_PROMPTS[mode] ? FORMAT_PROMPTS[mode] : FORMAT_PROMPTS.prose;
+}
+
 /** True for "en" and any English region tag ("en-US", "en-GB", …), or unset. */
 function isEnglish(language?: string): boolean {
   const l = (language || "en").toLowerCase();

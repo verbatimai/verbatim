@@ -5,9 +5,10 @@ import {
   parseJson,
   reconstruct,
   validate,
-  FORMAT_PROMPT,
+  formatPromptFor,
   formatMessage,
 } from "./prompt";
+import type { FormatMode } from "./prompt";
 
 const TRANSIENT = new Set([408, 409, 429, 500, 502, 503, 504]);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -108,7 +109,7 @@ export class OpenAiCorrection implements CorrectionProvider {
     return { cleanText: valid ? cleanText : parsed?.clean_text ?? raw, edits, ops, latencyMs, valid };
   }
 
-  async format(text: string, language?: string, vocabulary?: string[], model?: string): Promise<{ text: string }> {
+  async format(text: string, language?: string, vocabulary?: string[], model?: string, mode?: FormatMode): Promise<{ text: string }> {
     // Phase 7 — same prefer-override resolution as correct().
     const resolvedModel = (model && model.trim()) ? model : (process.env.OPENAI_CORRECTION_MODEL ?? "gpt-4o-mini");
     const body = await this.chat(
@@ -116,7 +117,7 @@ export class OpenAiCorrection implements CorrectionProvider {
         model: resolvedModel,
         temperature: 0,
         messages: [
-          { role: "system", content: FORMAT_PROMPT },
+          { role: "system", content: formatPromptFor(mode) },
           { role: "user", content: formatMessage(text, language, vocabulary) },
         ],
       },

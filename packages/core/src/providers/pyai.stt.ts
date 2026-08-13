@@ -6,6 +6,7 @@ import type {
   TranscriptEvent,
 } from "./types";
 import { pcmToWav } from "../audio/wav";
+import { fetchWithRetry } from "../net/retry";
 
 // PyAI Hear streaming adapter.
 // Endpoint (decoded from the live API): GET /v1/audio/transcriptions/stream.
@@ -45,12 +46,12 @@ export class PyAiSTT implements STTProvider {
     // Phase 7 — single-model: `cfg.model` is a documented no-op here (always pyai-hear).
     form.append("model", "pyai-hear");
     form.append("file", new Blob([wav], { type: "audio/wav" }), "audio.wav");
-    const res = await fetch(`${base}/audio/transcriptions`, {
+    // 5.1 — retry transient 5xx/429/network on the AUTHORITATIVE batch path.
+    const res = await fetchWithRetry(`${base}/audio/transcriptions`, {
       method: "POST",
       headers: { Authorization: `Bearer ${cfg.apiKey}` },
       body: form,
-    });
-    if (!res.ok) throw new Error(`PyAI transcribe ${res.status}: ${await res.text()}`);
+    }, { label: "PyAI transcribe" });
     const body = (await res.json()) as any;
     return String(body.text ?? "").trim();
   }
