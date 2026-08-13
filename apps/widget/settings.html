@@ -6,38 +6,151 @@
   <title>Verbatim — Settings</title>
   <style>
     :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
     body {
       margin: 0;
-      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: Canvas;
       color: CanvasText;
     }
-    .settings-page { padding: 24px 28px; max-width: 480px; }
-    h1 { font-size: 18px; margin: 0 0 4px; }
-    .sub { opacity: 0.6; margin: 0 0 20px; font-size: 12.5px; }
-    label { display: block; font-weight: 600; margin: 16px 0 6px; }
-    input[type="text"] {
+    .settings-page { padding: 20px 24px 28px; }
+    h1 { font-size: 17px; margin: 0 0 2px; }
+    .sub { opacity: 0.6; margin: 0 0 18px; font-size: 12px; }
+    section { margin-bottom: 22px; }
+    section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.55; margin: 0 0 10px; font-weight: 700; }
+    label { display: block; font-weight: 600; margin: 12px 0 5px; font-size: 12.5px; }
+    label:first-child { margin-top: 0; }
+    input[type="text"], input[type="password"], select {
       width: 100%;
-      box-sizing: border-box;
-      padding: 8px 10px;
-      font-size: 14px;
+      padding: 7px 9px;
+      font-size: 13px;
       border: 1px solid color-mix(in srgb, CanvasText 25%, transparent);
-      border-radius: 8px;
+      border-radius: 7px;
       background: Field;
       color: FieldText;
+      font-family: inherit;
     }
-    input[type="text"]:focus { outline: 2px solid Highlight; outline-offset: 1px; }
-    .hint { opacity: 0.6; font-size: 12px; margin-top: 6px; }
+    input:focus, select:focus, button:focus-visible { outline: 2px solid Highlight; outline-offset: 1px; }
+    .hint { opacity: 0.6; font-size: 11.5px; margin-top: 5px; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .row > input { flex: 1; }
+    button {
+      font: inherit; font-size: 12.5px; padding: 6px 12px; border-radius: 7px;
+      border: 1px solid color-mix(in srgb, CanvasText 25%, transparent);
+      background: color-mix(in srgb, Canvas 92%, CanvasText 8%);
+      color: CanvasText; cursor: pointer; white-space: nowrap;
+    }
+    button:hover { background: color-mix(in srgb, Canvas 85%, CanvasText 15%); }
+    button.primary { background: Highlight; color: HighlightText; border-color: transparent; }
+    button:disabled { opacity: 0.45; cursor: default; }
+    .vendor-row { margin-bottom: 14px; }
+    .vendor-row:last-child { margin-bottom: 0; }
+    .vendor-label { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 5px; }
+    .vendor-label span:first-child { font-weight: 600; font-size: 12.5px; }
+    .status { font-size: 11.5px; opacity: 0.65; }
+    .status.ok { opacity: 1; color: #1a7f37; }
+    .status.bad { color: #d1242f; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .presets button { font-size: 11.5px; padding: 4px 9px; }
+    .presets button.active { background: Highlight; color: HighlightText; border-color: transparent; }
+    #hotkeyCapture { font-variant-numeric: tabular-nums; }
+    #hotkeyCapture.recording { background: color-mix(in srgb, Highlight 18%, Field); }
+    .errors { list-style: none; margin: 0; padding: 0; }
+    .errors li {
+      font-size: 12px; padding: 7px 10px; border-radius: 7px; margin-bottom: 6px;
+      background: color-mix(in srgb, #d1242f 12%, Canvas); color: #d1242f;
+    }
+    .errors:empty::before {
+      content: "✓ Ready — this combination will run.";
+      display: block; font-size: 12px; padding: 7px 10px; border-radius: 7px;
+      background: color-mix(in srgb, #1a7f37 12%, Canvas); color: #1a7f37;
+    }
+    .perm-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-top: 1px solid color-mix(in srgb, CanvasText 12%, transparent); }
+    .perm-row:first-child { border-top: none; }
   </style>
 </head>
 <body class="settings-window">
   <main class="settings-page">
     <h1>Settings</h1>
-    <p class="sub">Phase 4.2 scaffold — real controls (keys, providers, hotkey, language) arrive in 4.7.</p>
+    <p class="sub">Vendor-agnostic dictation — pick STT and correction independently, keys stay in your Keychain.</p>
 
-    <label for="probe">Keyboard focus test</label>
-    <input id="probe" type="text" placeholder="Type here — proves this window takes keyboard focus" />
-    <p class="hint">If characters appear as you type, the window split works: the overlay can stay non-key while this window accepts input.</p>
+    <section>
+      <h2>Status</h2>
+      <ul id="capabilityErrors" class="errors"></ul>
+    </section>
+
+    <section>
+      <h2>Providers</h2>
+      <div class="grid2">
+        <div>
+          <label for="sttProvider">Speech-to-text</label>
+          <select id="sttProvider">
+            <option value="pyai">PyAI</option>
+            <option value="deepgram">Deepgram</option>
+            <option value="openai">OpenAI</option>
+          </select>
+          <label for="sttModel">STT model <span class="hint" style="display:inline">(optional)</span></label>
+          <input id="sttModel" type="text" placeholder="provider default" />
+        </div>
+        <div>
+          <label for="correctionProvider">Correction</label>
+          <select id="correctionProvider">
+            <option value="pyai">PyAI</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+          </select>
+          <label for="correctionModel">Correction model <span class="hint" style="display:inline">(optional)</span></label>
+          <input id="correctionModel" type="text" placeholder="provider default" />
+        </div>
+      </div>
+      <label for="language">Language</label>
+      <select id="language">
+        <option value="en">English (en)</option>
+        <option value="es">Spanish (es)</option>
+        <option value="fr">French (fr)</option>
+        <option value="de">German (de)</option>
+        <option value="hi">Hindi (hi)</option>
+        <option value="ja">Japanese (ja)</option>
+        <option value="zh">Chinese (zh)</option>
+        <option value="other">Other…</option>
+      </select>
+      <input id="languageCustom" type="text" placeholder="BCP-47 tag, e.g. pt-BR" style="margin-top:6px; display:none" />
+      <p class="hint" id="languageHint"></p>
+    </section>
+
+    <section>
+      <h2>API keys</h2>
+      <div id="vendorKeys"></div>
+    </section>
+
+    <section>
+      <h2>Hotkey</h2>
+      <div class="row">
+        <input id="hotkeyCapture" type="text" readonly value="Click, then press a key combo" />
+        <button id="hotkeyClear" title="Reset to ⌥Space">Reset</button>
+      </div>
+      <p class="hint">Needs at least one modifier (⌥/⌃/⌘/⇧). Or pick a quick preset:</p>
+      <div class="presets" id="hotkeyPresets">
+        <button data-hk="alt-space">⌥Space</button>
+        <button data-hk="ctrl-space">⌃Space</button>
+        <button data-hk="cmd-shift-d">⌘⇧D</button>
+        <button data-hk="ctrl-alt-d">⌃⌥D</button>
+        <button data-hk="alt-grave">⌥`</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Permissions</h2>
+      <div class="perm-row">
+        <span id="micStatus" class="status">Checking…</span>
+        <button id="openMic">Open Settings</button>
+      </div>
+      <div class="perm-row">
+        <span id="axStatus" class="status">Checking…</span>
+        <button id="openAx">Open Settings</button>
+      </div>
+    </section>
   </main>
   <script type="module" src="/src/settings.ts"></script>
 </body>

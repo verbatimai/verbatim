@@ -90,8 +90,10 @@ fn show_settings_window(app: tauri::AppHandle) -> Result<(), String> {
 struct AppConfig {
     stt_provider: String,        // "pyai" | "deepgram" | "openai"
     correction_provider: String, // "pyai" | "openai" | "anthropic"
+    stt_model: String,           // optional per-vendor model override; "" = provider default
+    correction_model: String,    // optional per-vendor model override; "" = provider default
     language: String,            // BCP-47 tag, default "en"
-    hotkey: String,              // preset id or captured accelerator
+    hotkey: String,              // preset id or captured accelerator (e.g. "Alt+Space")
     dock_icon: bool,
 }
 
@@ -100,6 +102,8 @@ impl Default for AppConfig {
         Self {
             stt_provider: "pyai".into(),
             correction_provider: "pyai".into(),
+            stt_model: String::new(),
+            correction_model: String::new(),
             language: "en".into(),
             hotkey: "alt-space".into(),
             dock_icon: false,
@@ -354,6 +358,100 @@ fn preset_shortcut(id: &str) -> Option<tauri_plugin_global_shortcut::Shortcut> {
     Some(Shortcut::new(Some(m), c))
 }
 
+// Map a Web `KeyboardEvent.code` string (what the Settings UI's hotkey-capture
+// input reads, 4.7) to the matching `Code` variant. Covers what a hotkey combo
+// realistically uses — letters, digits, common punctuation, and a few named
+// keys — not the full DOM UI Events code list.
+#[cfg(desktop)]
+fn parse_code(code: &str) -> Option<tauri_plugin_global_shortcut::Code> {
+    use tauri_plugin_global_shortcut::Code;
+    if let Some(rest) = code.strip_prefix("Key") {
+        let ch = rest.chars().next()?;
+        if rest.len() == 1 && ch.is_ascii_alphabetic() {
+            return Some(match ch.to_ascii_uppercase() {
+                'A' => Code::KeyA, 'B' => Code::KeyB, 'C' => Code::KeyC, 'D' => Code::KeyD,
+                'E' => Code::KeyE, 'F' => Code::KeyF, 'G' => Code::KeyG, 'H' => Code::KeyH,
+                'I' => Code::KeyI, 'J' => Code::KeyJ, 'K' => Code::KeyK, 'L' => Code::KeyL,
+                'M' => Code::KeyM, 'N' => Code::KeyN, 'O' => Code::KeyO, 'P' => Code::KeyP,
+                'Q' => Code::KeyQ, 'R' => Code::KeyR, 'S' => Code::KeyS, 'T' => Code::KeyT,
+                'U' => Code::KeyU, 'V' => Code::KeyV, 'W' => Code::KeyW, 'X' => Code::KeyX,
+                'Y' => Code::KeyY, 'Z' => Code::KeyZ,
+                _ => return None,
+            });
+        }
+    }
+    if let Some(rest) = code.strip_prefix("Digit") {
+        return match rest {
+            "0" => Some(Code::Digit0), "1" => Some(Code::Digit1), "2" => Some(Code::Digit2),
+            "3" => Some(Code::Digit3), "4" => Some(Code::Digit4), "5" => Some(Code::Digit5),
+            "6" => Some(Code::Digit6), "7" => Some(Code::Digit7), "8" => Some(Code::Digit8),
+            "9" => Some(Code::Digit9),
+            _ => None,
+        };
+    }
+    if let Some(rest) = code.strip_prefix('F') {
+        if let Ok(n) = rest.parse::<u8>() {
+            return match n {
+                1 => Some(Code::F1), 2 => Some(Code::F2), 3 => Some(Code::F3), 4 => Some(Code::F4),
+                5 => Some(Code::F5), 6 => Some(Code::F6), 7 => Some(Code::F7), 8 => Some(Code::F8),
+                9 => Some(Code::F9), 10 => Some(Code::F10), 11 => Some(Code::F11), 12 => Some(Code::F12),
+                _ => None,
+            };
+        }
+    }
+    match code {
+        "Space" => Some(Code::Space),
+        "Backquote" => Some(Code::Backquote),
+        "Minus" => Some(Code::Minus),
+        "Equal" => Some(Code::Equal),
+        "BracketLeft" => Some(Code::BracketLeft),
+        "BracketRight" => Some(Code::BracketRight),
+        "Backslash" => Some(Code::Backslash),
+        "Semicolon" => Some(Code::Semicolon),
+        "Quote" => Some(Code::Quote),
+        "Comma" => Some(Code::Comma),
+        "Period" => Some(Code::Period),
+        "Slash" => Some(Code::Slash),
+        "Tab" => Some(Code::Tab),
+        "Escape" => Some(Code::Escape),
+        "Enter" => Some(Code::Enter),
+        "Backspace" => Some(Code::Backspace),
+        "ArrowUp" => Some(Code::ArrowUp),
+        "ArrowDown" => Some(Code::ArrowDown),
+        "ArrowLeft" => Some(Code::ArrowLeft),
+        "ArrowRight" => Some(Code::ArrowRight),
+        _ => None,
+    }
+}
+
+// Parse an accelerator captured by the Settings UI's hotkey-capture input, e.g.
+// "Alt+Space" or "Control+Shift+KeyD" (modifier names + a Web `code`, joined by
+// "+"). A legacy/preset id (e.g. "alt-space") is tried first for back-compat.
+#[cfg(desktop)]
+fn parse_accelerator(s: &str) -> Option<tauri_plugin_global_shortcut::Shortcut> {
+    use tauri_plugin_global_shortcut::{Modifiers, Shortcut};
+    if let Some(sc) = preset_shortcut(s) {
+        return Some(sc);
+    }
+    let mut parts: Vec<&str> = s.split('+').map(str::trim).filter(|p| !p.is_empty()).collect();
+    let code_str = parts.pop()?;
+    let code = parse_code(code_str)?;
+    let mut mods = Modifiers::empty();
+    for p in parts {
+        mods |= match p {
+            "Alt" => Modifiers::ALT,
+            "Control" => Modifiers::CONTROL,
+            "Shift" => Modifiers::SHIFT,
+            "Meta" | "Super" | "Cmd" => Modifiers::SUPER,
+            _ => return None,
+        };
+    }
+    if mods.is_empty() {
+        return None; // a bare key with no modifier isn't a safe global shortcut
+    }
+    Some(Shortcut::new(Some(mods), code))
+}
+
 fn hotkey_config_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     app.path().app_config_dir().ok().map(|d| d.join("hotkey"))
 }
@@ -391,7 +489,7 @@ fn get_toggle_hotkey(app: tauri::AppHandle) -> String {
 #[cfg(desktop)]
 fn apply_hotkey(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
-    let sc = preset_shortcut(id).ok_or_else(|| format!("unknown hotkey: {id}"))?;
+    let sc = parse_accelerator(id).ok_or_else(|| format!("unrecognized hotkey: {id}"))?;
     let gs = app.global_shortcut();
     if let Some(old) = CURRENT_TOGGLE.lock().unwrap().take() {
         let _ = gs.unregister(old);
@@ -518,7 +616,7 @@ fn main() {
                 // legacy <app_config_dir>/hotkey file into the store.
                 migrate_legacy_config(app.handle());
                 let hotkey_id = read_config(app.handle()).hotkey;
-                let toggle = preset_shortcut(&hotkey_id)
+                let toggle = parse_accelerator(&hotkey_id)
                     .unwrap_or_else(|| Shortcut::new(Some(Modifiers::ALT), Code::Space));
                 *CURRENT_TOGGLE.lock().unwrap() = Some(toggle);
 
