@@ -26,12 +26,12 @@ Select with `STT_PROVIDER` / `CORRECTION_PROVIDER`. Mixing is allowed (e.g. Deep
 
 ## Repository layout
 ```
-open-dictation/
+verbatim/
 ├─ packages/core/     vendor-neutral brain: provider interfaces, registries,
 │                     correction prompt + reconstructor, diff logic
 ├─ apps/
-│  ├─ widget/         Tauri desktop client (M3 — not yet implemented)
-│  └─ backend/        optional hosted key-proxy (open-core; post-M4)
+│  ├─ widget/         Tauri macOS client — menu-bar app + non-key overlay + settings window
+│  └─ backend/        local pipeline bridge; the app spawns it as a key-injected sidecar
 ├─ docs/
 │  ├─ product/        product-plan.md, roadmap.md
 │  ├─ architecture/   overview.md, git-and-release.md
@@ -40,16 +40,23 @@ open-dictation/
 ```
 Start with **docs/product/roadmap.md** for the milestone plan and **docs/architecture/overview.md** for the code map.
 
-## Quick start (once M1 lands)
+## Quick start
 ```bash
-cp .env.example .env    # add your own vendor key(s) — BYOK
 npm install
-npm run dev
+# Web demo (no mic/key needed): backend + browser app
+npm run dev            # → http://localhost:5173, click "Demo (no mic)"
+# macOS desktop widget (the product): the app spawns its own keyed backend
+npm run widget         # ⌥Space toggles the overlay; enter keys in Settings (⚙)
 ```
+For live dictation, add a vendor key in the app's **Settings** window (stored in the OS
+keychain) — or, for standalone dev, `cp .env.example .env` and fill in a key.
 
 ## Status
-Pre-M1. The core interfaces, security/CI scaffolding, and validated experiments exist;
-the runnable pipeline and desktop app are the next milestones (see the roadmap).
+**M4 in progress.** M0–M3 are done (headless core pipeline, live web demo, macOS
+focus-capture + injection). M4 adds the menu-bar desktop app, a focusable settings window,
+the Rust config store + keychain, and all four vendor adapters (PyAI / Deepgram / OpenAI /
+Anthropic). Remaining in M4: release sidecar packaging and the on-Mac exit demo. See
+`docs/product/roadmap.md` and `docs/product/m4-tasks.md`.
 
 ## Security
 See [SECURITY.md](./SECURITY.md). Keys in the OS keychain, no content telemetry,

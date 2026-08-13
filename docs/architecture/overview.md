@@ -28,12 +28,13 @@ Registries (`registry.ts` in each) resolve `STT_PROVIDER` / `CORRECTION_PROVIDER
 Echoing every kept word made the LLM emit 200–620 output tokens and take 4–13s (finding F9). Compact edits emit only what changed; the client re-locates each substring to rebuild the full op timeline locally. Same UI, far fewer tokens, much lower latency. Unit-tested in `src/correction/reconstruct.test.ts`.
 
 ## Key model (open-core)
-- **OSS core = BYOK, local-only.** Keys live in the OS keychain, sent only to the chosen vendor over TLS, never in the client bundle or on disk in plaintext. No backend needed.
-- **Optional hosted proxy** (`apps/backend`, commercial layer) holds keys server-side and issues short-lived session tokens. The client works fully without it.
+- **OSS core = BYOK, local-only.** Keys live in the OS keychain, sent only to the chosen vendor over TLS, never in the client bundle or on disk in plaintext.
+- **App-owned sidecar (M4.8):** the desktop app spawns `apps/backend` as a local sidecar and Rust injects the selected keys from the Keychain into its env — the webview never sees a secret, and there's no manual `npm run backend`. Still fully local; nothing is deployed. See `vendor-transport.md`.
+- **Optional hosted proxy** (`apps/backend` run remotely, commercial layer) holds keys server-side and issues short-lived session tokens. The client works fully without it.
 
 ## Repo layout
 ```
-open-dictation/
+verbatim/
 ├─ packages/core/     vendor-neutral brain (interfaces, registries, prompt, reconstruct, diff)
 ├─ apps/widget/       Tauri desktop client (M3)
 ├─ apps/backend/      optional hosted key-proxy (post-M4)
