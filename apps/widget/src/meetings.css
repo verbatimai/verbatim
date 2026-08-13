@@ -1,0 +1,88 @@
+/* Verbatim — Meetings view. Uses the design tokens from settings.css. */
+
+.app-head { margin-bottom: 18px; }
+.app-head h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+.app-head .sub { margin: 4px 0 0; color: var(--text-dim); font-size: 13px; }
+
+.card {
+  border-radius: var(--radius); border: 1px solid var(--stroke);
+  background: var(--glass); backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%); box-shadow: var(--shadow);
+  padding: 18px 20px; margin-bottom: 16px;
+}
+.card h2 {
+  font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-dim); margin: 0 0 12px; display: flex; align-items: center; gap: 10px;
+}
+
+/* ── setup ─────────────────────────────────────────────────────── */
+.setup .row { display: grid; grid-template-columns: 1fr 1fr 200px; gap: 16px; }
+.setup label { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.setup label > span { font-size: 12px; color: var(--text-dim); }
+.setup select {
+  width: 100%; padding: 8px 10px; border-radius: 9px; font: inherit; font-size: 13px;
+  border: 1px solid var(--stroke); background: var(--glass-strong); color: var(--text);
+}
+.meter { height: 4px; border-radius: 2px; background: var(--stroke-soft); overflow: hidden; }
+.meter i { display: block; height: 100%; width: 0%; border-radius: 2px; background: linear-gradient(90deg, var(--accent2), var(--accent)); transition: width 90ms linear; }
+
+.controls { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+.btn { padding: 9px 16px; border-radius: 10px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid var(--stroke); background: var(--glass-strong); color: var(--text); }
+.btn.primary { background: linear-gradient(120deg, var(--accent2), var(--accent)); border-color: transparent; color: #fff; }
+.btn.danger { background: #d64545; border-color: transparent; color: #fff; }
+.btn.ghost { background: transparent; }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.timer { font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 600; color: var(--text-dim); }
+.status { font-size: 12.5px; color: var(--text-dim); margin-left: auto; text-align: right; }
+.status.live { color: #d64545; font-weight: 600; }
+.status.live::before { content: "●"; margin-right: 6px; animation: pulse 1.4s ease-in-out infinite; }
+.status.warn { color: #b7791f; }
+.status.err { color: #d64545; }
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.25 } }
+
+.badge { font-size: 10.5px; font-weight: 600; letter-spacing: 0; text-transform: none; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--stroke); color: var(--text-dim); }
+.badge.ok { background: rgba(52,168,110,0.14); border-color: rgba(52,168,110,0.4); color: #2f9e6d; }
+.badge.warn { background: rgba(183,121,31,0.12); border-color: rgba(183,121,31,0.35); color: #b7791f; }
+
+/* ── live + transcript ─────────────────────────────────────────── */
+.split { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; align-items: start; }
+.grow { min-width: 0; }
+.transcript { height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 6px; }
+.turn { display: grid; grid-template-columns: 62px 44px 1fr; gap: 10px; align-items: baseline; font-size: 13.5px; line-height: 1.5; }
+.turn .who { font-weight: 600; font-size: 11.5px; padding: 2px 7px; border-radius: 999px; text-align: center; }
+.turn.me .who { background: rgba(88,120,255,0.15); color: var(--accent); }
+.turn.them .who { background: rgba(52,168,110,0.15); color: #2f9e6d; }
+.turn .at { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--text-faint); }
+.turn p { margin: 0; }
+
+.live { border-top: 1px solid var(--stroke-soft); margin-top: 12px; padding-top: 10px; display: flex; flex-direction: column; gap: 5px; min-height: 44px; }
+.live-line { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; }
+.live-line .who { font-size: 10.5px; font-weight: 600; color: var(--text-faint); width: 38px; flex: none; }
+.live-line b { font-weight: 400; color: var(--text); }
+.live-line i { font-style: normal; color: var(--text-faint); }
+
+.notes-card textarea {
+  width: 100%; height: 320px; resize: none; padding: 12px; border-radius: 10px;
+  border: 1px solid var(--stroke); background: var(--glass-strong); color: var(--text);
+  font: inherit; font-size: 13.5px; line-height: 1.6;
+}
+.hint { font-size: 12px; color: var(--text-faint); margin: -6px 0 10px; }
+
+/* ── the note ──────────────────────────────────────────────────── */
+.note h3 { font-size: 19px; margin: 0 0 6px; letter-spacing: -0.01em; }
+.note .lede { margin: 0 0 14px; color: var(--text-dim); font-size: 13.5px; line-height: 1.6; }
+.note h4 { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); margin: 16px 0 6px; }
+.note ul { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.65; }
+.note ul.actions { list-style: none; padding-left: 0; }
+.note ul.actions li { display: flex; align-items: baseline; gap: 8px; }
+.note .cite { margin-left: auto; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-faint); border: 1px solid var(--stroke); border-radius: 5px; padding: 1px 6px; cursor: help; }
+
+.saved { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.saved code { font-size: 12px; color: var(--text-dim); word-break: break-all; }
+
+.privacy-note { display: flex; gap: 9px; padding: 10px; border-radius: 10px; background: var(--stroke-soft); font-size: 11.5px; line-height: 1.5; color: var(--text-dim); }
+.privacy-note .ico { flex: none; width: 15px; height: 15px; color: #2f9e6d; }
+
+@media (max-width: 980px) {
+  .setup .row, .split { grid-template-columns: 1fr; }
+}

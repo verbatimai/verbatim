@@ -17,7 +17,8 @@
     "pipeline": "npm run pipeline --workspace @verbatim/core --",
     "backend": "npm run start --workspace @verbatim/backend",
     "web": "npm run dev --workspace @verbatim/web",
-    "widget": "node scripts/widget.mjs"
+    "widget": "node scripts/widget.mjs",
+    "meetings": "npm run meetings --workspace @verbatim/backend"
   },
   "devDependencies": {
     "@playwright/test": "^1.47.0"

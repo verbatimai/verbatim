@@ -3,6 +3,10 @@
 **Owner:** Mayank Banga · Saaslabs
 **Date:** 13 Aug 2026
 **Status:** proposal — nothing here is committed until the **N0 spike** clears its gate.
+**Rev 13 Aug 2026 (e):** demo prototype built — see §13 Build log. PyAI probe settled the open capability questions (no streaming diarization, still English-only, but `channel:true` on the jobs API gives *exact* separation); F10 answered.
+**Rev 13 Aug 2026 (d):** AssemblyAI dropped from the N0-B matrix in favour of **PyAI** (no fifth adapter; a 90-min session is the strongest PyAI stress test yet). PyAI enters as a *candidate* default with Deepgram retained as the control — see §2 N0-B for the four documented issues that could disqualify it.
+**Rev 13 Aug 2026 (c):** four decisions settled (§11) — macOS 14.4+ Core Audio taps, N0-B matrix incl. AssemblyAI + local Whisper, mixed N0-C corpus, N0-A Mac-driven; added §12.1 (what execution needs from Mayank).
+**Rev 13 Aug 2026 (b):** added §9.1 (dependency + parallelism analysis); §8 Rust row updated for the `main.rs` module split, which landed the same day and removes the biggest merge-conflict argument against parallel work.
 **Scope:** extend Verbatim from a dictation widget into a dictation widget **+ botless meeting notepad**, in one app, on one engine.
 **Relationship to the roadmap:** this is a **parallel track (`N0`–`N5`)**, not a renumbering of `M5`/`M6`. See §9 for how the two tracks interleave.
 
@@ -83,10 +87,31 @@ This is the probe most likely to force a design change, because **the M2 "batch-
 
 | Vendor | Streaming | + Diarization | ~90 min |
 |---|---|---|---|
-| AssemblyAI Universal-Streaming | $0.15/hr | $0.12/hr | **~$0.41** |
+| **PyAI Hear** | existing key | none | **candidate default — see below** |
 | Deepgram Nova-3 | ~$0.46/hr | ~$0.12/hr | ~$0.87 |
 | OpenAI `gpt-4o-transcribe` | $0.36/hr | file-only | $0.54 |
 | OpenAI `gpt-4o-mini-transcribe` | $0.18/hr | file-only | $0.27 |
+| **Local whisper.cpp** | $0 | none built-in | **$0** — cost moves to CPU/battery |
+| ~~AssemblyAI~~ | — | — | **dropped 13 Aug 2026** — no fifth adapter |
+
+**Decided 13 Aug 2026 (rev d): PyAI instead of AssemblyAI.** No fifth adapter to build or maintain, and a 90-minute continuous session is by far the most demanding PyAI stress test this project has run — which is an explicit goal of the build, not a side effect. **N0-B should produce a findings report for the PyAI team** in the same format as `docs/research/pyai-api-findings.md` (F1–F10); expect long-session findings to extend that list.
+
+**But PyAI enters as a *candidate*, not a foregone default — and Deepgram stays in the matrix as the control.** Keeping it costs nothing (the adapter is built and tested), and four things already documented in this repo could each disqualify PyAI for meetings specifically:
+
+| Known issue | Why meetings are harder than dictation |
+|---|---|
+| **Hear is English-only** (`400 unsupported_language` for any non-`en`) — `multilingual.md` | For dictation the user picks their own language. A *meeting* has other people in it; one non-English speaker is a hard failure, not a setting. |
+| **Hear has no diarization** — single model, `language`/`model`/`keywords` params all ignored (`pyai.stt.ts`) | Me/Them still works (that comes from two streams, not the model). Splitting multiple remote speakers does not. |
+| **F10 — no finalize/flush control message**; you close the socket to end | Tolerable for a 30-second utterance. At 90 minutes with rolling segment boundaries, "close the socket" is the *only* commit primitive we have. |
+| **F9 — `/v1/messages` is 4.4–13 s for *short* requests**; **F1 — tool-use 503s** | This is the correction/enhancement half, not STT. A 90-minute transcript is ~15–20k tokens. If short prompts take 13 s, N0-C's enhancement pass on PyAI needs measuring before it is assumed viable. |
+
+**So N0-B must be able to fail PyAI.** Exit criteria: PyAI becomes the meetings default only if it survives 90 minutes without loss, and the English-only constraint is either lifted or explicitly accepted as a documented limitation of PyAI-mode meetings (with Deepgram/OpenAI as the multilingual route, exactly as dictation already does). Otherwise PyAI stays the *dictation* default and meetings default to Deepgram. The vendor-agnostic contract means this is a config decision, not a rewrite — but only if we actually test the alternative.
+
+**Two further consequences of adding local Whisper:**
+
+- **Local Whisper turns N0-B from a pricing probe into a pricing + feasibility probe, and it needs the Mac.** whisper.cpp throughput, thermals and battery drain over a 90-minute session cannot be measured from a cloud container, so N0-B is no longer fully parallel: the cloud-vendor half is, the Whisper half is Mac-bound. Record the exact machine (chip, RAM) with the numbers — they don't transfer between an M1 Air and an M4 Pro.
+- **whisper.cpp has no built-in diarization.** Per-stream Me/Them labelling still works (that comes from having two audio streams, not from the model), but splitting multiple remote speakers would need a separate local model — `sherpa-onnx` is what `minute` uses. Treat that as out of scope for the probe; just note whether the transcript is good enough without it.
+- **Upside worth measuring properly:** if local Whisper is good enough, meetings can run **fully offline** — no vendor, no key, no per-meeting cost, nothing leaving the machine even to a BYOK endpoint. That is a materially stronger local-first story than "BYOK to someone else's cloud" and would feed back into §11.5 positioning. Judge it on transcript quality against the cloud baseline, not just on "it ran."
 
 **Expected outcome — the "chunked batch" design.** Replace whole-file batch with **segment-level batch**: roll audio into ~5-minute segments, batch-transcribe each on close, append to a durable timestamped transcript. Keeps the accuracy advantage of batch, bounds file size and memory, makes the session crash-recoverable, and gives us mid-meeting enhancement for free. The live stream stays as the on-screen preview, exactly as it does in dictation today.
 
@@ -190,10 +215,10 @@ Sharing (Notion/Slack/Drive export to *user-owned* destinations first), optional
 | Area | Change |
 |---|---|
 | `packages/core` | New `meetings/` module: `SessionStore`, `Enhancer`, `TemplateRegistry`, segment stitching. Reuses `providers/registry`, `correction/registry`, `settings.ts` capability layer unchanged. |
-| Capability layer | New capabilities: `long_form`, `diarization`, `word_timestamps`. `capabilityErrors()` must refuse invalid meeting combos the way it already refuses invalid dictation ones. PyAI Hear is unproven at meeting length — the meeting default is likely Deepgram or AssemblyAI, decided by N0-B. |
+| Capability layer | New capabilities: `long_form`, `diarization`, `word_timestamps`. `capabilityErrors()` must refuse invalid meeting combos the way it already refuses invalid dictation ones. PyAI Hear is unproven at meeting length and has no diarization — the meeting default is PyAI *if* it clears N0-B, otherwise Deepgram. |
 | Transcript model | The `TranscriptAccumulator` is built for a ~30-second utterance and **should not be stretched** to 90 minutes. Meetings get an append-only, timestamped, speaker-tagged segment store. Different problem, different structure. |
 | Storage | SQLite (`rusqlite` or `tauri-plugin-sql`) + audio segments as Opus/m4a on disk under the app support dir, `0600`. |
-| Rust | New `capture.rs` (cidre). This is the largest single chunk of new Rust in the project's history and it is all Mac-verified work. |
+| Rust | New `capture.rs` (cidre) + `session_store.rs`, landing alongside the modules split out of `main.rs` on 13 Aug 2026 (`config` / `hotkey` / `shortcuts` / `window` / `system` / `lists` / `keys` / `backend` / `tray` / `text` / `state`). Capture is a peer module, **not** an addition to `main.rs` — which is now a 136-line orchestrator whose only meetings-related change is a `mod capture;` line and a block of `generate_handler!` entries. This is still the largest single chunk of new Rust in the project's history and it is all Mac-verified work. |
 | Windows | Capture is macOS-only for this whole track. Windows meeting capture (WASAPI loopback) is a later, separate spike. |
 | Sidecar | The 4.8 sidecar model (app owns the backend, keys injected from storage, never through the renderer) carries over unchanged — meetings must not regress it. |
 | Settings | Meeting vendor/model selection, retention policy, auto-start behaviour, per-app tap allowlist. Folds into the existing `settings-plan.md` waves rather than inventing a second settings system. |
@@ -213,6 +238,31 @@ meetings track:            N0 spike ─┬─→ N1 capture ─→ N2 notes ─�
 - **M6 (public v1.0) ships the dictation product.** The meetings track is v2 positioning. Trying to ship both at v1.0 delays the thing that already works.
 - **M5 (quality/polish) and N1 compete for the same weeks.** That is the real scheduling decision (see §11).
 
+### 9.1 Dependencies — what can actually run in parallel
+
+Checked against the code on 13 Aug 2026, not against the milestone names.
+
+**What is left in M4 is verification, not code.** 4.8's release packaging landed in `885b68d`; 4.9's code is done; 4.10 is essentially done. The remaining checkboxes are on-Mac click-throughs and doc updates. So **M4 is not a code dependency for anything in the N-track** — it is a *Mac-time* dependency, which is a scheduling problem, not an architectural one.
+
+**Three real dependencies, none of them the obvious one:**
+
+1. **`AppConfig` is the hot spot.** `settings-plan.md` §1 adds 11 fields; meetings adds ~6 (meeting vendor, retention policy, auto-start, tap allowlist, storage path). Both edit the same struct, the same `Default` impl, and the same mirror in `settings.ts`. Because `set_config` deserializes the *whole* merged object, a field added without `#[serde(default)]` coverage breaks existing stores. → **Land the schema fields for both tracks in one commit up front**, then diverge. This removes the dependency rather than sequencing around it.
+2. **Key storage (§1.6) should land before N1, not during.** Meetings pulls vendor keys through the same sidecar path; rewriting the secret backend while capture code is being written against the old model means rework. Not a blocker for N0 — the spike touches no key storage.
+3. **The Mac is the bottleneck, not the repo.** M4's exit demo, settings Wave 1 verification and N0-A all need `cargo build` on the Mac. Cloud sessions can author TS and docs in parallel; Rust cannot. "Parallel" here means parallel *authoring*, serialized *verification*.
+
+**A conflict inside the existing plans, unrelated to meetings:** M4's exit criteria require *"restart the app and confirm keys persist in the keychain"* — and `settings-plan.md` §1.6 removes the Keychain. **Run the M4 exit demo and sign it off before Wave 1**, or you are demoing a mechanism you are about to delete.
+
+**What can start immediately:**
+
+| Work | Parallel? | Needs |
+|---|---|---|
+| **N0-C** enhancement quality | ✅ fully | A CLI over `packages/core` + 3–5 recorded meetings. Zero Rust, zero Mac, zero settings overlap. |
+| **N0-B** long-session cost/architecture | ⚠️ split | *Cloud half* (5 vendors, cost/reliability) is fully parallel: keys + spend, TS probe, reads `packages/core` only. *Local-Whisper half* is **Mac-bound** — throughput, thermals and battery can't be measured from a container. |
+| **N0-A** system-audio capture | ⚠️ competes | Mac + `cargo build`. Standalone probe crate — no product code, so no merge conflict, but it queues behind the M4 exit demo for Mac time. |
+| **N1** recorder | ❌ no | Wants M4 signed off, §1.6 settled, and the `AppConfig` schema landed. |
+
+**Enabler — done (13 Aug 2026).** `main.rs` was 1275 lines and owned config, keys, hotkeys, windows, mute, AX and the sidecar. Both tracks would have added commands and `invoke_handler` entries to it indefinitely. It is now split into 11 focused modules with `main.rs` at 136 lines (pure move refactor; all 31 Tauri commands preserved with unchanged JS-facing names). Meetings work now lands in its own files, so the `main.rs` merge-conflict argument against parallel work no longer applies — **`AppConfig` (dependency 1 above) is the only shared-file collision left.**
+
 ---
 
 ## 10. Risks
@@ -226,26 +276,125 @@ meetings track:            N0 spike ─┬─→ N1 capture ─→ N2 notes ─�
 | Long-session cost surprises the user | Medium | Live cost meter in the meetings UI; cheap-vendor default; BYOK means they see their own bill |
 | Recording consent / legal exposure | **High** | Legal review gates N1; visible indicator; jurisdiction guidance in docs; audio deleted by default |
 | Scope: this track is bigger than M1–M4 combined | **High** | The N0 gate exists for this reason. Do not start N1 without a green gate and a decision on §11 |
+| PyAI can't carry meetings (English-only / no diarization / F9 latency) | Medium | Deepgram stays in the N0-B matrix as the control; the vendor-agnostic contract makes the default a config decision, not a rewrite |
+| Two tracks editing `AppConfig` concurrently | Medium | Land both tracks' schema fields in one commit up front (§9.1); `#[serde(default)]` on every new field |
 | Granola ships the local-first story first | Low–Medium | They're cloud-native with a retention-tier business model; it is not a fast pivot for them |
 
 ---
 
-## 11. Decisions needed from you
+## 11. Decisions
 
-1. **Track naming** — `N0–N4` as a parallel track (proposed), or renumber into `M7–M11` after the OSS release? Parallel keeps M5/M6 intact and lets N0 start now.
-2. **M5 vs N1 priority** — after M4, does the team polish dictation to daily-driver quality (M5), or start the recorder (N1)? My read: **finish M5**. A meeting notepad built on a dictation engine nobody dogfoods daily is building on sand — and M5's dogfooding is what surfaces the bugs N2 would otherwise inherit.
-3. **macOS floor** — is 14.4+ acceptable for meeting mode (dictation stays lower)? This decides Core Audio taps vs. ScreenCaptureKit, and it is hard to reverse later.
-4. **Meeting STT vendor default** — AssemblyAI is ~half Deepgram's cost with better streaming diarization, but it is a **fifth vendor adapter** to build and maintain. Add it, or default meetings to Deepgram and stay at four?
-5. **Is this a Verbatim feature or a second product?** You chose "second mode, same app," which I agree with — but it's worth naming that this changes what Verbatim *is*, and therefore what `README.md`, `product-plan.md` §1 and the public positioning say at v1.0.
+### Settled (13 Aug 2026)
+
+- ✅ **macOS floor: 14.4+, Core Audio process taps.** Meeting capture requires Sonoma 14.4 or later; dictation's floor is unchanged. Bought deliberately: an audio-only permission prompt instead of "this app can see your screen," near-zero CPU, per-PID tapping, and no exposure to Apple's screen-capture consent tightening. ScreenCaptureKit stays documented as the fallback if the floor proves untenable.
+- ✅ **N0-B matrix: the four current vendors + local whisper.cpp. AssemblyAI dropped (rev d)** — PyAI covers that slot, so no fifth adapter. **PyAI enters as a candidate default, not a decided one**; Deepgram stays in the matrix as the control, and N0-B must be able to fail PyAI on the four documented issues in §2 N0-B. Whisper is probe-only.
+- ✅ **N0-C corpus: public audio now, real meetings alongside.** The harness is built and calibrated on public recordings so it can start immediately; the **gate decision is made on the real corpus only** — public monologues are a weak proxy for a 1:1 or a standup and must not be allowed to stand in for one.
+- ✅ **Rust division of labour: Mayank drives N0-A at the Mac; Claude supports** with cidre/Core Audio API research, diff review, and all non-Rust work. Rationale in §12.1.
+
+### Still open
+
+1. **Track naming** — `N0–N4` as a parallel track (proposed), or renumber into `M7–M11` after the OSS release? Parallel keeps M5/M6 intact. *Blocks: the roadmap.md edit. Does not block N0.*
+2. **M5 vs N1 priority** — after M4, does the team polish dictation to daily-driver quality (M5), or start the recorder (N1)? My read: **finish M5**. A meeting notepad built on a dictation engine nobody dogfoods daily is building on sand — and M5's dogfooding surfaces the bugs N2 would otherwise inherit. *Blocks: N1 start. Does not block N0.*
+3. **Is this a Verbatim feature or a second product?** "Second mode, same app" is decided, but it still changes what Verbatim *is*, and therefore what `README.md`, `product-plan.md` §1 and the v1.0 public positioning say. **Revisit after N0-B** — a viable fully-offline mode would strengthen the positioning enough to be worth rewriting for.
 
 ---
 
 ## 12. Immediate next steps
 
-1. Answer §11.1–11.3 (they change the spike's shape).
+1. ~~Answer the spike-shaping decisions~~ — done, see §11.
 2. Schedule **N0** — one week on the Mac. A, B and C are independent and can run in any order; **B is the most likely to force a redesign, so run it first if time is tight.**
-3. Add an `n0-spike.md` task doc (same format as `m3-tasks.md` / `m4-tasks.md`) with per-probe checklists once the shape is agreed.
-4. Reference this doc from `roadmap.md` and add the N-track to the sequencing diagram — **after** §11.1 is decided, so the numbering doesn't have to change twice.
+3. **Start N0-C and N0-B now** — per §9.1 they need no Mac and no product code, so they cost nothing to run alongside M4's remaining verification. Keep the Mac on the M4 exit demo, then hand it to N0-A.
+4. Add an `n0-spike.md` task doc (same format as `m3-tasks.md` / `m4-tasks.md`) with per-probe checklists once the shape is agreed.
+5. Reference this doc from `roadmap.md` and add the N-track to the sequencing diagram — **after** §11.1 is decided, so the numbering doesn't have to change twice.
+
+### 12.1 What execution needs from Mayank
+
+Everything below is something no cloud session can supply. Listed so it can be scheduled, not discovered mid-spike.
+
+| Need | For | Notes |
+|---|---|---|
+| **A week at the Mac** | N0-A, half of N0-B | The binding constraint on the whole track. N0-A is Mayank-driven by decision. |
+| **Spend authorisation (~$20–40)** | N0-B | Five configurations × repeated 90-minute runs, plus re-runs after failures. Lower now that AssemblyAI is out and PyAI/Whisper add no marginal cost. |
+| **3–5 real meeting recordings + your shorthand notes** | N0-C gate | The notes matter as much as the audio — the probe tests *notes + transcript*, so recordings without the shorthand can't exercise it. |
+| **Participant consent for those recordings** | N0-C | Needed before recording, not after. |
+| **A second human judge** | N0-C | The rubric is "would you send this?" — one person's opinion isn't a gate. |
+| **Machine spec (chip + RAM)** | N0-B Whisper half | Local-transcription numbers don't transfer between an M1 Air and an M4 Pro; record it with the results. |
+| **macOS version spread across the team / target users** | Validates the 14.4 floor | The floor is decided, but if a meaningful share sits on 13.x that is worth knowing before N1, not after. |
+| **Legal / consent review sign-off** | Gates N1 shipping | Recording-consent copy, jurisdiction guidance, indicator design. Not something a session can sign off. |
+| **§11 open decisions 1–3** | Roadmap edit, N1 start | None block N0. |
+
+**What Claude can carry without any of the above:** the N0-C harness (CLI, prompts, template format, scoring rubric) built and calibrated on public audio; the N0-B cloud-vendor probe script; the `n0-spike.md` task doc; cidre/Core Audio research briefs to support N0-A; and later, session storage, meetings UI, `packages/core` work, prompts and templates.
+
+**The standing constraint:** no Rust written in a cloud session is verified until it is built on the Mac. That was acceptable for the `main.rs` split (a mechanical move, syntax-checkable with rustfmt). It is *not* a good fit for new objc/FFI capture code against an unfamiliar crate — hence the §11 decision that N0-A is Mac-driven with Claude supporting.
+
+---
+
+## 13. Build log — demo prototype (13 Aug 2026)
+
+A hackathon demo was scheduled for 14 Aug, so a working end-to-end path was built ahead of the N0 gate. **This is prototype scaffolding, not N1** — N0's questions remain open and the plan above stands. What follows is what exists, what is verified, and what is not.
+
+### 13.1 The PyAI probe changed the design (`experiments/scripts/probe_hear_caps.py`)
+
+Three findings, all against the live API:
+
+| Question | Answer |
+|---|---|
+| Does Hear support more languages now? | **No.** `hi/es/fr/de/ja/auto` → `400 unsupported_language`. The spec states English-only. (Omni carries more languages, but Omni is speech-to-speech, not transcription — this is the likely source of the confusion. `multilingual.md` was already correct.) |
+| Does Hear streaming diarize? | **No.** `diarize` / `diarization` / `speaker_labels` on the WS are all silently ignored; no event carries a speaker field. |
+| Is diarization available at all? | **Yes — on a different surface.** `POST /v1/transcription/jobs` offers `diarize:true` (mono, Sortformer) and **`channel:true` — "exact, model-free speaker separation per channel."** |
+
+**This is better than what was planned.** A meeting is already two physically separate captures, so muxing mic→L and system→R makes Me/Them attribution *exact* rather than a model's guess — and async Transcribe is $0.0005/min vs $0.001/min streaming.
+
+**Finding F10 is answered** and should be closed in `docs/research/pyai-api-findings.md`: the finalize control message is `{"type":"commit"}` (or the literal text frame `EOF`), with configurable `endpointing_ms`. Also `protocol=pyai-hear-v1` selects the published frame names; omitting it keeps the legacy `fusion-v0` names, which is what the current adapter reads.
+
+### 13.2 What was built
+
+| Area | Files | State |
+|---|---|---|
+| Enabler refactor | `src-tauri/src/` → 12 modules, `main.rs` 1275→136 lines | ✅ `cargo build` passes |
+| Transcript model | `packages/core/src/meetings/{types,transcript}.ts` | ✅ tested |
+| Templates + prompt | `meetings/prompt.ts` — 6 templates | ✅ tested |
+| Note generation | `meetings/openai.summarize.ts`, `registry.ts` | ✅ tested vs mocks |
+| Stereo mux | `meetings/stereo.ts` | ✅ tested |
+| PyAI jobs adapter | `meetings/pyai.jobs.ts` | ✅ tested vs mocks |
+| Meetings backend | `apps/backend/src/meeting.ts` — separate WS on **:8788** | ⚠️ never run |
+| Capture + UI | `apps/widget/{meetings.html,src/meetings.ts,src/meetings.css}` | ⚠️ never run |
+
+**37 tests pass** (`packages/core/src/meetings/*.test.ts`), typecheck clean.
+
+Two deliberate choices worth recording:
+
+- **The meetings backend is a separate server on :8788**, sharing nothing with `server.ts` but `@verbatim/core`. If meetings break, dictation still works. That isolation is worth keeping past the demo.
+- **Capture is webview-only — zero new Rust.** BlackHole makes system audio an ordinary *input* device, so both streams are `getUserMedia`. Core Audio taps (N0-A) remain the shipping answer; this is a demo shortcut, deliberately taken, and the loopback-device dependency is exactly the UX cost §2 N0-A rejects for the product.
+
+### 13.3 Hallucination guard — implemented, not just prompted
+
+Every action item must carry a verbatim transcript quote, and that is enforced **in code**: `locateQuote()` searches the actual transcript and any item that cannot be anchored is dropped with a warning. A test feeds a fabricated "we agreed to fifty percent off" and asserts it never reaches the note. This is the §4 provenance requirement, landing early.
+
+### 13.4 Not verified — the honest list
+
+Nothing below the core package has ever run:
+
+- No end-to-end run. Not once. The pieces are individually tested against mocks; the integration is not.
+- PyAI jobs `channel:true` has **not** been exercised on real wideband stereo audio. The jobs API defaults to `pyai-hear-telephony` (tuned for 8 kHz); `PYAI_JOBS_MODEL` overrides it. **A/B this against `pyai-hear` before relying on it.**
+- Live-transcript fallback (agreed acceptable) triggers on any jobs failure: stream-level Me/Them instead of exact.
+- `ScriptProcessorNode` is deprecated; fine in Chromium/WKWebView today, should become an AudioWorklet.
+- Clock drift between two independent `AudioContext`s over a long session is unmeasured — set BlackHole and the mic to the same sample rate.
+- **Mic bleed is the demo's real failure mode:** without headphones the mic re-records the far end and the channel separation visibly breaks.
+
+### 13.5 How to run it
+
+```bash
+npm run meetings        # backend on :8788 (dictation backend is separate, :8787)
+npm run widget          # then: sidebar → Meetings
+# or open http://localhost:5175/meetings.html in Chrome
+```
+
+Needs `PYAI_API_KEY` + `OPENAI_API_KEY`, and a Multi-Output Device (speakers/headphones + BlackHole) as system output. **Press "Test levels" first** — if both meters do not move, nothing else will work. Output lands in `~/Documents/Verbatim/Meetings/<timestamp>-<slug>/` as `note.md` + `session.json`, written even when the note pass fails.
+
+### 13.6 What this does NOT change
+
+The N0 gate stands. Capture still needs Core Audio taps (N0-A) to ship without a driver install; long-session economics (N0-B) are untouched — the demo targets ~10-minute sessions, where whole-session batch is fine and the chunked-batch redesign is not yet forced; and enhancement quality (N0-C) still needs real meetings and a second judge. **A working demo is not a cleared gate.**
 
 ---
 
@@ -256,4 +405,5 @@ meetings track:            N0 spike ─┬─→ N1 capture ─→ N2 notes ─�
 - Rust: [`cidre`](https://crates.io/crates/cidre), [`objc2-core-audio`](https://crates.io/crates/objc2-core-audio), [`screencapturekit`](https://crates.io/crates/screencapturekit)
 - Prior art: [Cap](https://github.com/CapSoftware/Cap) (Tauri + cidre), [Meetily](https://github.com/Zackriya-Solutions/meeting-minutes) (Tauri + cidre + cpal), [BlackHole](https://github.com/ExistentialAudio/BlackHole)
 - Granola behaviour: [transcription](https://docs.granola.ai/help-center/taking-notes/transcription.md), [Zoom speaker attribution](https://docs.granola.ai/help-center/taking-notes/speaker-attribution-zoom.md)
-- Pricing: [Deepgram](https://deepgram.com/pricing), [AssemblyAI](https://www.assemblyai.com/pricing), [OpenAI](https://developers.openai.com/api/docs/pricing) — all list price, **to be re-verified in N0-B**
+- Pricing: [Deepgram](https://deepgram.com/pricing), [OpenAI](https://developers.openai.com/api/docs/pricing) — list price, **to be re-verified in N0-B**. ([AssemblyAI](https://www.assemblyai.com/pricing) kept for reference only; dropped from the matrix in rev d.)
+- PyAI constraints cited above are from this repo, not the web: `docs/research/pyai-api-findings.md` (F1, F6, F9, F10), `docs/architecture/multilingual.md` (Hear English-only), `packages/core/src/providers/pyai.stt.ts` (single-model; language/model/keywords ignored).

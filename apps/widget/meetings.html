@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Verbatim — Meetings</title>
+  <link rel="icon" type="image/svg+xml" href="/verbatim-logo.svg" />
+  <link rel="stylesheet" href="/src/settings.css" />
+  <link rel="stylesheet" href="/src/app.css" />
+  <link rel="stylesheet" href="/src/meetings.css" />
+</head>
+<body class="settings-window" data-theme="system">
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <img class="brand-mark" src="/verbatim-logo.svg" alt="Verbatim" width="32" height="32" />
+        <div class="brand-text">
+          <strong>Verbatim</strong>
+          <small>Meetings</small>
+        </div>
+      </div>
+      <nav class="nav">
+        <a class="nav-item" href="/app.html">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-8 5"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg>
+          <span>History</span>
+        </a>
+        <button class="nav-item active">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/></svg>
+          <span>Meetings</span>
+        </button>
+        <a class="nav-item" href="/settings.html">
+          <svg viewBox="0 0 24 24" class="ico"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Settings</span>
+        </a>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="privacy-note">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span>Audio and notes stay on this Mac. Only transcription and the note pass leave, to <b>your</b> API keys.</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="app-main">
+      <header class="app-head">
+        <h1>Meetings</h1>
+        <p class="sub">Record the call, jot almost nothing, get the note.</p>
+      </header>
+
+      <!-- ── Setup ─────────────────────────────────────────────── -->
+      <section class="card setup">
+        <div class="row">
+          <label>
+            <span>You (microphone)</span>
+            <select id="micDevice"></select>
+            <div class="meter"><i id="meterMe"></i></div>
+          </label>
+          <label>
+            <span>Them (system audio)</span>
+            <select id="sysDevice"></select>
+            <div class="meter"><i id="meterThem"></i></div>
+          </label>
+          <label class="tpl">
+            <span>Meeting type</span>
+            <select id="template">
+              <option value="general">General meeting</option>
+              <option value="one-on-one">1:1</option>
+              <option value="standup">Standup</option>
+              <option value="customer">Customer call</option>
+              <option value="design-review">Design review</option>
+              <option value="interview">Interview</option>
+            </select>
+          </label>
+        </div>
+        <div class="controls">
+          <button id="testBtn" class="btn ghost">Test levels</button>
+          <button id="startBtn" class="btn primary">Start recording</button>
+          <button id="stopBtn" class="btn danger" hidden>Stop &amp; write the note</button>
+          <span id="timer" class="timer">00:00</span>
+          <span id="status" class="status">Ready.</span>
+        </div>
+      </section>
+
+      <!-- ── Live ──────────────────────────────────────────────── -->
+      <div class="split">
+        <section class="card grow">
+          <h2>Transcript <span id="exactBadge" class="badge" hidden></span></h2>
+          <div id="transcript" class="transcript"></div>
+          <div class="live">
+            <div class="live-line me"><span class="who">Me</span><span id="liveMe"></span></div>
+            <div class="live-line them"><span class="who">Them</span><span id="liveThem"></span></div>
+          </div>
+        </section>
+
+        <section class="card notes-card">
+          <h2>Your notes</h2>
+          <p class="hint">Shorthand is enough — press ⌥Space to dictate a note without leaving the call.</p>
+          <textarea id="notes" placeholder="pricing?&#10;follow up re: migration&#10;they want SSO"></textarea>
+        </section>
+      </div>
+
+      <!-- ── Result ────────────────────────────────────────────── -->
+      <section id="note" class="card note" hidden></section>
+
+      <section id="saved" class="card saved" hidden>
+        <div>
+          <h2>Saved on this Mac</h2>
+          <code id="savedPath"></code>
+        </div>
+        <button id="revealBtn" class="btn ghost">Reveal in Finder</button>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="/src/meetings.ts"></script>
+</body>
+</html>
