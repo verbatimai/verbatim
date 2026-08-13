@@ -10,9 +10,10 @@ Implementation reference for the M4 adapter layer. Verified against official doc
 - `Results` message: `channel.alternatives[0].transcript`, flags `is_final` (chunk finalized), `speech_final` (endpoint silence crossed). `UtteranceEnd` `{last_word_end}` is the robust "user paused" signal.
 - **Adapter mapping:** accumulate `is_final` transcripts → `stableText`; current interim → `activeText`; `UtteranceEnd`/`speech_final` → segment boundary.
 
-## 2. OpenAI — STT
-- **Realtime (live mic, WS):** `wss://api.openai.com/v1/realtime?intent=transcription` **[verify]**, `Authorization: Bearer`. Audio: pcm16 mono **24 kHz**. Configure `session.create` (type transcription, model `gpt-4o-transcribe`, `turn_detection: server_vad`), stream base64 in `input_audio_buffer.append`. Events: `conversation.item.input_audio_transcription.delta` (partial) / `.completed` (final).
-- **Batch:** `POST /v1/audio/transcriptions` multipart (`file`, `model=whisper-1|gpt-4o-transcribe`, `response_format`). Streaming SSE only for gpt-4o-transcribe family.
+## 2. OpenAI — STT  *(confirmed 13 Aug 2026 — see `vendor-transport.md` §2; models renamed since the 11 Aug draft)*
+- **Realtime (live mic, WS):** `wss://api.openai.com/v1/realtime?intent=transcription`, headers `Authorization: Bearer` + `OpenAI-Beta: realtime=v1`. A **raw key is allowed only on a "secure backend"** (our app-managed sidecar — see `vendor-transport.md`); browsers/mobile must use **WebRTC + an ephemeral client token**, not the raw key. Audio: pcm16 mono **24 kHz**. Configure a `transcription_session.update` (`input_audio_format:"pcm16"`, `input_audio_transcription.model`, `turn_detection:{type:"server_vad"}`), stream base64 in `input_audio_buffer.append`, flush with `input_audio_buffer.commit`. Events: `conversation.item.input_audio_transcription.delta` (partial) / `.completed` (final).
+- **Models (renamed):** **`gpt-live-transcribe`** for streaming, **`gpt-transcribe`** for post-turn (with language detection). The old `gpt-4o-transcribe`/`whisper-1` names are superseded. *(Implemented in `providers/openai.stt.ts`; `OPENAI_STT_MODEL` / `OPENAI_BATCH_MODEL` override.)*
+- **Batch:** `POST /v1/audio/transcriptions` multipart (`file`, `model=gpt-transcribe`, `response_format`). Used for the finalize path (`transcribeBatch`).
 
 ## 3. OpenAI — chat completions (correction)
 - `POST /v1/chat/completions`, `Authorization: Bearer`. Reliable JSON via `response_format: {type:"json_schema", json_schema:{name, strict:true, schema:{... additionalProperties:false, all fields required}}}`. Parse `choices[0].message.content` (JSON string); `message.refusal` if refused.

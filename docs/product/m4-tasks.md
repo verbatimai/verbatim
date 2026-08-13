@@ -90,12 +90,15 @@ One persistence layer in Rust — the widget's single source of truth — read/w
 - [ ] Add endpointing: `endpointing`, `utterance_end_ms>=1000`, `smart_format`/`punctuate`; confirm `speech_final` + `UtteranceEnd` both map to our segment boundary (`endpoint:true`).
 - [ ] **Integration test vs a Deepgram mock server** (mirror `providers/pyai.integration.test.ts`): auth handshake, interim → `activeText`, `is_final` → `stableText`, `UtteranceEnd` → final+endpoint. Green in cloud, no network.
 
-## Phase 4.5 — OpenAI adapters (STT + correction)
+## Phase 4.5 — OpenAI adapters (STT + correction)  ·  ✅ DONE (core, cloud-tested) (13 Aug 2026)
 
-- [ ] **STT — Realtime WS** adapter: 24 kHz mono resample, base64 `input_audio_buffer.append`, `server_vad`, `...transcription.delta`→active / `.completed`→stable+endpoint → `TranscriptEvent`. Model ids per 4.0 (`gpt-live-transcribe` stream / `gpt-transcribe` post-turn). Plus **batch Whisper** (`POST /v1/audio/transcriptions`) for `transcribeBatch` (the finalize path).
-- [ ] **Correction** adapter via `POST /v1/chat/completions` with strict `response_format:{type:"json_schema", strict:true}` → the compact-edits schema; reuse `prompt.ts` + the shared reconstructor unchanged.
-- [ ] Fold the 4.0 model-id update into `vendor-apis.md` §2.
-- [ ] Mock-server integration tests for both (auth, event parse, mapping, reconstruct-validates).
+Both adapters shipped behind the existing interfaces + registered. **Cloud-tested against mock servers; live on-Mac run against real OpenAI still pending (4.10 exit demo).**
+
+- [x] **STT — Realtime WS** adapter (`providers/openai.stt.ts`): declares 24 kHz pcm16, sends `transcription_session.update` (server_vad), base64 `input_audio_buffer.append`, `commit` on finalize; `...transcription.delta`→active / `.completed`→final+endpoint → `TranscriptEvent` (accumulate-deltas mapping, like Deepgram). Model ids `gpt-live-transcribe` (stream) / `gpt-transcribe` (batch), env-overridable. Plus **batch** `transcribeBatch` (`POST /v1/audio/transcriptions`, multipart) for the finalize path. Registered `openai` in `providers/registry.ts`.
+- [x] **Correction** adapter (`correction/openai.ts`): `POST /v1/chat/completions` with strict `response_format:{type:"json_schema", strict:true}` → compact-edits schema; reuses `SYSTEM_PROMPT`/`userMessage`/`reconstruct`/`validate` + `FORMAT_PROMPT` unchanged; retry-with-backoff + refusal guard. Registered `openai` in `correction/registry.ts`.
+- [x] Folded the model-id update into `vendor-apis.md` §2 (renamed models, secure-backend-vs-ephemeral note, `transcription_session.update`/`commit` flow).
+- [x] Mock-server integration tests, **all green in cloud**: correction (auth + json_schema request shape, reconstruct-validates, refusal, retry, exhaustion) = 5; STT (headers, pcm16 config, base64 append, delta→active / completed→final+endpoint, batch multipart) = 2. Full-package `tsc --noEmit` clean.
+- [ ] **Live on-Mac verification** (deferred to 4.10): real Realtime session (the `transcription_session.*` message names + ephemeral-token path are documented-but-unproven) and real batch transcription; `sendAudio` assumes capture feeds the provider's declared 24 kHz (wire it in 4.8).
 
 ## Phase 4.6 — Anthropic correction adapter
 

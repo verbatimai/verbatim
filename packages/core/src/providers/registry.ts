@@ -1,14 +1,15 @@
 import type { STTProvider } from "./types";
 import { PyAiSTT } from "./pyai.stt";
 import { DeepgramSTT } from "./deepgram.stt";
+import { OpenAiSTT } from "./openai.stt";
 import { FixtureSTT } from "./fixture.stt";
 
 // Add a vendor by adding one line here — no core changes needed elsewhere.
 const STT_PROVIDERS: Record<string, () => STTProvider> = {
   pyai: () => new PyAiSTT(),
   deepgram: () => new DeepgramSTT(),
+  openai: () => new OpenAiSTT(), // Realtime WS transcription + batch Whisper
   fixture: () => new FixtureSTT(), // offline replay of a real capture
-  // openai: () => new OpenAiSTT(),
 };
 
 export function getSTTProvider(
