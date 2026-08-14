@@ -118,10 +118,22 @@ body{padding:11px;display:flex;align-items:flex-end;justify-content:center}
   opacity:0;margin-left:0;transition:max-width .26s cubic-bezier(.2,.8,.2,1),opacity .18s ease,margin .26s ease}
 .pill.listening .wave{max-width:150px;opacity:1;margin-left:10px}
 .wave i{width:3px;border-radius:2px;flex:none;height:3px;
-  background:linear-gradient(180deg,var(--accent),var(--accent-2));transition:height .07s ease-out}
+  background:linear-gradient(180deg,var(--accent),var(--accent-2));transition:height .07s ease-out,background .2s ease}
 #root.command-mode .wave i{background:linear-gradient(180deg,var(--false_start),#7c4fd0)}
 
-.stopbtn{width:34px;height:34px;flex:none;border:0;border-radius:50%;cursor:pointer;
+/* Processing ("breathing wave") — set by main.ts's stop() the moment Stop is clicked,
+   cleared by stopProcessingAnim() on either a successful settle or a banner/error. Bars
+   stop reacting to the (now torn-down) mic meter and settle into a slow, synchronized
+   pulse instead — same footprint as listening, calmer motion, dim (not accent) color so
+   it visually reads as "no longer capturing, still working" rather than "still listening".
+   A CSS animation overrides the inline `style.height` left behind by stopLevelMeter(). */
+.wave.breathing i{background:linear-gradient(180deg,var(--dim),var(--faint));
+  animation:breathe 1.3s ease-in-out infinite}
+.wave.breathing i:nth-child(odd){animation-delay:.15s}
+.wave.breathing i:nth-child(3n){animation-delay:.3s}
+@keyframes breathe{0%,100%{height:4px}50%{height:16px}}
+
+.stopbtn{position:relative;width:34px;height:34px;flex:none;border:0;border-radius:50%;cursor:pointer;
   display:grid;place-items:center;background:rgba(255,255,255,.08);color:var(--ink);
   margin-left:0;max-width:0;opacity:0;overflow:hidden;
   transition:max-width .22s ease,opacity .18s ease,margin .22s ease,background .12s ease}
@@ -131,7 +143,15 @@ body{padding:11px;display:flex;align-items:flex-end;justify-content:center}
    worth (see main.ts); Stop is just always there, and disabled (not hidden) once
    pressed while the result finishes processing. */
 .pill.listening .stopbtn{max-width:34px;opacity:1;margin-left:8px}
-.stopbtn span{width:11px;height:11px;background:#f87171;border-radius:3px;flex:none}
+.stopbtn span.sq{width:11px;height:11px;background:#f87171;border-radius:3px;flex:none;transition:opacity .15s}
+/* Processing — the red square fades out, a thin spinner ring fades in over it (paired
+   with .wave.breathing above via the same .processing class on .stopbtn, set in main.ts). */
+.stopbtn span.spin{position:absolute;top:50%;left:50%;width:16px;height:16px;margin:-8px 0 0 -8px;
+  border-radius:50%;border:2px solid rgba(255,255,255,.14);border-top-color:var(--ink);
+  opacity:0;pointer-events:none}
+.stopbtn.processing span.sq{opacity:0}
+.stopbtn.processing span.spin{opacity:1;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── bubble: live transcript / correction reveal / last-result / error — one surface ── */
 .bubble{position:relative;flex:none;width:360px;max-width:calc(100vw - 24px);
