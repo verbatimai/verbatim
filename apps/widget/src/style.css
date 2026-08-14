@@ -117,7 +117,11 @@ body{padding:11px;display:flex;align-items:flex-end;justify-content:center}
   margin-left:0;max-width:0;opacity:0;overflow:hidden;
   transition:max-width .22s ease,opacity .18s ease,margin .22s ease,background .12s ease}
 .stopbtn:hover{background:rgba(255,255,255,.14)}
-.pill.listening.show-stop .stopbtn{max-width:34px;opacity:1;margin-left:8px}
+/* Always visible while listening — tap, hold, or hands-free/wake-word alike. Hiding it
+   conditionally on the hold/tap ambiguity turned out to be more trouble than it was
+   worth (see main.ts); Stop is just always there, and disabled (not hidden) once
+   pressed while the result finishes processing. */
+.pill.listening .stopbtn{max-width:34px;opacity:1;margin-left:8px}
 .stopbtn span{width:11px;height:11px;background:#f87171;border-radius:3px;flex:none}
 
 /* ── bubble: live transcript / correction reveal / last-result / error — one surface ── */

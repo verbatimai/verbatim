@@ -756,7 +756,7 @@ function initWakeWord() {
   if (!wakeWordEnableEl || !wakeWordHandlerEl || !wakeWordThresholdEl) return;
   wakeWordEnableEl.checked = !!config.wakeWordEnabled;
   wakeWordHandlerEl.value = config.wakeWordHandler ?? "dictate";
-  wakeWordThresholdEl.value = String(config.wakeWordThreshold ?? 0.5);
+  wakeWordThresholdEl.value = String(config.wakeWordThreshold ?? 0.3);
   wakeWordEnableEl.onchange = () => { void patchConfig({ wakeWordEnabled: wakeWordEnableEl.checked }); };
   wakeWordHandlerEl.onchange = () => { void patchConfig({ wakeWordHandler: wakeWordHandlerEl.value }); };
   wakeWordThresholdEl.onchange = () => { void patchConfig({ wakeWordThreshold: Number(wakeWordThresholdEl.value) }); };

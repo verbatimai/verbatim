@@ -144,8 +144,16 @@ static HANDLER_IS_COMMAND: AtomicBool = AtomicBool::new(false);
 static LAST_FIRE_AT: Mutex<Option<Instant>> = Mutex::new(None);
 
 fn store_threshold(t: f32) {
-    // Clamp to the valid score range so a bad config can't disable (≤0) or dead-lock (>1) detection.
-    let clamped = t.clamp(0.0, 1.0);
+    // Clamp to a FUNCTIONAL range, not just the mathematical 0..1 range (14 Aug 2026 fix):
+    // a threshold of exactly/near 0.0 previously slipped through this clamp and broke two
+    // things at once — (1) `score >= threshold` is then true for nearly every frame, so
+    // PATIENCE is satisfied almost immediately on ~any audio, not on the wake phrase, and
+    // (2) the re-arm branch below (`else { armed = true }`) only runs when a score falls
+    // BELOW threshold, which near-0.0 audio essentially never does — so the listener fires
+    // once and then stays permanently disarmed for the rest of the session. 0.05 is below any
+    // threshold worth setting via the UI (see settings.html min bump) but keeps the atomic
+    // itself safe even if something else calls set_threshold directly with a bad value.
+    let clamped = t.clamp(0.05, 1.0);
     THRESHOLD_BITS.store(clamped.to_bits(), Ordering::SeqCst);
 }
 fn load_threshold() -> f32 {
@@ -216,6 +224,19 @@ const RAW_KEEP: usize = 4000; // raw samples retained (need ≥ CHUNK+MEL_CONTEX
 const MELSPEC_DIV: f32 = 10.0; // openWakeWord melspec transform: mel = mel/10 + 2
 const MELSPEC_ADD: f32 = 2.0;
 const PATIENCE: u32 = 3; // consecutive over-threshold predictions to confirm (tunable)
+// AGC — lift quiet / whispered speech toward the model's training magnitude so it detects like
+// normal speech. Gain is floored at 1.0 (loud speech is left untouched — the 0.99 path is
+// unchanged) and gated by a noise floor (near-silence / room tone is NOT boosted, so we don't
+// manufacture false triggers). TARGET is an int16-magnitude RMS; calibrate against the logged rms.
+const AGC_TARGET_RMS: f32 = 2000.0; // int16 RMS to lift quiet speech toward
+// Raised from 150 → 300 (14 Aug 2026 tuning pass): a real-world capture showed room tone /
+// near-silence sitting at rms 224-400 still getting boosted 5-9x under the old floor, which
+// pushed ambient-noise wake scores up into the same 0.2-0.4 band the actual "hey jarvis"
+// utterance's sustained plateau occupies (see wake-threshold notes) — undermining any
+// threshold low enough to catch real speech. The observed utterance itself mostly ran
+// rms 400-1200+, so this still gets the intended boost; only the quietest ambient floor loses it.
+const AGC_FLOOR_RMS: f32 = 300.0; // below this = treat as silence/room tone → no boost
+const AGC_MAX_GAIN: f32 = 12.0; // cap the boost so faint noise isn't blown up into a trigger
 
 /// ⚠ ort 2.x API. The `Session::builder`/`commit_from_file`, `Tensor::from_array`, `run`, and
 /// `try_extract_tensor` calls below target ort 2.x — pin the exact version in Cargo.toml and
@@ -303,6 +324,25 @@ impl WakePipeline {
             }
             let start = self.raw.len() - take;
             let slice: Vec<f32> = self.raw.iter().skip(start).copied().collect();
+
+            // AGC: boost quiet / whispered speech toward AGC_TARGET_RMS. gain ∈ [1, MAX] so normal
+            // speech (already ≥ target) is unchanged, and silence below AGC_FLOOR_RMS gets no boost.
+            let rms = (slice.iter().map(|v| v * v).sum::<f32>() / slice.len().max(1) as f32).sqrt();
+            let gain = if rms > AGC_FLOOR_RMS {
+                (AGC_TARGET_RMS / rms).clamp(1.0, AGC_MAX_GAIN)
+            } else {
+                1.0
+            };
+            let slice: Vec<f32> = if gain > 1.0 {
+                slice.iter().map(|v| (v * gain).clamp(-32768.0, 32767.0)).collect()
+            } else {
+                slice
+            };
+            // Per-frame AGC logging removed (14 Aug 2026) — it fired on nearly every prediction
+            // and buried the [wake] score lines that actually matter for tuning. rms/gain are
+            // still computed and applied; just no longer printed. Re-add temporarily if AGC
+            // itself needs debugging again.
+
             let mel_out = match Self::run(&mut self.mel, vec![1, take as i64], slice) {
                 Ok(o) => o,
                 Err(e) => {
@@ -472,6 +512,17 @@ fn run_listen_thread(app: AppHandle, model: String) {
     // predictions, then disarm until the score drops (the phrase ends) so one utterance = one fire.
     let mut armed = true;
     let mut over = 0u32;
+    // Belt-and-suspenders re-arm (14 Aug 2026 fix): the score-drop re-arm below assumes the
+    // score reliably dips BELOW threshold once the phrase ends. At a low-but-plausible
+    // threshold that assumption can quietly fail (ambient noise never dips that low), which
+    // previously left the listener permanently disarmed after its first-ever fire — "wake word
+    // only works once". `disarmed_since` gives a hard time-based fallback so a stuck disarm
+    // always clears on its own; REARM_TIMEOUT sits just above DEBOUNCE_MS so it never causes a
+    // premature re-arm that would race the existing debounce/self-trigger gates in fire_activation.
+    let mut disarmed_since: Option<Instant> = None;
+    const REARM_TIMEOUT: Duration = Duration::from_millis(DEBOUNCE_MS as u64 + 500);
+    // Rolling window of recent scores for the logged running average (spike aid).
+    let mut recent: VecDeque<f32> = VecDeque::with_capacity(12);
 
     while !STOP.load(Ordering::SeqCst) {
         // Block briefly for audio so STOP stays responsive between callbacks.
@@ -483,9 +534,15 @@ fn run_listen_thread(app: AppHandle, model: String) {
         let samples = resample_to_16k_int16(&frame, in_rate, channels);
         if let Some(score) = pipeline.feed(&samples) {
             let threshold = load_threshold(); // live-tunable each prediction
-            // TEMP (spike): log any non-trivial score so the phrase's peak is visible for tuning.
+            // Running average over the last ~12 predictions, kept alongside the instantaneous score.
+            recent.push_back(score);
+            if recent.len() > 12 {
+                recent.pop_front();
+            }
+            let avg = recent.iter().sum::<f32>() / recent.len() as f32;
+            // TEMP (spike): log non-trivial scores + the running average so peaks are visible for tuning.
             if score >= 0.1 {
-                eprintln!("[wake] score {score:.3} (threshold {threshold:.2})");
+                eprintln!("[wake] score {score:.3} avg {avg:.3} (threshold {threshold:.2})");
             }
             if score >= threshold {
                 over += 1;
@@ -494,11 +551,23 @@ fn run_listen_thread(app: AppHandle, model: String) {
                         eprintln!("[wake] '{model}' detected (score {score:.2})");
                     }
                     armed = false;
+                    disarmed_since = Some(Instant::now());
                     over = 0;
                 }
             } else {
                 over = 0;
-                armed = true; // re-arm once the phrase ends
+                if !armed {
+                    armed = true; // re-arm once the phrase ends (score dropped below threshold)
+                    disarmed_since = None;
+                }
+            }
+            // Fallback re-arm: if the score-drop path above hasn't cleared the disarm within
+            // REARM_TIMEOUT, force it — see the comment on `disarmed_since` above.
+            if let Some(t) = disarmed_since {
+                if t.elapsed() >= REARM_TIMEOUT {
+                    armed = true;
+                    disarmed_since = None;
+                }
             }
         }
     }

@@ -46,3 +46,18 @@ pub static LAST_RESULT: Mutex<Option<String>> = Mutex::new(None);
 /// re-inject the uncorrected text when the correction/format pass over-edited. Set by
 /// the webview via `text::set_last_raw` on the `correction` frame.
 pub static LAST_RAW: Mutex<Option<String>> = Mutex::new(None);
+
+
+/// Clear the dictation + command "recording" latches when the webview stops a session from the
+/// UI (Stop button / auto-finalize) rather than via a hotkey. Essential for WAKE-WORD-started
+/// sessions: `wake::fire_activation` sets RECORDING / COMMAND_RECORDING and the wake self-trigger
+/// gate stays engaged until they clear — so without this the wake word can't re-fire after a UI
+/// stop, and the next hotkey tap is mis-read as "already recording → stop". Idempotent; harmless
+/// after a hotkey-driven stop (the flags are already false there).
+#[tauri::command]
+pub fn clear_recording_state() {
+    *RECORDING.lock().unwrap() = false;
+    *STARTED_THIS_PRESS.lock().unwrap() = false;
+    *COMMAND_RECORDING.lock().unwrap() = false;
+    *COMMAND_STARTED.lock().unwrap() = false;
+}

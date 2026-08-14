@@ -143,8 +143,15 @@ pub fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                                     let same_press = crate::state::COMMAND_PRESS_GEN
                                         .load(std::sync::atomic::Ordering::SeqCst)
                                         == gen;
-                                    let still_recording = *COMMAND_RECORDING.lock().unwrap();
-                                    if same_press && still_recording {
+                                    // Bug fix: check whether the KEY IS STILL DOWN
+                                    // (COMMAND_STARTED — true only from this Pressed until its
+                                    // Released), not whether a session is merely active
+                                    // (COMMAND_RECORDING, which stays true for an entire toggle
+                                    // session regardless of the key) — the latter meant "hold"
+                                    // fired ~300ms into EVERY session, tap or hold alike, hiding
+                                    // Stop unconditionally.
+                                    let still_pressed = *COMMAND_STARTED.lock().unwrap();
+                                    if same_press && still_pressed {
                                         let _ = app_for_timer.emit("command", "hold");
                                     }
                                 });
@@ -206,8 +213,8 @@ pub fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                             // Widget redesign — we don't know yet whether this resolves to a
                             // tap (toggle) or a hold (push-to-talk); that's only decided at
                             // Released (see below) or once HOLD_MS has passed. Spawn a one-shot
-                            // timer that re-checks after HOLD_MS: if the SAME press is still
-                            // recording, it's definitely a hold, so tell the widget to hide its
+                            // timer that re-checks after HOLD_MS: if the SAME press's key is
+                            // STILL DOWN, it's definitely a hold, so tell the widget to hide its
                             // Stop button (`dictation:"hold"`). A quick tap that releases before
                             // this fires never sees it, so the button stays visible — correct,
                             // since that's toggle mode. PRESS_GEN guards against a stale timer
@@ -221,8 +228,15 @@ pub fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                                 let same_press = crate::state::PRESS_GEN
                                     .load(std::sync::atomic::Ordering::SeqCst)
                                     == gen;
-                                let still_recording = *RECORDING.lock().unwrap();
-                                if same_press && still_recording {
+                                // Bug fix: check the KEY IS STILL DOWN (STARTED_THIS_PRESS —
+                                // true only from this Pressed until its Released), not whether
+                                // a session is merely active (RECORDING, which stays true for an
+                                // entire toggle session regardless of the key). Checking
+                                // RECORDING meant "hold" fired ~300ms into EVERY session, tap or
+                                // hold alike, so Stop never stayed visible for a plain tap —
+                                // this was the actual cause of "the stop icon doesn't appear".
+                                let still_pressed = *STARTED_THIS_PRESS.lock().unwrap();
+                                if same_press && still_pressed {
                                     let _ = app_for_timer.emit("dictation", "hold");
                                 }
                             });

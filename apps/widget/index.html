@@ -38,7 +38,12 @@
          Demo/Start — the orb itself (click or ⌥Space) starts a session. -->
     <div class="pill" id="pill">
       <span class="err-badge" id="errBadge" hidden></span>
-      <button class="cancel-x" id="collapseBtn" title="Cancel (discard)" hidden>✕</button>
+      <!-- cancel-x and Stop are shown/hidden purely via CSS (.pill.listening — see
+           style.css); no static `hidden` attribute here, since main.ts never clears
+           that attribute for these two (unlike the bubble/banner elements, which it
+           does manage via .hidden) — leaving it would have permanently blocked them
+           regardless of what CSS says (`[hidden]` is `display:none!important`). -->
+      <button class="cancel-x" id="collapseBtn" title="Cancel (discard)">✕</button>
       <button class="orb" id="orb" title="Dictate  (⌥Space)">
         <svg width="20" height="20" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" aria-hidden="true">
           <path d="M11 23V41"/><path d="M21 16V48"/><path d="M31 20V44"/>
@@ -49,7 +54,7 @@
         <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
         <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
       </div>
-      <button class="stopbtn" id="stop" title="Stop &amp; insert" hidden><span></span></button>
+      <button class="stopbtn" id="stop" title="Stop &amp; insert"><span></span></button>
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>
