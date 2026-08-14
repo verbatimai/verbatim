@@ -202,9 +202,21 @@ function startFold(afterMs = 2000) {
   };
   foldRAF = requestAnimationFrame(step);
 }
+// Post-Stop "processing" treatment (breathing wave + Stop spinner — the design reviewed
+// and approved before implementing). Set by stop() the moment Stop is clicked; cleared
+// here on either a successful settle (settleAfterSuccess) or a banner/error (showBanner) —
+// nothing left mid-spin either way. closeToIdle()/enterListening() also clear it
+// defensively, in case a stray processing session is torn down some other way.
+function stopProcessingAnim() {
+  pill.classList.remove("processing");
+  wave.classList.remove("breathing");
+  stopBtn.classList.remove("processing");
+}
+
 function closeToIdle() {
   cancelFold();
   hideBubble();
+  stopProcessingAnim();
   pill.classList.remove("listening", "done");
   root.classList.remove("command-mode");
   void setViewMode("idle");
@@ -212,6 +224,7 @@ function closeToIdle() {
 
 function enterListening() {
   pill.classList.remove("done");
+  stopProcessingAnim();
   // Stop is always shown while .listening (see style.css) — tap, hold, or hands-free
   // alike. No tap-vs-hold branching here on purpose (see the header comment).
   pill.classList.add("listening");
@@ -307,6 +320,7 @@ function setStatus(cls: string, text: string) {
 type BannerActions = "none" | "mic" | "ax";
 function showBanner(kind: "err" | "warn" | "info", msg: string, actions: BannerActions = "none") {
   cancelFold();
+  stopProcessingAnim(); // an error/notice means we're not just "wrapping up" anymore — stop spinning
   banner.className = "banner " + kind;
   bannerMsg.textContent = msg;
   openMicBtn.hidden = actions !== "mic";
@@ -492,6 +506,7 @@ async function runCommandIntent(intent: any): Promise<"ok" | "blocked"> {
 // hold the correction reveal open for ~2s (transcript setting on) or drop straight back
 // to the idle orb (off) — shared by both the dictation and command-mode terminal paths.
 function settleAfterSuccess() {
+  stopProcessingAnim(); // drop the breathing wave / Stop spinner in favor of the done flash
   pill.classList.add("done");
   setTimeout(() => {
     pill.classList.remove("done");
@@ -699,8 +714,14 @@ function stop() {
   setStatus("fix", "finishing up…");
   resetCopy();
   cancelFold();
-  // Keep .listening (frozen waveform, Stop still shown but disabled below) — it reads
-  // as "still wrapping up"; teardownAudio() below also stops the meter.
+  // Keep .listening (card chrome stays up) — it reads as "still wrapping up". The
+  // waveform stops reacting to voice (teardownAudio() below) and instead breathes on its
+  // own via .processing/.breathing (reviewed as the "breathing wave" design candidate),
+  // and Stop swaps its red square for a spinner — cleared by stopProcessingAnim() once
+  // settleAfterSuccess() or showBanner() fires.
+  pill.classList.add("processing");
+  wave.classList.add("breathing");
+  stopBtn.classList.add("processing");
   stopBtn.disabled = true;
   teardownAudio();
   // Clear the Rust recording latches (esp. the wake self-trigger gate) so a UI/auto

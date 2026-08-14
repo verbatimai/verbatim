@@ -54,7 +54,9 @@
         <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
         <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
       </div>
-      <button class="stopbtn" id="stop" title="Stop &amp; insert"><span></span></button>
+      <!-- .sq = the red "stop" square; .spin = the processing spinner ring, shown instead
+           of .sq while `.stopbtn.processing` (main.ts stop() — see style.css). -->
+      <button class="stopbtn" id="stop" title="Stop &amp; insert"><span class="sq"></span><span class="spin"></span></button>
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>
