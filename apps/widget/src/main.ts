@@ -12,9 +12,11 @@
 // no separate "final output" box (Copy lives in the bubble; the clean text is injected
 // directly). Idle = a bare orb. Click it or fire the hotkey and it nudges left while a
 // real waveform (driven by the same AnalyserNode as the old level meter) grows beside
-// it, plus a Stop button — UNLESS this press resolves to push-to-talk (holding the key),
-// in which case Rust tells us via a `dictation:"hold"` event and we hide Stop, since
-// releasing the key is what ends the session. "Show live transcript" (config) gates a
+// it, plus a Stop button — ALWAYS shown while listening, tap/toggle, push-to-talk, or
+// hands-free/wake-word alike (hiding it conditionally on the tap-vs-hold ambiguity
+// wasn't worth the complexity — Rust can't even tell which one it is until either
+// HOLD_MS has passed or the key is released, so it was flickering/wrong more than it
+// helped). "Show live transcript" (config) gates a
 // bubble above the pill: streaming text while listening, then the correction reveal
 // (strike → fade/collapse) on Stop, auto-folding back to the bare orb after ~2s. With
 // it off, the pill stays waveform-only and the corrected text is still injected — just
@@ -203,18 +205,16 @@ function startFold(afterMs = 2000) {
 function closeToIdle() {
   cancelFold();
   hideBubble();
-  pill.classList.remove("listening", "show-stop", "done");
+  pill.classList.remove("listening", "done");
   root.classList.remove("command-mode");
   void setViewMode("idle");
 }
 
 function enterListening() {
   pill.classList.remove("done");
-  // Default to "show Stop" (tap/toggle, or a plain orb click — neither has a hold
-  // concept). If this press turns out to be push-to-talk, a `dictation:"hold"` /
-  // `command:"hold"` event (fired by Rust once it can tell — see shortcuts.rs/fnkey.rs)
-  // removes it a moment later; a quick tap never sees that event, so Stop stays put.
-  pill.classList.add("listening", "show-stop");
+  // Stop is always shown while .listening (see style.css) — tap, hold, or hands-free
+  // alike. No tap-vs-hold branching here on purpose (see the header comment).
+  pill.classList.add("listening");
   errBadge.classList.remove("show");
   void syncViewMode();
 }
@@ -627,7 +627,7 @@ async function startLive() {
   } catch (e) {
     // Only show the "access needed" banner for a REAL permission denial — otherwise we
     // were wrongly claiming the mic was blocked when it wasn't.
-    pill.classList.remove("listening", "show-stop"); // no audio session actually started
+    pill.classList.remove("listening"); // no audio session actually started
     const name = (e as any)?.name ?? "";
     if (name === "NotAllowedError" || name === "SecurityError" || name === "PermissionDeniedError") {
       setStatus("err", "mic blocked");
@@ -699,11 +699,13 @@ function stop() {
   setStatus("fix", "finishing up…");
   resetCopy();
   cancelFold();
-  // Keep .listening (frozen waveform) — it reads as "still wrapping up" — but the
-  // action's been taken, so hide Stop; teardownAudio() below also stops the meter.
-  pill.classList.remove("show-stop");
+  // Keep .listening (frozen waveform, Stop still shown but disabled below) — it reads
+  // as "still wrapping up"; teardownAudio() below also stops the meter.
   stopBtn.disabled = true;
   teardownAudio();
+  // Clear the Rust recording latches (esp. the wake self-trigger gate) so a UI/auto
+  // stop of a wake- or hotkey-started session lets the wake word re-fire and keeps hotkey state sane.
+  void invoke("clear_recording_state").catch(() => {});
   ws?.send(JSON.stringify({ type: "stop" }));
 }
 
@@ -790,24 +792,20 @@ copyErr.onclick = async () => {
   setTimeout(() => { copyErr.textContent = "Copy details"; }, 1600);
 };
 
-// ⌥Space drives dictation from Rust: hold = push-to-talk, tap = toggle. We default to
-// showing Stop the moment "start" arrives (see enterListening()); a "hold" event fires
-// once Rust can tell this press is a hold (immediately for the Fn/PTT path, or after
-// HOLD_MS for the configurable toggle hotkey) and hides it. A quick tap-then-release
-// never sees "hold" at all, so Stop stays visible throughout — correct for toggle mode.
+// ⌥Space drives dictation from Rust: hold = push-to-talk, tap = toggle. Stop is always
+// shown while listening regardless of which (see enterListening()) — we deliberately
+// ignore the `"hold"` payload Rust also sends (see shortcuts.rs/fnkey.rs); it exists for
+// other potential uses but the widget no longer hides Stop based on it.
 void listen<string>("dictation", (e) => {
   if (e.payload === "start") beginDictation();
-  else if (e.payload === "hold") pill.classList.remove("show-stop");
   else if (e.payload === "stop") { if (ws) stop(); }
 });
 
 // P1 — the command-mode hotkey drives command capture from Rust (same tap/hold state
-// machine as dictation, separate statics + its own hold-confirmation timer). Reuses the
-// same stop()/finalize audio path; the backend replies with an `intent` frame instead of
-// `formatted`.
+// machine as dictation, separate statics). Reuses the same stop()/finalize audio path;
+// the backend replies with an `intent` frame instead of `formatted`.
 void listen<string>("command", (e) => {
   if (e.payload === "start") beginCommand();
-  else if (e.payload === "hold") pill.classList.remove("show-stop");
   else if (e.payload === "stop") { if (ws) stop(); }
 });
 
@@ -818,7 +816,7 @@ void listen<string>("command", (e) => {
 async function showLastResult() {
   clearBanner();
   root.classList.remove("command-mode");
-  pill.classList.remove("listening", "show-stop");
+  pill.classList.remove("listening");
   if (lastResult.trim()) {
     setBubbleTag("last result");
     transcriptEl.innerHTML = `<span class="stable">${esc(lastResult)}</span>`;

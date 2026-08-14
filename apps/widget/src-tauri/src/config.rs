@@ -44,7 +44,7 @@ pub struct AppConfig {
     pub system_commands: bool,       // P2 — allow system commands (launch/volume/shortcut) via macOS delegation (default false, opt-in)
     pub wake_word_enabled: bool,     // P3 — always-on on-device wake-word listener (default false, opt-in; engages the mic + orange dot)
     pub wake_word_handler: String,   // P3 — which handler a detection fires: "dictate" | "command" (default "dictate")
-    pub wake_word_threshold: f32,    // P3 — detection score threshold 0..1 (default 0.5, live-tunable via atomics, no restart)
+    pub wake_word_threshold: f32,    // P3 — detection score threshold 0..1 (default 0.3, live-tunable via atomics, no restart — see wake.rs PATIENCE/AGC notes: 0.5-0.6 was above the real utterance's sustained plateau, so genuine detections never satisfied PATIENCE; going below ~0.25 risks firing on ambient-noise score blips instead)
     pub wake_word_model: String,     // P3 — wake-word model asset id under resources/wakeword/ (default stock "hey_jarvis")
     pub show_transcript: bool,       // Widget redesign — show the live-transcript/correction-reveal bubble while dictating (default true; off = pill only, text still corrects + injects silently)
     pub show_removed: bool,          // Widget redesign — during the correction reveal, fade removed spans instead of collapsing them immediately (default true)
@@ -82,7 +82,7 @@ impl Default for AppConfig {
             system_commands: false,
             wake_word_enabled: false,
             wake_word_handler: "dictate".into(),
-            wake_word_threshold: 0.5,
+            wake_word_threshold: 0.3,
             wake_word_model: "hey_jarvis".into(),
             show_transcript: true,
             show_removed: true,

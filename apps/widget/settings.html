@@ -100,7 +100,7 @@
                 d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"
               />
             </svg>
-            <span>Vocabulary</span>
+            <span>Names &amp; Jargon</span>
           </button>
           <button class="nav-item" data-pane="snippets">
             <svg viewBox="0 0 24 24" class="ico">
@@ -538,10 +538,16 @@
                 <input
                   type="range"
                   id="wakeWordThreshold"
-                  min="0"
+                  min="0.1"
                   max="1"
                   step="0.05"
                 />
+                <!-- min raised 0 -> 0.1 (14 Aug 2026): a threshold at/near 0.0 makes
+                     "score >= threshold" true on nearly any audio (fires immediately, not on
+                     the wake phrase) and used to leave the listener permanently disarmed after
+                     its first fire — see wake.rs store_threshold's matching clamp. -->
+              </div>
+            </div>
               </div>
             </div>
           </div>
@@ -615,27 +621,39 @@
           </div>
         </section>
 
-        <!-- Vocabulary -->
+        <!-- Names & Jargon (Vocabulary) -->
         <section class="pane" data-pane="vocabulary">
           <header class="pane-head">
-            <h1>Vocabulary</h1>
+            <h1>Names &amp; Jargon <span id="suggestionBadge" class="tag alpha" hidden></span></h1>
             <p>
-              Teach Verbatim custom words, names, and spellings. Terms are
-              preserved during formatting (and boost Deepgram speech-to-text).
+              Teach Verbatim custom words, names, and spellings. Written forms are
+              preserved during formatting; aliases boost speech-to-text and map
+              spoken phrases (e.g. “at the rate” → @).
             </p>
           </header>
+          <div class="card glossary-card">
+            <div id="glossaryList" class="editable-list"></div>
+          </div>
+          <h2 class="section-title">Add term</h2>
           <div class="card">
-            <div class="set-row">
-              <div class="control-row full">
-                <input
-                  id="vocabInput"
-                  type="text"
-                  placeholder="Add a term, name, or spelling…"
-                />
-                <button id="vocabAdd" class="btn">Add</button>
+            <div class="set-row stack">
+              <div class="meta">
+                <h3>Written form</h3>
+                <p>How it should appear in the final text (e.g. @, SaaSLabs).</p>
               </div>
+              <input id="glossaryTerm" type="text" placeholder="SaaSLabs or @" />
             </div>
-            <div id="vocabList" class="editable-list"></div>
+            <div class="set-row stack">
+              <div class="meta">
+                <h3>Heard as <span class="hint-inline">optional</span></h3>
+                <p>Comma-separated phrases STT might produce.</p>
+              </div>
+              <input id="glossaryAliases" type="text" placeholder="at the rate, sass labs" />
+            </div>
+            <div class="set-row">
+              <div class="meta"></div>
+              <button type="button" id="glossaryAdd" class="btn primary">Add term</button>
+            </div>
           </div>
         </section>
 

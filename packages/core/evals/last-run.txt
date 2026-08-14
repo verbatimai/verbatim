@@ -1,0 +1,5 @@
+Correction eval — 2026-08-13T10:02:56Z
+Model: openai/gpt-4o-mini (OpenRouter-first)
+Result: 13/52 passed (25%)
+Latency: p50=1487ms p95=2346ms max=2691ms
+Full report: packages/core/evals/report.md

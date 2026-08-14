@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer, type Server } from "node:http";
+import { createServer as createTcpServer } from "node:net";
 import { AddressInfo } from "node:net";
 import { OpenAiSTT } from "./openai.stt";
 import type { TranscriptEvent } from "./types";
@@ -220,5 +221,34 @@ describe("OpenAiSTT.transcribeBatch (against a mock /v1/audio/transcriptions)", 
     process.env.OPENAI_BATCH_MODEL = "gpt-transcribe-custom";
     const body = await batchBody({ apiKey: "k", model: "gpt-live-custom" });
     expect(body).toContain("gpt-transcribe-custom");
+  });
+});
+
+// Regression — same underlying bug as Deepgram: calling close() while the socket
+// is still CONNECTING (e.g. an instant start→stop) makes the `ws` library abort
+// the handshake and emit "WebSocket was closed before the connection was
+// established" as an 'error'. That's a side effect of a close WE asked for, not a
+// real stream failure, so onError() must stay silent while onClose() still fires.
+describe("OpenAiSTT close() while still CONNECTING (regression)", () => {
+  it("does not surface the handshake-abort error to onError, and still closes", async () => {
+    const server = createTcpServer(() => {}); // accept but never complete the WS handshake
+    await new Promise<void>((r) => server.listen(0, r));
+    const port = (server.address() as AddressInfo).port;
+    process.env.OPENAI_REALTIME_WS_URL = `ws://localhost:${port}`;
+
+    const stt = new OpenAiSTT();
+    const session = await stt.startSession({ apiKey: "k" });
+    let errored: Error | undefined;
+    let closed = false;
+    session.onError((e) => { errored = e; });
+    session.onClose(() => { closed = true; });
+    session.close();
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(errored).toBeUndefined();
+    expect(closed).toBe(true);
+
+    server.close();
+    delete process.env.OPENAI_REALTIME_WS_URL;
   });
 });

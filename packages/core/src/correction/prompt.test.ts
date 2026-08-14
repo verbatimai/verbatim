@@ -25,4 +25,13 @@ describe("language note (multilingual, 4.7)", () => {
     expect(u).toContain("Raw transcript:\nraw text");
     expect(u).toMatch(/language "es"/);
   });
+
+  it("appends glossary block when entries provided", () => {
+    const u = userMessage("hello", undefined, "en", [
+      { id: "1", term: "SaaSLabs", aliases: ["sass labs"], source: "manual", createdAt: 0 },
+    ]);
+    expect(u).toContain("User glossary");
+    expect(u).toContain("SaaSLabs");
+    expect(u).toContain("sass labs");
+  });
 });

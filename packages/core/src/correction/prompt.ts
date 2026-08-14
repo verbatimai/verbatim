@@ -24,6 +24,7 @@ export const FORMAT_PROMPT = `You format a cleaned dictation transcript into pol
 - use "-" bullets for unordered lists, and paragraph breaks where the speaker clearly changes topic;
 - capitalize list items and sentence starts.
 Do NOT add new information, opinions, or content the speaker didn't say, and do not change meaning. Preserve the speaker's words.
+If the user glossary maps a spoken phrase to a symbol (e.g. "at the rate" → @), keep the symbol — do NOT expand symbols back into words.
 Return ONLY the formatted text as plain text with real newlines (no markdown code fences, no commentary).`;
 
 // 5.3 — Punctuation / formatting modes. One size doesn't fit chat, prose, and code.

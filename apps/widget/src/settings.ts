@@ -6,6 +6,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
+  acceptSuggestion,
+  dismissSuggestion,
+  EMPTY_GLOSSARY,
+  newGlossaryId,
+  type GlossaryEntry,
+  type UserGlossary,
+} from "./glossary";
+import {
   sttModels,
   sttLanguages,
   sttSupportsAutoDetect,
@@ -97,9 +105,11 @@ const autoDetectEl = $<HTMLInputElement>("autoDetect");
 const autoDetectSwitchEl = () => autoDetectEl?.closest<HTMLElement>(".switch") ?? null;
 const autoDetectHintEl = $("autoDetectHint");
 const telemetryEl = $<HTMLInputElement>("telemetry");
-const vocabListEl = $("vocabList");
-const vocabInputEl = $<HTMLInputElement>("vocabInput");
-const vocabAddEl = $<HTMLButtonElement>("vocabAdd");
+const vocabListEl = $("glossaryList");
+const vocabInputEl = $<HTMLInputElement>("glossaryTerm");
+const vocabAddEl = $<HTMLButtonElement>("glossaryAdd");
+const glossaryAliasesEl = $<HTMLInputElement>("glossaryAliases");
+const suggestionBadgeEl = $<HTMLElement>("suggestionBadge");
 const snipListEl = $("snipList");
 const snipTriggerEl = $<HTMLInputElement>("snipTrigger");
 const snipExpansionEl = $<HTMLInputElement>("snipExpansion");
@@ -122,7 +132,7 @@ const wakeWordThresholdEl = $<HTMLInputElement>("wakeWordThreshold");
 
 let config: AppConfig = {
   sttProvider: "pyai",
-  correctionProvider: "pyai",
+  correctionProvider: "openai",
   sttModel: "",
   correctionModel: "",
   language: "en",
@@ -758,7 +768,7 @@ function initWakeWord() {
   if (!wakeWordEnableEl || !wakeWordHandlerEl || !wakeWordThresholdEl) return;
   wakeWordEnableEl.checked = !!config.wakeWordEnabled;
   wakeWordHandlerEl.value = config.wakeWordHandler ?? "dictate";
-  wakeWordThresholdEl.value = String(config.wakeWordThreshold ?? 0.5);
+  wakeWordThresholdEl.value = String(config.wakeWordThreshold ?? 0.3);
   wakeWordEnableEl.onchange = () => { void patchConfig({ wakeWordEnabled: wakeWordEnableEl.checked }); };
   wakeWordHandlerEl.onchange = () => { void patchConfig({ wakeWordHandler: wakeWordHandlerEl.value }); };
   wakeWordThresholdEl.onchange = () => { void patchConfig({ wakeWordThreshold: Number(wakeWordThresholdEl.value) }); };
@@ -903,41 +913,103 @@ async function refreshPttStatus() {
   else pttStatusEl.textContent = "";
 }
 
-// ---- 3.4 vocabulary — a separate store (vocabulary.json) via vocab_* commands. Custom
-// terms are injected into the format prompt (+ Deepgram keyword boost). ----
+// ---- 3.4 Names & Jargon — glossary.json via glossary_get / glossary_save. Entries carry
+// written form + heard-as aliases; suggested entries come from auto-learn in the overlay. ----
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+async function loadGlossary(): Promise<UserGlossary> {
+  try {
+    return await invoke<UserGlossary>("glossary_get");
+  } catch {
+    return EMPTY_GLOSSARY;
+  }
+}
+
+async function saveGlossary(glossary: UserGlossary) {
+  await invoke("glossary_save", { glossary });
+}
+
 async function initVocabulary() {
   if (!vocabListEl) return;
   const render = async () => {
-    let terms: string[] = [];
-    try { terms = await invoke<string[]>("vocab_list"); } catch { terms = []; }
+    const glossary = await loadGlossary();
+    const suggestions = glossary.entries.filter((e) => e.source === "suggested");
+    if (suggestionBadgeEl) {
+      if (suggestions.length) {
+        suggestionBadgeEl.hidden = false;
+        suggestionBadgeEl.textContent = `${suggestions.length} suggested`;
+      } else {
+        suggestionBadgeEl.hidden = true;
+      }
+    }
     vocabListEl.innerHTML = "";
-    if (!terms.length) {
+    if (!glossary.entries.length) {
       const empty = document.createElement("p");
       empty.className = "hint";
-      empty.textContent = "No custom terms yet.";
+      empty.textContent = "No terms yet — add names and jargon below, or accept suggestions after dictation.";
       vocabListEl.appendChild(empty);
+      return;
     }
-    for (const term of terms) {
+    for (const entry of glossary.entries) {
       const row = document.createElement("div");
-      row.className = "list-row";
-      const label = document.createElement("span");
-      label.className = "list-term";
-      label.textContent = term;
-      const del = document.createElement("button");
-      del.className = "btn ghost";
-      del.textContent = "Delete";
-      del.onclick = async () => { try { await invoke("vocab_delete", { term }); await render(); } catch {} };
-      row.append(label, del);
+      row.className = "list-row glossary-row";
+      const label = document.createElement("div");
+      label.className = "glossary-entry";
+      const aliases = (entry.aliases ?? []).join(", ");
+      const meta = aliases
+        ? `heard as: ${aliases}`
+        : entry.source === "suggested"
+          ? "suggested from your edit"
+          : entry.source === "learned"
+            ? "learned"
+            : "";
+      label.innerHTML = `<span class="list-term">${esc(entry.term)}</span>${meta ? `<span class="glossary-meta">${esc(meta)}</span>` : ""}`;
+      const actions = document.createElement("div");
+      actions.className = "glossary-actions";
+      if (entry.source === "suggested") {
+        const accept = document.createElement("button");
+        accept.className = "btn primary";
+        accept.textContent = "Accept";
+        accept.onclick = async () => { await saveGlossary(acceptSuggestion(glossary, entry.id)); await render(); };
+        const dismiss = document.createElement("button");
+        dismiss.className = "btn ghost";
+        dismiss.textContent = "Dismiss";
+        dismiss.onclick = async () => { await saveGlossary(dismissSuggestion(glossary, entry.id)); await render(); };
+        actions.append(accept, dismiss);
+      } else {
+        const del = document.createElement("button");
+        del.className = "btn ghost";
+        del.textContent = "Delete";
+        del.onclick = async () => {
+          await saveGlossary({ ...glossary, entries: glossary.entries.filter((e) => e.id !== entry.id) });
+          await render();
+        };
+        actions.append(del);
+      }
+      row.append(label, actions);
       vocabListEl.appendChild(row);
     }
   };
   const add = async () => {
     const term = vocabInputEl?.value.trim() ?? "";
     if (!term) return;
-    try { await invoke("vocab_add", { term }); if (vocabInputEl) vocabInputEl.value = ""; await render(); } catch {}
+    const aliases = (glossaryAliasesEl?.value ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    const glossary = await loadGlossary();
+    const entry: GlossaryEntry = {
+      id: newGlossaryId(),
+      term,
+      aliases: aliases.length ? aliases : undefined,
+      source: "manual",
+      createdAt: Date.now(),
+    };
+    await saveGlossary({ ...glossary, entries: [...glossary.entries, entry] });
+    if (vocabInputEl) vocabInputEl.value = "";
+    if (glossaryAliasesEl) glossaryAliasesEl.value = "";
+    await render();
   };
   if (vocabAddEl) vocabAddEl.onclick = add;
   if (vocabInputEl) vocabInputEl.onkeydown = (e) => { if (e.key === "Enter") void add(); };
+  if (glossaryAliasesEl) glossaryAliasesEl.onkeydown = (e) => { if (e.key === "Enter") void add(); };
   await render();
 }
 

@@ -398,6 +398,30 @@ fn paste_fallback(text: &str) -> String {
     }
 }
 
+/// Read visible text from the focused editable field (post-injection learn loop).
+pub fn read_focused_field_text() -> Option<String> {
+    unsafe {
+        if !AXIsProcessTrusted() {
+            return None;
+        }
+        let focus = read_focus(600)?;
+        if is_secure(&focus) {
+            focus.release();
+            return None;
+        }
+        let mut text = string_attr(focus.el, "AXValue");
+        if text.is_empty() {
+            text = string_attr(focus.el, "AXSelectedText");
+        }
+        focus.release();
+        if text.trim().is_empty() {
+            None
+        } else {
+            Some(text)
+        }
+    }
+}
+
 /// Inject `text` into the focused field.
 ///
 /// Routing (AX is best-effort; paste is always the safety net):
