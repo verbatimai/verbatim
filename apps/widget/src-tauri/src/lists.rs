@@ -1,16 +1,79 @@
 //! Phase 3.4 / 3.5: vocabulary + snippets list stores.
 //!
 //! LIST data (not scalar config), so — like secrets — each lives in its OWN
-//! tauri-plugin-store file (vocabulary.json / snippets.json), NOT in `AppConfig`. That
-//! means Reset (`config::clear_config`) leaves them intact, matching the secrets policy.
-//! The backend never reads these files; the overlay sends the lists on the WS `start` frame.
+//! tauri-plugin-store file (vocabulary.json / snippets.json / glossary.json), NOT in
+//! `AppConfig`. Reset (`config::clear_config`) leaves them intact. The backend never
+//! reads these files; the overlay sends the lists on the WS `start` frame.
 
 use serde::{Deserialize, Serialize};
 
 const VOCAB_FILE: &str = "vocabulary.json";
 const VOCAB_KEY: &str = "terms";
+const GLOSSARY_FILE: &str = "glossary.json";
+const GLOSSARY_KEY: &str = "glossary";
 const SNIPPETS_FILE: &str = "snippets.json";
 const SNIPPETS_KEY: &str = "snippets";
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GlossaryEntry {
+    pub id: String,
+    pub term: String,
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    pub source: String,
+    #[serde(default)]
+    pub confidence: Option<f64>,
+    pub created_at: i64,
+    #[serde(default)]
+    pub last_used_at: Option<i64>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct UserGlossary {
+    #[serde(default = "glossary_version")]
+    pub version: u8,
+    #[serde(default)]
+    pub entries: Vec<GlossaryEntry>,
+}
+
+fn glossary_version() -> u8 {
+    1
+}
+
+fn read_glossary(app: &tauri::AppHandle) -> UserGlossary {
+    use tauri_plugin_store::StoreExt;
+    let Ok(store) = app.store(GLOSSARY_FILE) else {
+        return UserGlossary::default();
+    };
+    store
+        .get(GLOSSARY_KEY)
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default()
+}
+
+fn write_glossary(app: &tauri::AppHandle, glossary: &UserGlossary) -> Result<(), String> {
+    use tauri_plugin_store::StoreExt;
+    let store = app.store(GLOSSARY_FILE).map_err(|e| e.to_string())?;
+    store.set(
+        GLOSSARY_KEY,
+        serde_json::to_value(glossary).map_err(|e| e.to_string())?,
+    );
+    store.save().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn glossary_get(app: tauri::AppHandle) -> UserGlossary {
+    read_glossary(&app)
+}
+
+#[tauri::command]
+pub fn glossary_save(app: tauri::AppHandle, glossary: UserGlossary) -> Result<UserGlossary, String> {
+    write_glossary(&app, &glossary)?;
+    Ok(glossary)
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
