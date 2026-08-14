@@ -45,6 +45,7 @@ type AppConfig = {
   wakeWordThreshold?: number; // P-series — detection threshold 0..1
   showTranscript?: boolean; // Widget redesign — live-transcript/correction-reveal bubble (default true)
   showRemoved?: boolean; // Widget redesign — fade (vs. instantly cut) removed spans during the reveal (default true)
+  historyLimit?: number; // dictation history — how many recent entries to show: 10 | 20 | 50
 };
 
 // Mirrors packages/core's provider registries' `requiredKeys` and Rust's
@@ -85,6 +86,7 @@ const hotkeyPresetsEl = $("hotkeyPresets");
 const selfCorrectEl = $<HTMLInputElement>("selfCorrect");
 const formatToggleEl = $<HTMLInputElement>("formatToggle");
 const formatModeEl = $<HTMLSelectElement>("formatMode");
+const historyLimitEl = $<HTMLSelectElement>("historyLimit");
 const pasteLastCaptureEl = $<HTMLInputElement>("pasteLastCapture");
 const pasteLastClearEl = $<HTMLButtonElement>("pasteLastClear");
 const revertRawCaptureEl = $<HTMLInputElement>("revertRawCapture");
@@ -800,6 +802,15 @@ function initFormatMode() {
   formatModeEl.onchange = () => void patchConfig({ formatMode: formatModeEl.value as AppConfig["formatMode"] });
 }
 
+// ---- dictation history — how many recent entries the History tab shows (10/20/50, default
+// 20). Storage always keeps up to 50 regardless of this setting (see history.rs) — lowering
+// it here only narrows what's displayed, never deletes older entries. ----
+function initHistoryLimit() {
+  if (!historyLimitEl) return;
+  historyLimitEl.value = String(config.historyLimit ?? 20);
+  historyLimitEl.onchange = () => void patchConfig({ historyLimit: Number(historyLimitEl.value) });
+}
+
 // ---- 3.1 microphone device picker — enumerate audioinput devices, persist micDeviceId
 // ("" = system default). enumerateDevices() returns BLANK labels until getUserMedia has
 // been granted once, so we show fallback names + a hint in that state. Enumerate ONCE
@@ -988,6 +999,7 @@ function refreshControls() {
   initSelfCorrect();
   initFormat();
   initFormatMode();
+  initHistoryLimit();
   initAutoDetect();
   initTelemetry();
   if (micEnumerated) syncMicSelection(); else void initMicDevice();
@@ -1040,6 +1052,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initSelfCorrect();
   initFormat();
   initFormatMode();
+  initHistoryLimit();
   initAutoDetect();
   initTelemetry();
   initReset();

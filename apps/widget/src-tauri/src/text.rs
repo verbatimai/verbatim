@@ -8,8 +8,9 @@ use crate::state::{LAST_RAW, LAST_RESULT};
 ///   "secure"    — focused field is a password/secure field; refused, text copied instead
 ///   "no_field"  — nothing editable was focused; text copied to the clipboard instead
 #[tauri::command]
-pub fn inject_text(text: String) -> Result<String, String> {
+pub fn inject_text(app: tauri::AppHandle, text: String) -> Result<String, String> {
     *LAST_RESULT.lock().unwrap() = Some(text.clone()); // remember for paste-last (2.1)
+    let _ = crate::history::record(&app, &text); // best-effort — never blocks insert/copy
     #[cfg(target_os = "macos")]
     {
         Ok(crate::axinject::inject(&text))

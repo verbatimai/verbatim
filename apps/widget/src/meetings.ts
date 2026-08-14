@@ -16,6 +16,50 @@ type Stream = "me" | "them";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
+// ---- theme: light / dark / system — same pattern as app.ts/notes.ts, so the sidebar toggle
+// behaves identically everywhere. Tauri calls no-op harmlessly when run standalone in Chrome
+// (see the file header) — the capture/WS logic above is untouched either way. ----
+(async () => {
+  const themeOrder = ["system", "light", "dark"] as const;
+  type Theme = (typeof themeOrder)[number];
+  const isTheme = (t: unknown): t is Theme => (themeOrder as readonly unknown[]).includes(t);
+
+  const applyTheme = (t: Theme) => {
+    document.body.dataset.theme = t;
+    const label = document.getElementById("themeLabel");
+    if (label) label.textContent = t[0].toUpperCase() + t.slice(1);
+    try { localStorage.setItem("verbatim.theme", t); } catch {}
+  };
+
+  let current: Theme = (() => {
+    try { return (localStorage.getItem("verbatim.theme") as Theme) || "system"; } catch { return "system"; }
+  })();
+  applyTheme(current);
+
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const { listen } = await import("@tauri-apps/api/event");
+    void invoke<{ theme?: string }>("get_config")
+      .then((cfg) => { if (isTheme(cfg?.theme)) { current = cfg.theme; applyTheme(current); } })
+      .catch(() => {});
+    void listen<{ theme?: string }>("config-changed", (e) => {
+      const t = e.payload?.theme;
+      if (isTheme(t)) { current = t; applyTheme(t); }
+    });
+    document.getElementById("themeToggle")?.addEventListener("click", () => {
+      current = themeOrder[(themeOrder.indexOf(current) + 1) % themeOrder.length];
+      applyTheme(current);
+      void invoke("set_config", { patch: { theme: current } }).catch(() => {});
+    });
+  } catch {
+    // Standalone Chrome (no Tauri) — theme still cycles locally via localStorage.
+    document.getElementById("themeToggle")?.addEventListener("click", () => {
+      current = themeOrder[(themeOrder.indexOf(current) + 1) % themeOrder.length];
+      applyTheme(current);
+    });
+  }
+})();
+
 const els = {
   micSel: $<HTMLSelectElement>("micDevice"),
   sysSel: $<HTMLSelectElement>("sysDevice"),

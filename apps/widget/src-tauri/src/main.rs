@@ -30,10 +30,12 @@
 mod backend;
 mod command;
 mod config;
+mod history;
 mod hotkey;
 mod inject;
 mod keys;
 mod lists;
+mod notes;
 mod secrets;
 mod shortcuts;
 mod state;
@@ -138,6 +140,13 @@ fn main() {
             lists::snip_list,
             lists::snip_add,
             lists::snip_delete,
+            history::history_list,
+            history::history_delete,
+            history::history_clear,
+            notes::note_list,
+            notes::note_add,
+            notes::note_update,
+            notes::note_delete,
             keys::key_save,
             keys::key_save_clipboard,
             keys::key_get,
