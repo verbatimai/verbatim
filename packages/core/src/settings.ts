@@ -33,7 +33,7 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   sttProvider: "pyai",
-  correctionProvider: "pyai",
+  correctionProvider: "openai",
   language: "en",
   autoDetectLanguage: false,
 };

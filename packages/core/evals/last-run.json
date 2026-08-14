@@ -1,0 +1,1147 @@
+{
+  "summaries": [
+    {
+      "kind": "correction",
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "total": 52,
+      "passed": 50,
+      "failed": 2,
+      "passRate": 0.9615384615384616,
+      "latencyMs": {
+        "p50": 1127,
+        "p95": 1747,
+        "max": 3649
+      },
+      "cases": [
+        {
+          "id": "sc_001",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1576,
+          "input": "i want to schedule the meeting at saturday no no schedule on friday",
+          "actual": "i want to schedule the meeting  on friday",
+          "expected": "i want to schedule the meeting on friday",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"i want to schedule the meeting on friday\",\"edits\":[{\"raw\":\"at saturday no no schedule\",\"replacement\":\"\",\"reason\":\"false_start\"}]}",
+          "edits": [
+            {
+              "raw": "at saturday no no schedule",
+              "replacement": "",
+              "reason": "false_start"
+            }
+          ]
+        },
+        {
+          "id": "sc_002",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 973,
+          "input": "let's do tuesday no wednesday",
+          "actual": "let's do  wednesday",
+          "expected": "let's do wednesday",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"let's do wednesday\",\"edits\":[{\"raw\":\"tuesday no\",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "tuesday no",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "sc_003",
+          "pass": true,
+          "errors": [],
+          "warnings": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "latencyMs": 1099,
+          "input": "i'll send you the deck sorry the doc by end of day",
+          "actual": "i'll send you the doc by end of day",
+          "expected": "i'll send you the doc by end of day",
+          "valid": false,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"i'll send you the doc by end of day\",\"edits\":[{\"raw\":\"sorry the\",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "sorry the",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "sc_004",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1010,
+          "input": "we need three chairs no four chairs for the standup",
+          "actual": "we need  four chairs for the standup",
+          "expected": "we need four chairs for the standup",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"we need four chairs for the standup\",\"edits\":[{\"raw\":\"three chairs no\",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "three chairs no",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "sc_005",
+          "pass": true,
+          "errors": [],
+          "warnings": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "latencyMs": 1033,
+          "input": "the deploy is going out tonight actually tomorrow morning",
+          "actual": "the deploy is going out tomorrow morning",
+          "expected": "the deploy is going out tomorrow morning",
+          "valid": false,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"the deploy is going out tomorrow morning\",\"edits\":[{\"raw\":\"actually\",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "actually",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "sc_006",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 994,
+          "input": "i went there yesterday i mean i'm going tomorrow",
+          "actual": " i'm going tomorrow",
+          "expected": "i'm going tomorrow",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"i'm going tomorrow\",\"edits\":[{\"raw\":\"i went there yesterday i mean\",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "i went there yesterday i mean",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "sc_007",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1299,
+          "input": "put it in the shared drive scratch that put it in notion",
+          "actual": " put it in notion",
+          "expected": "put it in notion",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"put it in notion\",\"edits\":[{\"raw\":\"put it in the shared drive scratch that\",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "put it in the shared drive scratch that",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "sc_008",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1315,
+          "input": "book the small room no the big one we have twelve people",
+          "actual": "book the big one we have twelve people",
+          "expected": "book the big one we have twelve people",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"book the big one we have twelve people\",\"edits\":[{\"raw\":\"the small room no the big one\",\"replacement\":\"the big one\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "the small room no the big one",
+              "replacement": "the big one",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "sc_009",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1168,
+          "input": "the latency was two hundred milliseconds no sorry two seconds",
+          "actual": "the latency was  two seconds",
+          "expected": "the latency was two seconds",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"the latency was two seconds\",\"edits\":[{\"raw\":\"two hundred milliseconds no sorry\",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "two hundred milliseconds no sorry",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "sc_010",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1158,
+          "input": "cancel the friday sync uh i mean move it to monday",
+          "actual": " move it to monday",
+          "expected": "move it to monday",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"move it to monday\",\"edits\":[{\"raw\":\"cancel the friday sync uh i mean\",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "cancel the friday sync uh i mean",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "scm_001",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1118,
+          "input": "let's meet at three no four no actually let's make it five",
+          "actual": "let's make it five",
+          "expected": "let's make it five",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"let's make it five\",\"edits\":[{\"raw\":\"let's meet at three no four no actually \",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "let's meet at three no four no actually ",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "scm_002",
+          "pass": true,
+          "errors": [],
+          "warnings": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "latencyMs": 1217,
+          "input": "send it to john no to jane and cc uh no don't cc anyone",
+          "actual": "send it to jane and don't cc anyone",
+          "expected": "send it to jane and don't cc anyone",
+          "valid": false,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"send it to jane and don't cc anyone\",\"edits\":[{\"raw\":\"to john no to jane and cc uh no \",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "to john no to jane and cc uh no ",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "scm_003",
+          "pass": true,
+          "errors": [],
+          "warnings": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "latencyMs": 1268,
+          "input": "the standup is at nine sorry nine thirty in the small room no the big room",
+          "actual": "the standup is at nine thirty in the big room",
+          "expected": "the standup is at nine thirty in the big room",
+          "valid": false,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"the standup is at nine thirty in the big room\",\"edits\":[{\"raw\":\"at nine sorry nine thirty\",\"replacement\":\"at nine thirty\",\"reason\":\"self_correction\"},{\"raw\":\"no the big room\",\"replacement\":\"the big room\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "at nine sorry nine thirty",
+              "replacement": "at nine thirty",
+              "reason": "self_correction"
+            },
+            {
+              "raw": "no the big room",
+              "replacement": "the big room",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "scm_004",
+          "pass": true,
+          "errors": [],
+          "warnings": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "latencyMs": 1207,
+          "input": "i need the report by monday no tuesday and the deck by wednesday no thursday",
+          "actual": "i need the report by tuesday and the deck by thursday",
+          "expected": "i need the report by tuesday and the deck by thursday",
+          "valid": false,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"i need the report by tuesday and the deck by thursday\",\"edits\":[{\"raw\":\"by monday no\",\"replacement\":\"\",\"reason\":\"self_correction\"},{\"raw\":\"wednesday no\",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "by monday no",
+              "replacement": "",
+              "reason": "self_correction"
+            },
+            {
+              "raw": "wednesday no",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "fil_001",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1431,
+          "input": "um so i think we should uh ship it on friday you know",
+          "actual": " i think we should  ship it on friday ",
+          "expected": "i think we should ship it on friday",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"i think we should ship it on friday\",\"edits\":[{\"raw\":\"um so\",\"replacement\":\"\",\"reason\":\"filler\"},{\"raw\":\"uh\",\"replacement\":\"\",\"reason\":\"filler\"},{\"raw\":\"you know\",\"replacement\":\"\",\"reason\":\"filler\"}]}",
+          "edits": [
+            {
+              "raw": "um so",
+              "replacement": "",
+              "reason": "filler"
+            },
+            {
+              "raw": "uh",
+              "replacement": "",
+              "reason": "filler"
+            },
+            {
+              "raw": "you know",
+              "replacement": "",
+              "reason": "filler"
+            }
+          ]
+        },
+        {
+          "id": "fil_002",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1237,
+          "input": "basically the thing is like we need more time",
+          "actual": " the thing is  we need more time",
+          "expected": "the thing is we need more time",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"the thing is we need more time\",\"edits\":[{\"raw\":\"basically\",\"replacement\":\"\",\"reason\":\"filler\"},{\"raw\":\"like\",\"replacement\":\"\",\"reason\":\"filler\"}]}",
+          "edits": [
+            {
+              "raw": "basically",
+              "replacement": "",
+              "reason": "filler"
+            },
+            {
+              "raw": "like",
+              "replacement": "",
+              "reason": "filler"
+            }
+          ]
+        },
+        {
+          "id": "fil_003",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1449,
+          "input": "er can you send me the link",
+          "actual": "can you send me the link",
+          "expected": "can you send me the link",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"can you send me the link\",\"edits\":[{\"raw\":\"er \",\"replacement\":\"\",\"reason\":\"filler\"}]}",
+          "edits": [
+            {
+              "raw": "er ",
+              "replacement": "",
+              "reason": "filler"
+            }
+          ]
+        },
+        {
+          "id": "fil_004",
+          "pass": true,
+          "errors": [],
+          "warnings": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "latencyMs": 1140,
+          "input": "i mean um it's kind of blocked on the api",
+          "actual": "it's blocked on the api",
+          "expected": "it's blocked on the api",
+          "valid": false,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"it's blocked on the api\",\"edits\":[{\"raw\":\"i mean um it's kind of\",\"replacement\":\"\",\"reason\":\"filler|self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "i mean um it's kind of",
+              "replacement": "",
+              "reason": "filler|self_correction"
+            }
+          ]
+        },
+        {
+          "id": "fil_005",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 983,
+          "input": "so yeah anyway let's move on to the next item",
+          "actual": "let's move on to the next item",
+          "expected": "let's move on to the next item",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"let's move on to the next item\",\"edits\":[{\"raw\":\"so yeah anyway \",\"replacement\":\"\",\"reason\":\"filler\"}]}",
+          "edits": [
+            {
+              "raw": "so yeah anyway ",
+              "replacement": "",
+              "reason": "filler"
+            }
+          ]
+        },
+        {
+          "id": "rep_001",
+          "pass": true,
+          "errors": [],
+          "warnings": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "latencyMs": 968,
+          "input": "i i i want to book the room",
+          "actual": "i want to book the room",
+          "expected": "i want to book the room",
+          "valid": false,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"i want to book the room\",\"edits\":[{\"raw\":\"i i i\",\"replacement\":\"\",\"reason\":\"repetition\"}]}",
+          "edits": [
+            {
+              "raw": "i i i",
+              "replacement": "",
+              "reason": "repetition"
+            }
+          ]
+        },
+        {
+          "id": "rep_002",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1133,
+          "input": "can you can you check the logs for me",
+          "actual": "can you check the logs for me",
+          "expected": "can you check the logs for me",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"can you check the logs for me\",\"edits\":[{\"raw\":\"can you can you\",\"replacement\":\"can you\",\"reason\":\"repetition\"}]}",
+          "edits": [
+            {
+              "raw": "can you can you",
+              "replacement": "can you",
+              "reason": "repetition"
+            }
+          ]
+        },
+        {
+          "id": "rep_003",
+          "pass": true,
+          "errors": [],
+          "warnings": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "latencyMs": 1039,
+          "input": "the the the deploy failed again",
+          "actual": "the deploy failed again",
+          "expected": "the deploy failed again",
+          "valid": false,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"the deploy failed again\",\"edits\":[{\"raw\":\"the the the\",\"replacement\":\"\",\"reason\":\"repetition\"}]}",
+          "edits": [
+            {
+              "raw": "the the the",
+              "replacement": "",
+              "reason": "repetition"
+            }
+          ]
+        },
+        {
+          "id": "rep_004",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1219,
+          "input": "we need to we need to fix the flow control bug",
+          "actual": "we need to fix the flow control bug",
+          "expected": "we need to fix the flow control bug",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"we need to fix the flow control bug\",\"edits\":[{\"raw\":\"we need to we need to\",\"replacement\":\"we need to\",\"reason\":\"repetition\"}]}",
+          "edits": [
+            {
+              "raw": "we need to we need to",
+              "replacement": "we need to",
+              "reason": "repetition"
+            }
+          ]
+        },
+        {
+          "id": "rep_005",
+          "pass": true,
+          "errors": [],
+          "warnings": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "latencyMs": 1085,
+          "input": "it's it's it's not responding at all",
+          "actual": "it's not responding at all",
+          "expected": "it's not responding at all",
+          "valid": false,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"it's not responding at all\",\"edits\":[{\"raw\":\"it's it's\",\"replacement\":\"it's\",\"reason\":\"repetition\"}]}",
+          "edits": [
+            {
+              "raw": "it's it's",
+              "replacement": "it's",
+              "reason": "repetition"
+            }
+          ]
+        },
+        {
+          "id": "fs_001",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1147,
+          "input": "can you send the wait let me check my calendar first",
+          "actual": " let me check my calendar first",
+          "expected": "let me check my calendar first",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"let me check my calendar first\",\"edits\":[{\"raw\":\"can you send the wait\",\"replacement\":\"\",\"reason\":\"false_start\"}]}",
+          "edits": [
+            {
+              "raw": "can you send the wait",
+              "replacement": "",
+              "reason": "false_start"
+            }
+          ]
+        },
+        {
+          "id": "fs_002",
+          "pass": true,
+          "errors": [],
+          "warnings": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "latencyMs": 1146,
+          "input": "i was thinking we could uh how about we defer this to next sprint",
+          "actual": "how about we defer this to next sprint",
+          "expected": "how about we defer this to next sprint",
+          "valid": false,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"how about we defer this to next sprint\",\"edits\":[{\"raw\":\"uh\",\"replacement\":\"\",\"reason\":\"filler\"}]}",
+          "edits": [
+            {
+              "raw": "uh",
+              "replacement": "",
+              "reason": "filler"
+            }
+          ]
+        },
+        {
+          "id": "fs_003",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1012,
+          "input": "the reason it broke is hold on is it even deployed",
+          "actual": " is it even deployed",
+          "expected": "is it even deployed",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"is it even deployed\",\"edits\":[{\"raw\":\"the reason it broke is hold on\",\"replacement\":\"\",\"reason\":\"false_start\"}]}",
+          "edits": [
+            {
+              "raw": "the reason it broke is hold on",
+              "replacement": "",
+              "reason": "false_start"
+            }
+          ]
+        },
+        {
+          "id": "fs_004",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1047,
+          "input": "we should prob we should just roll it back",
+          "actual": "we should  just roll it back",
+          "expected": "we should just roll it back",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"we should just roll it back\",\"edits\":[{\"raw\":\"prob we should\",\"replacement\":\"\",\"reason\":\"repetition\"}]}",
+          "edits": [
+            {
+              "raw": "prob we should",
+              "replacement": "",
+              "reason": "repetition"
+            }
+          ]
+        },
+        {
+          "id": "neg_001",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 3649,
+          "input": "don't schedule it on friday schedule it on monday",
+          "actual": "don't schedule it on friday schedule it on monday",
+          "expected": "don't schedule it on friday schedule it on monday",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"don't schedule it on friday schedule it on monday\",\"edits\":[]}",
+          "edits": []
+        },
+        {
+          "id": "neg_002",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 968,
+          "input": "no i don't think that's the right approach",
+          "actual": "no i don't think that's the right approach",
+          "expected": "no i don't think that's the right approach",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"no i don't think that's the right approach\",\"edits\":[]}",
+          "edits": []
+        },
+        {
+          "id": "neg_003",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 886,
+          "input": "the answer is no we are not shipping this week",
+          "actual": "the answer is no we are not shipping this week",
+          "expected": "the answer is no we are not shipping this week",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"the answer is no we are not shipping this week\",\"edits\":[]}",
+          "edits": []
+        },
+        {
+          "id": "neg_004",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1062,
+          "input": "um no that's not what i meant by idempotent",
+          "actual": " no that's not what i meant by idempotent",
+          "expected": "no that's not what i meant by idempotent",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"no that's not what i meant by idempotent\",\"edits\":[{\"raw\":\"um\",\"replacement\":\"\",\"reason\":\"filler\"}]}",
+          "edits": [
+            {
+              "raw": "um",
+              "replacement": "",
+              "reason": "filler"
+            }
+          ]
+        },
+        {
+          "id": "neg_005",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1331,
+          "input": "say no to the vendor and yes to building it in house",
+          "actual": "say no to the vendor and yes to building it in house",
+          "expected": "say no to the vendor and yes to building it in house",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"say no to the vendor and yes to building it in house\",\"edits\":[]}",
+          "edits": []
+        },
+        {
+          "id": "ent_001",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1174,
+          "input": "email it to harshit at saaslabs no at the personal address",
+          "actual": "email it to harshit at the personal address",
+          "expected": "email it to harshit at the personal address",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"email it to harshit at the personal address\",\"edits\":[{\"raw\":\"at saaslabs no \",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "at saaslabs no ",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "ent_002",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1045,
+          "input": "assign the ticket to priya sorry to rohan",
+          "actual": "assign the ticket  to rohan",
+          "expected": "assign the ticket to rohan",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"assign the ticket to rohan\",\"edits\":[{\"raw\":\"to priya sorry\",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "to priya sorry",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "ent_003",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1258,
+          "input": "we're using deepgram no assemblyai for this pipeline",
+          "actual": "we're using assemblyai for this pipeline",
+          "expected": "we're using assemblyai for this pipeline",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"we're using assemblyai for this pipeline\",\"edits\":[{\"raw\":\"deepgram no \",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "deepgram no ",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "num_001",
+          "pass": true,
+          "errors": [],
+          "warnings": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "latencyMs": 912,
+          "input": "set the timeout to thirty seconds no make it sixty",
+          "actual": "set the timeout to sixty",
+          "expected": "set the timeout to sixty",
+          "valid": false,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"set the timeout to sixty\",\"edits\":[{\"raw\":\"thirty seconds no \",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "thirty seconds no ",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "num_002",
+          "pass": true,
+          "errors": [],
+          "warnings": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "latencyMs": 1022,
+          "input": "invite twenty people wait twenty five people",
+          "actual": "invite twenty five people",
+          "expected": "invite twenty five people",
+          "valid": false,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"invite twenty five people\",\"edits\":[{\"raw\":\"wait \",\"replacement\":\"\",\"reason\":\"false_start\"}]}",
+          "edits": [
+            {
+              "raw": "wait ",
+              "replacement": "",
+              "reason": "false_start"
+            }
+          ]
+        },
+        {
+          "id": "num_003",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1346,
+          "input": "the backlog is nine hundred thousand messages sorry nine million",
+          "actual": "the backlog is  nine million",
+          "expected": "the backlog is nine million",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"the backlog is nine million\",\"edits\":[{\"raw\":\"nine hundred thousand messages sorry\",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "nine hundred thousand messages sorry",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "meta_001",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1127,
+          "input": "the meeting is on friday delete that last part the meeting is cancelled",
+          "actual": " the meeting is cancelled",
+          "expected": "the meeting is cancelled",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"the meeting is cancelled\",\"edits\":[{\"raw\":\"the meeting is on friday delete that last part\",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "the meeting is on friday delete that last part",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "meta_002",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1054,
+          "input": "reschedule to noon scratch that keep it as is",
+          "actual": " keep it as is",
+          "expected": "keep it as is",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"keep it as is\",\"edits\":[{\"raw\":\"reschedule to noon scratch that\",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "reschedule to noon scratch that",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "nop_001",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1097,
+          "input": "please book the conference room for friday at two",
+          "actual": "please book the conference room for friday at two",
+          "expected": "please book the conference room for friday at two",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"please book the conference room for friday at two\",\"edits\":[]}",
+          "edits": []
+        },
+        {
+          "id": "nop_002",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1012,
+          "input": "the flow control permit leak was causing the consumer to stall",
+          "actual": "the flow control permit leak was causing the consumer to stall",
+          "expected": "the flow control permit leak was causing the consumer to stall",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"the flow control permit leak was causing the consumer to stall\",\"edits\":[]}",
+          "edits": []
+        },
+        {
+          "id": "nop_003",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1023,
+          "input": "i want to schedule the meeting on friday",
+          "actual": "i want to schedule the meeting on friday",
+          "expected": "i want to schedule the meeting on friday",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"i want to schedule the meeting on friday\",\"edits\":[]}",
+          "edits": []
+        },
+        {
+          "id": "nop_004",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 1146,
+          "input": "can you review the pull request before the standup tomorrow",
+          "actual": "review the pull request before the standup tomorrow",
+          "expected": "can you review the pull request before the standup tomorrow",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"review the pull request before the standup tomorrow\",\"edits\":[{\"raw\":\"can you \",\"replacement\":\"\",\"reason\":\"false_start\"}]}",
+          "edits": [
+            {
+              "raw": "can you ",
+              "replacement": "",
+              "reason": "false_start"
+            }
+          ]
+        },
+        {
+          "id": "nop_005",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 939,
+          "input": "we like the new latency numbers a lot",
+          "actual": "we like the new latency numbers a lot",
+          "expected": "we like the new latency numbers a lot",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"we like the new latency numbers a lot\",\"edits\":[]}",
+          "edits": []
+        },
+        {
+          "id": "ins_001",
+          "pass": true,
+          "errors": [],
+          "warnings": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "latencyMs": 957,
+          "input": "schedule it at saturday no friday",
+          "actual": "schedule it on friday",
+          "expected": "schedule it on friday",
+          "valid": false,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"schedule it on friday\",\"edits\":[{\"raw\":\"at saturday no \",\"replacement\":\"\",\"reason\":\"false_start\"}]}",
+          "edits": [
+            {
+              "raw": "at saturday no ",
+              "replacement": "",
+              "reason": "false_start"
+            }
+          ]
+        },
+        {
+          "id": "ins_002",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1130,
+          "input": "he don't he doesn't have access yet",
+          "actual": " he doesn't have access yet",
+          "expected": "he doesn't have access yet",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"he doesn't have access yet\",\"edits\":[{\"raw\":\"he don't\",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "he don't",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "ins_003",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1231,
+          "input": "there is three no four blockers left",
+          "actual": "there are four blockers left",
+          "expected": "there are four blockers left",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"there are four blockers left\",\"edits\":[{\"raw\":\"there is three no four\",\"replacement\":\"there are four\",\"reason\":\"number correction\"}]}",
+          "edits": [
+            {
+              "raw": "there is three no four",
+              "replacement": "there are four",
+              "reason": "number correction"
+            }
+          ]
+        },
+        {
+          "id": "ins_004",
+          "pass": true,
+          "errors": [],
+          "warnings": [
+            "valid_reconstruct: edits did not rebuild model clean_text"
+          ],
+          "latencyMs": 1053,
+          "input": "i talked to him no to them yesterday",
+          "actual": "i talked to them yesterday",
+          "expected": "i talked to them yesterday",
+          "valid": false,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"i talked to them yesterday\",\"edits\":[{\"raw\":\"no\",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "no",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "long_001",
+          "pass": false,
+          "errors": [
+            "clean_text mismatch (expected normalized_exact)"
+          ],
+          "warnings": [],
+          "latencyMs": 2081,
+          "input": "so um i wanted to walk through the the architecture we have the hotkey capture layer then it streams to uh to the asr endpoint and then no wait before that there's a gate layer that checks the audio level and then it streams to the asr endpoint",
+          "actual": "i wanted to walk through the architecture we have the hotkey capture layer then it streams to the asr endpoint and then there's a gate layer that checks the audio level and then it streams to the asr endpoint",
+          "expected": "i wanted to walk through the architecture we have the hotkey capture layer then there's a gate layer that checks the audio level and then it streams to the asr endpoint",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"i wanted to walk through the architecture we have the hotkey capture layer then it streams to the asr endpoint and then there's a gate layer that checks the audio level and then it streams to the asr endpoint\",\"edits\":[{\"raw\":\"so um \",\"replacement\":\"\",\"reason\":\"filler\"},{\"raw\":\"the the\",\"replacement\":\"the\",\"reason\":\"repetition\"},{\"raw\":\"uh to \",\"replacement\":\"\",\"reason\":\"filler\"},{\"raw\":\"no wait before that \",\"replacement\":\"\",\"reason\":\"self_correction\"}]}",
+          "edits": [
+            {
+              "raw": "so um ",
+              "replacement": "",
+              "reason": "filler"
+            },
+            {
+              "raw": "the the",
+              "replacement": "the",
+              "reason": "repetition"
+            },
+            {
+              "raw": "uh to ",
+              "replacement": "",
+              "reason": "filler"
+            },
+            {
+              "raw": "no wait before that ",
+              "replacement": "",
+              "reason": "self_correction"
+            }
+          ]
+        },
+        {
+          "id": "long_002",
+          "pass": true,
+          "errors": [],
+          "warnings": [],
+          "latencyMs": 1747,
+          "input": "the plan is to ship on friday no let me rephrase the plan is to cut the release branch on friday and ship on monday assuming uh assuming the evals pass",
+          "actual": " the plan is to cut the release branch on friday and ship on monday assuming  the evals pass",
+          "expected": "the plan is to cut the release branch on friday and ship on monday assuming the evals pass",
+          "valid": true,
+          "model": "gpt-4o-mini",
+          "modelResponse": "{\"clean_text\":\"the plan is to cut the release branch on friday and ship on monday assuming the evals pass\",\"edits\":[{\"raw\":\"the plan is to ship on friday no let me rephrase\",\"replacement\":\"\",\"reason\":\"self_correction\"},{\"raw\":\"uh assuming\",\"replacement\":\"\",\"reason\":\"filler\"}]}",
+          "edits": [
+            {
+              "raw": "the plan is to ship on friday no let me rephrase",
+              "replacement": "",
+              "reason": "self_correction"
+            },
+            {
+              "raw": "uh assuming",
+              "replacement": "",
+              "reason": "filler"
+            }
+          ]
+        }
+      ],
+      "ranAt": "2026-08-13T12:04:26.707Z",
+      "passedCaseIds": [
+        "sc_001",
+        "sc_002",
+        "sc_003",
+        "sc_004",
+        "sc_005",
+        "sc_006",
+        "sc_007",
+        "sc_008",
+        "sc_009",
+        "sc_010",
+        "scm_001",
+        "scm_002",
+        "scm_003",
+        "scm_004",
+        "fil_001",
+        "fil_002",
+        "fil_003",
+        "fil_004",
+        "fil_005",
+        "rep_001",
+        "rep_002",
+        "rep_003",
+        "rep_004",
+        "rep_005",
+        "fs_001",
+        "fs_002",
+        "fs_003",
+        "fs_004",
+        "neg_001",
+        "neg_002",
+        "neg_003",
+        "neg_004",
+        "neg_005",
+        "ent_001",
+        "ent_002",
+        "ent_003",
+        "num_001",
+        "num_002",
+        "num_003",
+        "meta_001",
+        "meta_002",
+        "nop_001",
+        "nop_002",
+        "nop_003",
+        "nop_005",
+        "ins_001",
+        "ins_002",
+        "ins_003",
+        "ins_004",
+        "long_002"
+      ],
+      "failedCaseIds": [
+        "nop_004",
+        "long_001"
+      ]
+    }
+  ],
+  "writtenAt": "2026-08-13T12:04:26.712Z"
+}

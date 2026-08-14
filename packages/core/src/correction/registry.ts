@@ -17,7 +17,7 @@ const PROVIDERS: Record<string, () => CorrectionProvider> = {
   // openai: () => new OpenAiCorrection(),
 };
 
-export function getCorrectionProvider(id: string = process.env.CORRECTION_PROVIDER ?? "pyai"): CorrectionProvider {
+export function getCorrectionProvider(id: string = process.env.CORRECTION_PROVIDER ?? "openai"): CorrectionProvider {
   const make = PROVIDERS[id];
   if (!make) {
     throw new Error(`Unknown correction provider '${id}'. Available: ${Object.keys(PROVIDERS).join(", ")}`);

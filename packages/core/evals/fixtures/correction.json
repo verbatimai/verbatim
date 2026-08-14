@@ -1,0 +1,73 @@
+{
+  "cases": [
+    {"id": "sc_001", "raw": "i want to schedule the meeting at saturday no no schedule on friday", "expected": "i want to schedule the meeting on friday"},
+    {"id": "sc_002", "raw": "let's do tuesday no wednesday", "expected": "let's do wednesday"},
+    {"id": "sc_003", "raw": "i'll send you the deck sorry the doc by end of day", "expected": "i'll send you the doc by end of day"},
+    {"id": "sc_004", "raw": "we need three chairs no four chairs for the standup", "expected": "we need four chairs for the standup"},
+    {"id": "sc_005", "raw": "the deploy is going out tonight actually tomorrow morning", "expected": "the deploy is going out tomorrow morning"},
+    {"id": "sc_006", "raw": "i went there yesterday i mean i'm going tomorrow", "expected": "i'm going tomorrow"},
+    {"id": "sc_007", "raw": "put it in the shared drive scratch that put it in notion", "expected": "put it in notion"},
+    {"id": "sc_008", "raw": "book the small room no the big one we have twelve people", "expected": "book the big one we have twelve people"},
+    {"id": "sc_009", "raw": "the latency was two hundred milliseconds no sorry two seconds", "expected": "the latency was two seconds"},
+    {"id": "sc_010", "raw": "cancel the friday sync uh i mean move it to monday", "expected": "move it to monday"},
+
+    {"id": "scm_001", "raw": "let's meet at three no four no actually let's make it five", "expected": "let's make it five"},
+    {"id": "scm_002", "raw": "send it to john no to jane and cc uh no don't cc anyone", "expected": "send it to jane and don't cc anyone"},
+    {"id": "scm_003", "raw": "the standup is at nine sorry nine thirty in the small room no the big room", "expected": "the standup is at nine thirty in the big room"},
+    {"id": "scm_004", "raw": "i need the report by monday no tuesday and the deck by wednesday no thursday", "expected": "i need the report by tuesday and the deck by thursday"},
+
+    {"id": "fil_001", "raw": "um so i think we should uh ship it on friday you know", "expected": "i think we should ship it on friday"},
+    {"id": "fil_002", "raw": "basically the thing is like we need more time", "expected": "the thing is we need more time"},
+    {"id": "fil_003", "raw": "er can you send me the link", "expected": "can you send me the link"},
+    {"id": "fil_004", "raw": "i mean um it's kind of blocked on the api", "expected": "it's blocked on the api"},
+    {"id": "fil_005", "raw": "so yeah anyway let's move on to the next item", "expected": "let's move on to the next item"},
+
+    {"id": "rep_001", "raw": "i i i want to book the room", "expected": "i want to book the room"},
+    {"id": "rep_002", "raw": "can you can you check the logs for me", "expected": "can you check the logs for me"},
+    {"id": "rep_003", "raw": "the the the deploy failed again", "expected": "the deploy failed again"},
+    {"id": "rep_004", "raw": "we need to we need to fix the flow control bug", "expected": "we need to fix the flow control bug"},
+    {"id": "rep_005", "raw": "it's it's it's not responding at all", "expected": "it's not responding at all"},
+
+    {"id": "fs_001", "raw": "can you send the wait let me check my calendar first", "expected": "let me check my calendar first"},
+    {"id": "fs_002", "raw": "i was thinking we could uh how about we defer this to next sprint", "expected": "how about we defer this to next sprint"},
+    {"id": "fs_003", "raw": "the reason it broke is hold on is it even deployed", "expected": "is it even deployed"},
+    {"id": "fs_004", "raw": "we should prob we should just roll it back", "expected": "we should just roll it back"},
+
+    {"id": "neg_001", "raw": "don't schedule it on friday schedule it on monday", "expected": "don't schedule it on friday schedule it on monday"},
+    {"id": "neg_002", "raw": "no i don't think that's the right approach", "expected": "no i don't think that's the right approach"},
+    {"id": "neg_003", "raw": "the answer is no we are not shipping this week", "expected": "the answer is no we are not shipping this week"},
+    {"id": "neg_004", "raw": "um no that's not what i meant by idempotent", "expected": "no that's not what i meant by idempotent"},
+    {"id": "neg_005", "raw": "say no to the vendor and yes to building it in house", "expected": "say no to the vendor and yes to building it in house"},
+
+    {"id": "ent_001", "raw": "email it to harshit at saaslabs no at the personal address", "expected": "email it to harshit at the personal address"},
+    {"id": "ent_002", "raw": "assign the ticket to priya sorry to rohan", "expected": "assign the ticket to rohan"},
+    {"id": "ent_003", "raw": "we're using deepgram no assemblyai for this pipeline", "expected": "we're using assemblyai for this pipeline"},
+
+    {"id": "num_001", "raw": "set the timeout to thirty seconds no make it sixty", "expected": "set the timeout to sixty"},
+    {"id": "num_002", "raw": "invite twenty people wait twenty five people", "expected": "invite twenty five people"},
+    {"id": "num_003", "raw": "the backlog is nine hundred thousand messages sorry nine million", "expected": "the backlog is nine million"},
+
+    {"id": "meta_001", "raw": "the meeting is on friday delete that last part the meeting is cancelled", "expected": "the meeting is cancelled"},
+    {"id": "meta_002", "raw": "reschedule to noon scratch that keep it as is", "expected": "keep it as is"},
+
+    {"id": "nop_001", "raw": "please book the conference room for friday at two", "expected": "please book the conference room for friday at two"},
+    {"id": "nop_002", "raw": "the flow control permit leak was causing the consumer to stall", "expected": "the flow control permit leak was causing the consumer to stall"},
+    {"id": "nop_003", "raw": "i want to schedule the meeting on friday", "expected": "i want to schedule the meeting on friday"},
+    {"id": "nop_004", "raw": "can you review the pull request before the standup tomorrow", "expected": "can you review the pull request before the standup tomorrow"},
+    {"id": "nop_005", "raw": "we like the new latency numbers a lot", "expected": "we like the new latency numbers a lot"},
+
+    {"id": "ins_001", "raw": "schedule it at saturday no friday", "expected": "schedule it on friday"},
+    {"id": "ins_002", "raw": "he don't he doesn't have access yet", "expected": "he doesn't have access yet"},
+    {"id": "ins_003", "raw": "there is three no four blockers left", "expected": "there are four blockers left"},
+    {"id": "ins_004", "raw": "i talked to him no to them yesterday", "expected": "i talked to them yesterday"},
+
+    {"id": "long_001", "raw": "so um i wanted to walk through the the architecture we have the hotkey capture layer then it streams to uh to the asr endpoint and then no wait before that there's a gate layer that checks the audio level and then it streams to the asr endpoint", "expected": "i wanted to walk through the architecture we have the hotkey capture layer then there's a gate layer that checks the audio level and then it streams to the asr endpoint"},
+    {"id": "long_002", "raw": "the plan is to ship on friday no let me rephrase the plan is to cut the release branch on friday and ship on monday assuming uh assuming the evals pass", "expected": "the plan is to cut the release branch on friday and ship on monday assuming the evals pass"},
+
+    {"id": "gloss_001", "raw": "send the deck to priya at sass labs dot io", "expected": "send the deck to priya at SaaSLabs.io", "glossary": [{"term": "SaaSLabs", "aliases": ["sass labs"]}, {"term": "Priya"}]},
+    {"id": "gloss_002", "raw": "email harshit at sass labs about verbatim", "expected": "email harshit at SaaSLabs about Verbatim", "glossary": [{"term": "SaaSLabs", "aliases": ["sass labs"]}, {"term": "Verbatim", "aliases": ["verbatim"]}]},
+    {"id": "gloss_003", "raw": "loop in rohan and priya from assembly ai", "expected": "loop in Rohan and Priya from AssemblyAI", "glossary": [{"term": "Rohan"}, {"term": "Priya"}, {"term": "AssemblyAI", "aliases": ["assembly ai"]}]},
+    {"id": "gloss_004", "raw": "the kafka topic is user events not user event", "expected": "the Kafka topic is user events not user event", "glossary": [{"term": "Kafka", "aliases": ["kafka"]}]},
+    {"id": "gloss_005", "raw": "ping alex on slack about the openapi spec", "expected": "ping Alex on Slack about the OpenAPI spec", "glossary": [{"term": "Alex"}, {"term": "Slack", "aliases": ["slack"]}, {"term": "OpenAPI", "aliases": ["openapi"]}]}
+  ]
+}
