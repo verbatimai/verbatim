@@ -20,6 +20,9 @@ const CASES: Array<{ utterance: string; expected: CommandIntent }> = [
   { utterance: "lowercase that", expected: { action: "case", mode: "lower", target: "selection" } },
   { utterance: "make the last sentence bold", expected: { action: "format", style: "bold", target: "last-sentence" } },
   { utterance: "delete everything", expected: { action: "delete", target: "all" } },
+  // P1c — canned rewrite rows.
+  { utterance: "make this more formal", expected: { action: "rewrite", instruction: "make it more formal", target: "selection" } },
+  { utterance: "make that shorter", expected: { action: "rewrite", instruction: "make it shorter", target: "selection" } },
   // P2 — volume fast-path rows (localParse, no model round-trip).
   { utterance: "volume up", expected: { action: "volume", direction: "up" } },
   { utterance: "volume down", expected: { action: "volume", direction: "down" } },

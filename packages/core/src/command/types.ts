@@ -29,6 +29,13 @@ export type CommandIntent =
   | { action: "select"; target: Target }
   | { action: "insert"; what: "newline" }
   | { action: "insert"; what: "literal"; text: string }
+  // P1c — free-form rewrite of the target text, driven by a spoken instruction (e.g.
+  // "make this more formal", "make that shorter"). Unlike the fixed actions above, the
+  // TRANSFORMATION itself is open-ended — `instruction` carries it verbatim-ish — so
+  // execution is a two-phase round trip (read the target text -> one LLM call using
+  // whichever vendor/model is already selected as the correction provider -> paste the
+  // result back), not a single deterministic keystroke like the other actions.
+  | { action: "rewrite"; instruction: string; target: Target }
   // P2 — system commands (delegated to macOS, gated behind config.system_commands).
   | { action: "launch"; app: string }
   | { action: "volume"; direction: VolumeDir }

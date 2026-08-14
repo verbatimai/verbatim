@@ -136,6 +136,10 @@ fn main() {
             hotkey::get_command_hotkey,
             hotkey::set_command_hotkey,
             command::run_command,
+            // P1c — the two-phase rewrite round trip (read selection / paste result back);
+            // the backend LLM call itself happens over the WS, not a tauri command.
+            command::get_command_selection,
+            command::paste_rewrite,
             state::clear_recording_state,
             window::hide_widget,
             window::show_settings_window,

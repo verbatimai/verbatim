@@ -17,6 +17,19 @@ describe("validateIntent (closed grammar)", () => {
       .toEqual({ action: "insert", what: "literal", text: "hi@x.com" });
   });
 
+  it("accepts a well-formed P1c rewrite", () => {
+    expect(validateIntent({ action: "rewrite", instruction: "make this more formal", target: "selection" }))
+      .toEqual({ action: "rewrite", instruction: "make this more formal", target: "selection" });
+  });
+
+  it("rejects malformed P1c rewrites", () => {
+    expect(validateIntent({ action: "rewrite", instruction: "", target: "selection" })).toBeNull(); // empty instruction
+    expect(validateIntent({ action: "rewrite", instruction: "   ", target: "selection" })).toBeNull(); // whitespace-only
+    expect(validateIntent({ action: "rewrite", target: "selection" })).toBeNull(); // no instruction
+    expect(validateIntent({ action: "rewrite", instruction: "make it shorter" })).toBeNull(); // no target
+    expect(validateIntent({ action: "rewrite", instruction: "make it shorter", target: "everything" })).toBeNull(); // bad target
+  });
+
   it("accepts the P2 system-command shapes", () => {
     expect(validateIntent({ action: "launch", app: "Slack" }))
       .toEqual({ action: "launch", app: "Slack" });

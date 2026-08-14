@@ -86,6 +86,17 @@ export function formatMessage(text: string, language?: string, vocabulary?: stri
   return `Cleaned transcript to format:\n${text}${languageNote(language)}${vocabularyNote(vocabulary)}`;
 }
 
+// Platform P1c — free-form rewrite of a selected span, driven by a spoken instruction
+// (command mode's "rewrite" intent — e.g. "make this more formal", "make that shorter").
+// Unlike SYSTEM_PROMPT/FORMAT_PROMPT above, there is no fixed transformation: the
+// INSTRUCTION supplies it, so there's no reconstruction/validation step afterward — the
+// model's output text is trusted directly, exactly like format()'s whole-text rewrite.
+export const REWRITE_SYSTEM_PROMPT = `You rewrite a piece of text exactly as instructed. Apply ONLY the requested change (tone, style, length, wording, grammar, etc.) to the given text. Do not add new information, opinions, or content that wasn't in the original, and do not change its meaning beyond what the instruction asks. Preserve the language the text is already written in. Return ONLY the rewritten text — no commentary, no quotes around it, no markdown code fences.`;
+
+export function rewriteMessage(text: string, instruction: string): string {
+  return `Instruction: ${instruction}\n\nText to rewrite:\n${text}`;
+}
+
 /**
  * Deterministic, offline formatting used as a FALLBACK when the LLM formatter is
  * unavailable (e.g. PyAI /v1/messages is failing under load). It is intentionally

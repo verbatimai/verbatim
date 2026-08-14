@@ -125,6 +125,40 @@ describe("OpenAiCorrection.format", () => {
   });
 });
 
+// Platform P1c — free-form rewrite, driven by command mode's classified instruction.
+describe("OpenAiCorrection.rewrite", () => {
+  it("sends the instruction + text and returns the rewritten text", async () => {
+    let seen: Captured | undefined;
+    const { base, server } = await mockChatServer((cap, res) => { seen = cap; okChat("Please find the attached report.", res); });
+    cleanup.push(() => server.close());
+    process.env.OPENAI_BASE = base;
+
+    const out = await new OpenAiCorrection("k").rewrite("here's the report you asked for", "make it more formal");
+    expect(out.text).toBe("Please find the attached report.");
+    expect(seen?.body.messages?.[0]).toEqual({ role: "system", content: expect.stringContaining("rewrite") });
+    expect(seen?.body.messages?.[1]?.content).toContain("make it more formal");
+    expect(seen?.body.messages?.[1]?.content).toContain("here's the report you asked for");
+  });
+
+  it("strips stray code fences like format does", async () => {
+    const { base, server } = await mockChatServer((_cap, res) => okChat("```\nShorter version.\n```", res));
+    cleanup.push(() => server.close());
+    process.env.OPENAI_BASE = base;
+
+    const out = await new OpenAiCorrection("k").rewrite("a much longer version of the same text", "make it shorter");
+    expect(out.text).toBe("Shorter version.");
+  });
+
+  it("falls back to the original text if the model returns nothing usable", async () => {
+    const { base, server } = await mockChatServer((_cap, res) => okChat("   ", res));
+    cleanup.push(() => server.close());
+    process.env.OPENAI_BASE = base;
+
+    const out = await new OpenAiCorrection("k").rewrite("keep me", "make it shorter");
+    expect(out.text).toBe("keep me");
+  });
+});
+
 // Phase 7 Fix 1 — per-request correction model override (OpenAI honours it).
 describe("OpenAiCorrection model override (Phase 7)", () => {
   it("correct sends the per-request model in the body", async () => {

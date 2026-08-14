@@ -65,4 +65,13 @@ export interface CorrectionProvider {
    * the effective prompt-side lever for OpenAI/PyAI (the correction pass can't re-spell).
    */
   format?(text: string, language?: string, vocabulary?: string[], model?: string, mode?: FormatMode): Promise<{ text: string }>;
+  /**
+   * Platform P1c — apply a free-form spoken INSTRUCTION to a piece of text (the field's
+   * current selection, read via command mode), e.g. "make this more formal" / "make that
+   * shorter". Unlike correct()/format(), the transformation itself is open-ended — there is
+   * no fixed prompt, no compact-edits reconstruction, and no validate() step; the model's
+   * output text is trusted directly, same trust level as format()'s whole-text rewrite.
+   * `model` mirrors the other passes' per-request override (empty/undefined -> adapter default).
+   */
+  rewrite?(text: string, instruction: string, model?: string): Promise<{ text: string }>;
 }

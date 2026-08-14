@@ -1,5 +1,5 @@
 import type { CorrectionProvider, CorrectionResult, CorrectionContext, CorrectionEdit } from "./types";
-import { SYSTEM_PROMPT, userMessage, reconstruct, validate, formatPromptFor, formatMessage } from "./prompt";
+import { SYSTEM_PROMPT, userMessage, reconstruct, validate, formatPromptFor, formatMessage, REWRITE_SYSTEM_PROMPT, rewriteMessage } from "./prompt";
 import type { FormatMode } from "./prompt";
 import { fetchWithRetry } from "../net/retry";
 
@@ -87,5 +87,21 @@ export class AnthropicCorrection implements CorrectionProvider {
     let out = (body.content ?? []).find((b: any) => b.type === "text")?.text ?? text;
     out = String(out).replace(/^```[a-z]*\n?|\n?```$/g, "").trim(); // strip stray code fences
     return { text: out };
+  }
+
+  /** Platform P1c — apply a free-form instruction to `text` (command mode's "rewrite"). */
+  async rewrite(text: string, instruction: string, model?: string): Promise<{ text: string }> {
+    // Phase 7 — same prefer-override resolution as correct()/format().
+    const resolvedModel = (model && model.trim()) ? model : (process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-5");
+    const body = await this.messages({
+      model: resolvedModel,
+      max_tokens: 2048, // rewritten text can run as long as the selection itself
+      temperature: 0,
+      system: REWRITE_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: rewriteMessage(text, instruction) }],
+    });
+    let out = (body.content ?? []).find((b: any) => b.type === "text")?.text ?? text;
+    out = String(out).replace(/^```[a-z]*\n?|\n?```$/g, "").trim(); // strip stray code fences
+    return { text: out || text };
   }
 }

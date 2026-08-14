@@ -67,6 +67,9 @@ type ServerMsg =
   // editing intent (the CommandIntent union in @verbatim/core); the Rust run_command
   // executor performs it. Typed `any` here to avoid a cross-package type import in the widget.
   | { type: "intent"; intent: any; transcript: string }
+  // Platform P1c — the second half of a "rewrite" intent's round trip: the backend ran the
+  // instruction through the selected correction provider and hands back the rewritten text.
+  | { type: "rewritten"; text: string }
   | { type: "error"; message: string; file?: string }
   | { type: "done" };
 
@@ -502,6 +505,73 @@ async function runCommandIntent(intent: any): Promise<"ok" | "blocked"> {
   }
 }
 
+// P1c — a "rewrite" intent needs the field's CURRENTLY SELECTED text before the backend can
+// run the instruction through an LLM, so it's a two-step dance instead of one run_command
+// call: read the selection (Rust) -> send {text, instruction} over the SAME ws connection
+// (which the backend deliberately kept open instead of sending "done" — see server.ts) ->
+// the backend's "rewritten" reply is picked up in handle() and pasted back by finishRewrite().
+async function runRewriteIntent(intent: any): Promise<void> {
+  try {
+    const sel = await invoke<{ status: string; text: string | null }>("get_command_selection", { target: intent.target });
+    if (sel.status === "no_access") {
+      setStatus("err", "grant Accessibility");
+      showBanner("err", "Grant Accessibility so Verbatim can read the selection to rewrite (System Settings → Privacy → Accessibility). Enable Verbatim (or your terminal, in dev), then quit & relaunch.", "ax");
+    } else if (sel.status === "secure") {
+      setStatus("err", "secure field");
+      showBanner("warn", "That looks like a password / secure field — nothing was rewritten.");
+    } else if (sel.status === "no_field") {
+      setStatus("done", "no field");
+      showBanner("info", "No editable text field was focused — nothing to rewrite.");
+    } else if (sel.status === "empty" || !sel.text) {
+      setStatus("done", "nothing selected");
+      showBanner("info", "Nothing was selected to rewrite — select some text first.");
+    } else {
+      // Have the text — hand it to the backend on the connection it deliberately left open.
+      setStatus("fix", "rewriting…");
+      ws?.send(JSON.stringify({ type: "rewrite", text: sel.text, instruction: intent.instruction }));
+      return; // handle()'s "rewritten" case finishes the flow (paste back + settle)
+    }
+  } catch (e) {
+    setStatus("err", "rewrite failed");
+    showBanner("err", "Reading the selection failed — grant Accessibility (System Settings → Privacy → Accessibility), then retry.");
+  }
+  // Blocked before we could even ask the backend — the socket is still open (the backend is
+  // waiting on a "rewrite" message that will now never come), so close it ourselves.
+  if (ws) { try { ws.close(); } catch {} ws = null; }
+}
+
+// P1c — the backend's rewritten text arrives here; paste it back over the (still-selected)
+// target the same way injectFinal/runCommandIntent do, then settle like any other command.
+async function finishRewrite(text: string): Promise<"ok" | "blocked"> {
+  if (!text.trim()) {
+    setStatus("done", "no change");
+    return "ok";
+  }
+  try {
+    const result = await invoke<string>("paste_rewrite", { text });
+    if (result === "no_access") {
+      setStatus("err", "grant Accessibility");
+      showBanner("err", "Grant Accessibility so Verbatim can paste the rewrite back (System Settings → Privacy → Accessibility). Enable Verbatim (or your terminal, in dev), then quit & relaunch.", "ax");
+      return "blocked";
+    } else if (result === "secure") {
+      setStatus("err", "secure field");
+      showBanner("warn", "That looks like a password / secure field — the rewrite wasn't pasted back.");
+      return "blocked";
+    } else if (result === "no_field") {
+      setStatus("done", "no field");
+      showBanner("info", "The field lost focus while rewriting — nothing to paste the result into. It's on your clipboard.");
+      return "blocked";
+    } else {
+      setStatus("done", "rewritten ✓");
+      return "ok";
+    }
+  } catch (e) {
+    setStatus("err", "rewrite failed");
+    showBanner("err", "Pasting the rewrite back failed — grant Accessibility (System Settings → Privacy → Accessibility), then retry.");
+    return "blocked";
+  }
+}
+
 // After a successful outcome (no banner now showing), flash the pill briefly, then either
 // hold the correction reveal open for ~2s (transcript setting on) or drop straight back
 // to the idle orb (off) — shared by both the dictation and command-mode terminal paths.
@@ -533,7 +603,14 @@ function handle(m: ServerMsg) {
   else if (m.type === "intent") {
     // P1 — command mode: hand the classified intent to the Rust executor. It runs ONE
     // editing action on the focused field and returns where it went (like inject_text).
-    void runCommandIntent(m.intent).then((outcome) => { if (outcome === "ok") settleAfterSuccess(); });
+    // P1c — a "rewrite" intent is a two-phase round trip (read selection -> backend LLM
+    // call -> paste back) driven by runRewriteIntent, not the single run_command call.
+    if (m.intent?.action === "rewrite") void runRewriteIntent(m.intent);
+    else void runCommandIntent(m.intent).then((outcome) => { if (outcome === "ok") settleAfterSuccess(); });
+  }
+  else if (m.type === "rewritten") {
+    // P1c — the backend's rewrite reply; paste it back and settle like any other command.
+    void finishRewrite(m.text).then((outcome) => { if (outcome === "ok") settleAfterSuccess(); });
   }
   else if (m.type === "error") {
     setStatus("err", "error");

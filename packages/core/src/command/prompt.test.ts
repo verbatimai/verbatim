@@ -17,6 +17,11 @@ describe("parseIntent (extract first JSON object + validate)", () => {
     expect(parseIntent("")).toBeNull();
   });
 
+  it("parses a P1c rewrite command", () => {
+    expect(parseIntent('{"action":"rewrite","instruction":"make this more formal","target":"selection"}'))
+      .toEqual({ action: "rewrite", instruction: "make this more formal", target: "selection" });
+  });
+
   it("parses the P2 system-command shapes", () => {
     expect(parseIntent('{"action":"launch","app":"Slack"}'))
       .toEqual({ action: "launch", app: "Slack" });
@@ -30,6 +35,7 @@ describe("parseIntent (extract first JSON object + validate)", () => {
     expect(parseIntent('{"action":"format","style":"rainbow","target":"all"}')).toBeNull();
     expect(parseIntent('{"action":"volume","direction":"louder"}')).toBeNull(); // bad dir
     expect(parseIntent('{"action":"launch","app":""}')).toBeNull(); // empty app
+    expect(parseIntent('{"action":"rewrite","instruction":"","target":"selection"}')).toBeNull(); // empty instruction
     expect(parseIntent('{"action":"teleport","to":"mars"}')).toBeNull(); // unknown action
   });
 

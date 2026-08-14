@@ -17,6 +17,13 @@
 //! collapse into one `Insert { what, text }` and branch on `what` at runtime. The shared
 //! fixture (packages/core/src/command/fixtures.ts) is round-tripped by both a TS test and
 //! the `#[cfg(test)]` module here, so the two definitions can't silently diverge.
+//!
+//! P1c exception: a `Rewrite` intent is NOT run through `run_command` — the transformation
+//! is open-ended (a spoken instruction, not a fixed keystroke) and needs an LLM round-trip
+//! through the backend, which this module has no key/network client for. The frontend
+//! instead drives `get_command_selection` (read the target text) and `paste_rewrite` (paste
+//! the backend's result back) directly — see the "P1c — rewrite" section below. `Rewrite`
+//! still lives in the enum so the TS<->Rust fixture stays in lockstep.
 
 // enigo keystroke emission is macOS-only here (the app is macOS-first, and the focus route
 // that guards it only exists on macOS). The serde types stay cross-platform so the command
@@ -86,6 +93,19 @@ pub enum CommandIntent {
         what: String,
         #[serde(default)]
         text: Option<String>,
+    },
+    // P1c — free-form rewrite of the target text, driven by a spoken instruction (e.g.
+    // "make this more formal"). Unlike every other field-edit variant, this is NOT a
+    // single deterministic keystroke: the transformation itself is open-ended, so
+    // execution is a two-phase round trip the FRONTEND drives directly —
+    // `get_command_selection` (read the target text) -> one LLM call in the backend,
+    // using whichever vendor/model is already the correction provider -> `paste_rewrite`
+    // (paste the result back) — rather than a single `run_command` call. The variant
+    // still lives in this enum purely for the TS<->Rust serde-contract fixture parity
+    // (see the `#[cfg(test)]` module below); `execute()` never truly dispatches it.
+    Rewrite {
+        instruction: String,
+        target: Target,
     },
     // P2 — system commands (delegated to macOS in syscommand.rs, gated behind
     // config.system_commands). These do NOT act on the focused field, so they bypass the
@@ -275,6 +295,12 @@ fn execute(intent: &CommandIntent) -> Result<String, String> {
 
         CommandIntent::Case { mode, target } => apply_case(mode, target),
 
+        // P1c — rewrite is never dispatched through run_command in practice (the frontend
+        // drives get_command_selection / paste_rewrite directly, per the block above); this
+        // arm exists only so the match stays exhaustive if something calls run_command with
+        // a Rewrite intent directly.
+        CommandIntent::Rewrite { .. } => Ok("noop".into()),
+
         // P2 system commands are dispatched in `route_and_execute` BEFORE the focus-route
         // guard, so they never reach the field-edit executor. Handle them defensively (no
         // keystrokes) rather than leaving the match non-exhaustive.
@@ -282,6 +308,32 @@ fn execute(intent: &CommandIntent) -> Result<String, String> {
         | CommandIntent::Volume { .. }
         | CommandIntent::Shortcut { .. } => Ok("noop".into()),
     }
+}
+
+/// Select `target`, ⌘C it, and read the pasteboard — the read half of the clipboard
+/// round-trip `apply_case` and the P1c rewrite path both need. Always restores the user's
+/// PREVIOUS clipboard before returning (whether or not anything was selected), since both
+/// callers either transform-then-paste immediately (case) or hold the text for a network
+/// round-trip before pasting (rewrite) — in neither case should the user's clipboard sit
+/// polluted with our intermediate copy. Returns `Ok(None)` when nothing was selected/copied.
+#[cfg(target_os = "macos")]
+fn copy_selection(
+    enigo: &mut Enigo,
+    clipboard: &mut arboard::Clipboard,
+    target: &Target,
+) -> Result<Option<String>, String> {
+    use std::{thread, time::Duration};
+
+    let previous = clipboard.get_text().ok();
+    select_target(enigo, target)?;
+    combo(enigo, &[Key::Meta], Key::Unicode('c'))?;
+    thread::sleep(Duration::from_millis(120)); // settle: let ⌘C populate the pasteboard
+
+    let selected = clipboard.get_text().unwrap_or_default();
+    if let Some(prev) = previous {
+        let _ = clipboard.set_text(prev);
+    }
+    Ok(if selected.is_empty() { None } else { Some(selected) })
 }
 
 /// Case-fold the target text. macOS has no native case shortcut, so this does an EXPLICIT
@@ -297,22 +349,14 @@ fn apply_case(mode: &CaseMode, target: &Target) -> Result<String, String> {
 
     let mut enigo = new_enigo()?;
     let mut clipboard = Clipboard::new().map_err(|e| format!("clipboard: {e}"))?;
-    // Save the user's clipboard up front so we can restore it no matter what.
+    // Save the user's clipboard up front so we can restore it no matter what (copy_selection
+    // already restores after ITS read, but we still need the ORIGINAL for after our paste).
     let previous = clipboard.get_text().ok();
 
-    // Select the target (Selection = whatever's already highlighted), then copy it.
-    select_target(&mut enigo, target)?;
-    combo(&mut enigo, &[Key::Meta], Key::Unicode('c'))?;
-    thread::sleep(Duration::from_millis(120)); // settle: let ⌘C populate the pasteboard
-
-    let selected = clipboard.get_text().unwrap_or_default();
-    if selected.is_empty() {
-        // Nothing selected/copied — restore and do nothing rather than paste an empty string.
-        if let Some(prev) = previous {
-            let _ = clipboard.set_text(prev);
-        }
+    let Some(selected) = copy_selection(&mut enigo, &mut clipboard, target)? else {
+        // Nothing selected/copied — copy_selection already restored the clipboard.
         return Ok("noop".into());
-    }
+    };
 
     let transformed = match mode {
         CaseMode::Upper => selected.to_uppercase(),
@@ -351,6 +395,98 @@ fn title_case(s: &str) -> String {
         .collect()
 }
 
+// ─────────────────────────── P1c — rewrite (two-phase, frontend-driven) ───────────────────────────
+//
+// A "rewrite" intent can't be executed in one `run_command` call like every other action:
+// the transformation needs an LLM round-trip through the backend (using whichever vendor is
+// already the correction provider), and the Rust host holds neither a vendor key nor a
+// network client for it. So the frontend drives two Tauri calls instead of one:
+//   1. `get_command_selection(target)` — read the field's current selection (this module
+//      already knows how, via `copy_selection`/`focus_route`), hand it to the backend
+//      alongside the classified instruction.
+//   2. `paste_rewrite(text)` — once the backend replies with the rewritten text, paste it
+//      back over the (still-selected) target.
+// Both share `run_command`'s refusal contract (no_access/secure/no_field) so the frontend
+// reuses the exact same banners.
+
+/// The result of reading a field's current selection for a rewrite. `status` mirrors
+/// `run_command`'s routing strings (no_access/secure/no_field), plus "ok" (text present)
+/// and "empty" (a confirmed editable field, but nothing was actually selected).
+#[derive(serde::Serialize)]
+pub struct SelectionResult {
+    pub status: String,
+    pub text: Option<String>,
+}
+
+impl SelectionResult {
+    fn blocked(status: &str) -> Self {
+        Self { status: status.into(), text: None }
+    }
+}
+
+/// P1c step 1 — read the CURRENTLY SELECTED text at `target` so the frontend can send it to
+/// the backend for the actual rewrite call. Refuses under the same rules as `run_command`'s
+/// field-edit path (no Accessibility / secure field / nothing focused) — a rewrite is exactly
+/// as sensitive as any other keystroke-driven edit, just split across two calls.
+#[tauri::command]
+pub fn get_command_selection(target: Target) -> SelectionResult {
+    #[cfg(target_os = "macos")]
+    {
+        match crate::axinject::focus_route() {
+            "no_access" => return SelectionResult::blocked("no_access"),
+            "secure" => return SelectionResult::blocked("secure"),
+            "no_field" => return SelectionResult::blocked("no_field"),
+            _ => {}
+        }
+        let (Ok(mut enigo), Ok(mut clipboard)) = (new_enigo(), arboard::Clipboard::new()) else {
+            return SelectionResult::blocked("no_access");
+        };
+        match copy_selection(&mut enigo, &mut clipboard, &target) {
+            Ok(Some(text)) => SelectionResult { status: "ok".into(), text: Some(text) },
+            Ok(None) => SelectionResult::blocked("empty"),
+            Err(_) => SelectionResult::blocked("no_access"),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = target;
+        SelectionResult::blocked("no_field")
+    }
+}
+
+/// P1c step 2 — paste the backend's rewritten text back over the target, which the earlier
+/// `get_command_selection` call left selected (we deliberately do NOT re-select here: for
+/// last-word/last-sentence, `select_target` moves relative to the CURRENT cursor, and
+/// re-invoking it after the network round-trip could select the wrong span; relying on the
+/// field's own selection staying put across the wait is the same assumption dictation
+/// already makes between capturing focus and injecting the finalized text, just applied to
+/// a highlighted span instead of a caret). Refuses again defensively — focus may have
+/// changed during the LLM call — under the same rules as `run_command`.
+#[tauri::command]
+pub fn paste_rewrite(text: String) -> Result<String, String> {
+    if text.trim().is_empty() {
+        return Ok("noop".into());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        match crate::axinject::focus_route() {
+            "no_access" => return Ok("no_access".into()),
+            "secure" => return Ok("secure".into()),
+            // Focus moved away from an editable field during the LLM round-trip — fall back
+            // to the clipboard (mirrors `inject_text`'s own no_field routing) rather than
+            // silently dropping the rewritten text.
+            "no_field" => { let _ = crate::inject::copy_only(&text); return Ok("no_field".into()); }
+            _ => {}
+        }
+        crate::inject::paste_text(&text)?;
+        Ok("done".into())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok("no_field".into())
+    }
+}
+
 // ─────────────────────────────── serde contract test ───────────────────────────────
 
 #[cfg(test)]
@@ -374,6 +510,8 @@ mod tests {
         r#"{"action":"select","target":"selection"}"#,
         r#"{"action":"insert","what":"newline"}"#,
         r#"{"action":"insert","what":"literal","text":"hello world"}"#,
+        // P1c — free-form rewrite (mirror packages/core/src/command/fixtures.ts).
+        r#"{"action":"rewrite","instruction":"make this more formal","target":"selection"}"#,
         // P2 — system-command variants (mirror packages/core/src/command/fixtures.ts).
         r#"{"action":"launch","app":"Slack"}"#,
         r#"{"action":"volume","direction":"up"}"#,
@@ -425,6 +563,17 @@ mod tests {
             serde_json::from_str::<CommandIntent>(r#"{"action":"launch","app":"Slack"}"#).unwrap(),
             CommandIntent::Launch {
                 app: "Slack".into()
+            }
+        );
+        // P1c — the rewrite variant round-trips (instruction is a free string, target kebab-maps).
+        assert_eq!(
+            serde_json::from_str::<CommandIntent>(
+                r#"{"action":"rewrite","instruction":"make this more formal","target":"selection"}"#
+            )
+            .unwrap(),
+            CommandIntent::Rewrite {
+                instruction: "make this more formal".into(),
+                target: Target::Selection
             }
         );
     }

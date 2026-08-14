@@ -21,6 +21,8 @@ export const INTENT_FIXTURES: CommandIntent[] = [
   { action: "select", target: "selection" },
   { action: "insert", what: "newline" },
   { action: "insert", what: "literal", text: "hello world" },
+  // P1c — free-form rewrite (mirrored in command.rs's FIXTURES).
+  { action: "rewrite", instruction: "make this more formal", target: "selection" },
   // P2 — one of each system-command variant (mirrored in command.rs's FIXTURES).
   { action: "launch", app: "Slack" },
   { action: "volume", direction: "up" },

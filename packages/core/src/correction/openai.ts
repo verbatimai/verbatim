@@ -7,6 +7,8 @@ import {
   validate,
   formatPromptFor,
   formatMessage,
+  REWRITE_SYSTEM_PROMPT,
+  rewriteMessage,
 } from "./prompt";
 import type { FormatMode } from "./prompt";
 
@@ -131,5 +133,25 @@ export class OpenAiCorrection implements CorrectionProvider {
     let out = body.choices?.[0]?.message?.content ?? text;
     out = String(out).replace(/^```[a-z]*\n?|\n?```$/g, "").trim(); // strip stray code fences
     return { text: out };
+  }
+
+  /** Platform P1c — apply a free-form instruction to `text` (command mode's "rewrite"). */
+  async rewrite(text: string, instruction: string, model?: string): Promise<{ text: string }> {
+    // Phase 7 — same prefer-override resolution as correct()/format().
+    const resolvedModel = (model && model.trim()) ? model : (process.env.OPENAI_CORRECTION_MODEL ?? "gpt-4o-mini");
+    const body = await this.chat(
+      {
+        model: resolvedModel,
+        temperature: 0,
+        messages: [
+          { role: "system", content: REWRITE_SYSTEM_PROMPT },
+          { role: "user", content: rewriteMessage(text, instruction) },
+        ],
+      },
+      "rewrite",
+    );
+    let out = body.choices?.[0]?.message?.content ?? text;
+    out = String(out).replace(/^```[a-z]*\n?|\n?```$/g, "").trim(); // strip stray code fences
+    return { text: out || text };
   }
 }

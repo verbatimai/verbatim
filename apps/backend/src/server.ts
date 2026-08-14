@@ -145,10 +145,11 @@ wss.on("connection", (ws) => {
     // intent and hand it back. No cleanup/format pass (correction was never constructed).
     // Runs BEFORE the correction block; the deterministic Rust executor performs the edit.
     if (isCommand) {
+      let intent: any = { action: "noop", reason: "classify failed" };
       try {
         const provider = getIntentProvider(cmdId);
         assertIntentKeys(provider); // missing key → clear error, no network round-trip
-        const { intent } = await provider.interpret(raw, { model: commandModel });
+        ({ intent } = await provider.interpret(raw, { model: commandModel }));
         send(ws, { type: "intent", intent, transcript: raw });
       } catch (e: any) {
         logPyaiError("command.interpret", e, { cmdId, rawLen: raw.length });
@@ -156,6 +157,11 @@ wss.on("connection", (ws) => {
         send(ws, { type: "error", kind: "terminal", message: "command classify failed: " + (e?.message ?? String(e)), file: LOG_FILE });
       }
       try { session?.close(); } catch {}
+      // P1c — "rewrite" needs the FOCUSED FIELD'S SELECTED TEXT, which only the Rust/AX
+      // side can read. Keep this connection open (skip "done") and wait for the client's
+      // "rewrite" message below instead of closing the loop here; the client closes the
+      // socket itself if it can't get a selection to rewrite (see main.ts runRewriteIntent).
+      if (intent.action === "rewrite") return;
       send(ws, { type: "done" });
       return;
     }
@@ -342,6 +348,31 @@ wss.on("connection", (ws) => {
     } else if (msg.type === "stop") {
       await session?.finalize().catch(() => {});
       await finalize();
+    } else if (msg.type === "rewrite") {
+      // P1c — the second half of the "rewrite" round trip: the client read the field's
+      // current SELECTION via Rust/AX and sends it here with the classified instruction.
+      // Runs ONE LLM call using the SAME correction vendor/model already selected for
+      // dictation (corrId/corrModel, resolved on "start") — no separate provider concept,
+      // per the design: "use the model that is selected as the correction provider".
+      const text = typeof msg.text === "string" ? msg.text : "";
+      const instruction = typeof msg.instruction === "string" ? msg.instruction : "";
+      let rewritten = "";
+      if (text.trim() && instruction.trim()) {
+        try {
+          const rewriter = getCorrectionProvider(corrId);
+          if (!rewriter.rewrite) throw new Error(`correction provider '${corrId}' does not support rewrite`);
+          const tRw = Date.now();
+          const result = await rewriter.rewrite(text, instruction, corrModel);
+          rewritten = norm(result.text) ? result.text : text; // never hand back an empty rewrite
+          telemetry.emit({ type: "session_finalize", sttProvider: sttId, correctionProvider: corrId, language: langTag, autoDetect, correct: false, format: false, rawLen: text.length, cleanLen: rewritten.length, correctionLatencyMs: Date.now() - tRw });
+        } catch (e: any) {
+          logPyaiError("command.rewrite", e, { corrId, textLen: text.length });
+          telemetry.emit({ type: "error", errorPhase: "command.rewrite", correctionProvider: corrId });
+          send(ws, { type: "error", kind: "terminal", message: "rewrite failed: " + (e?.message ?? String(e)), file: LOG_FILE });
+        }
+      }
+      send(ws, { type: "rewritten", text: rewritten });
+      send(ws, { type: "done" });
     }
   });
 

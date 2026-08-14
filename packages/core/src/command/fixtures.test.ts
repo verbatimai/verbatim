@@ -15,6 +15,7 @@ describe("INTENT_FIXTURES (shared TS↔Rust serde contract)", () => {
         "case",
         "select",
         "insert",
+        "rewrite",
         "launch",
         "volume",
         "shortcut",

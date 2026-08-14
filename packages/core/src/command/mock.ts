@@ -27,5 +27,11 @@ function canned(transcript: string): CommandIntent | null {
   if (t === "capitalize that" || t === "title case that")
     return { action: "case", mode: "title", target: "selection" };
   if (t === "delete everything") return { action: "delete", target: "all" };
+  // P1c — a couple of canned rewrite phrases for tests (the real vendors classify these
+  // via the model; the mock just needs a couple of fixed rows to exercise the shape).
+  if (t === "make this more formal")
+    return { action: "rewrite", instruction: "make it more formal", target: "selection" };
+  if (t === "make that shorter")
+    return { action: "rewrite", instruction: "make it shorter", target: "selection" };
   return null;
 }

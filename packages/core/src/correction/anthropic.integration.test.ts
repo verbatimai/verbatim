@@ -135,6 +135,36 @@ describe("AnthropicCorrection.format (plain text pass, no tool)", () => {
   });
 });
 
+// Platform P1c — free-form rewrite, driven by command mode's classified instruction.
+describe("AnthropicCorrection.rewrite (plain text pass, no tool)", () => {
+  it("sends the instruction + text and returns the rewritten text", async () => {
+    const { base, server, requests } = await mockMessagesServer(() => ({
+      role: "assistant",
+      content: [{ type: "text", text: "Please find the attached report." }],
+    }));
+    cleanup.push(() => server.close());
+    process.env.ANTHROPIC_BASE = base;
+
+    const out = await new AnthropicCorrection("k").rewrite("here's the report you asked for", "make it more formal");
+    expect(out.text).toBe("Please find the attached report.");
+    expect(requests[0].body.tools).toBeUndefined(); // rewrite is a plain pass, no forced tool
+    expect(requests[0].body.system).toContain("rewrite");
+    expect(requests[0].body.messages[0].content).toContain("make it more formal");
+  });
+
+  it("strips stray code fences like format does", async () => {
+    const { base, server } = await mockMessagesServer(() => ({
+      role: "assistant",
+      content: [{ type: "text", text: "```\nShorter version.\n```" }],
+    }));
+    cleanup.push(() => server.close());
+    process.env.ANTHROPIC_BASE = base;
+
+    const out = await new AnthropicCorrection("k").rewrite("a much longer version", "make it shorter");
+    expect(out.text).toBe("Shorter version.");
+  });
+});
+
 // Phase 7 Fix 1 — per-request correction model override (Anthropic honours it).
 describe("AnthropicCorrection model override (Phase 7)", () => {
   const toolBody = () => ({

@@ -13,6 +13,7 @@ The ONLY valid editing actions (use exactly these shapes and enum values):
 {"action":"select","target":"selection|last-word|last-sentence|all"}
 {"action":"insert","what":"newline"}
 {"action":"insert","what":"literal","text":"<verbatim text to type>"}
+{"action":"rewrite","instruction":"<what to change about the wording/tone/style, in your own words>","target":"selection|last-word|last-sentence|all"}
 
 The ONLY valid system commands:
 {"action":"launch","app":"<app name, e.g. Slack>"}
@@ -27,6 +28,7 @@ Rules:
 - Prefer "noop" when unsure — a wrong action edits the user's document or runs a system command.
 - "this" / "that" / an unspecified target means "target":"selection".
 - An EDIT acts on the current text (e.g. "make that bold" → {"action":"format","style":"bold","target":"selection"}). A LAUNCH opens an app (e.g. "open Slack" → {"action":"launch","app":"Slack"}). Don't confuse the two.
+- A REWRITE changes the wording, tone, or style of the text itself — e.g. "make this more formal", "make that sound friendlier", "tighten this up", "fix the grammar here", "make it shorter". Put the user's intent in "instruction" (a short paraphrase is fine — it doesn't need to be verbatim). Do NOT use rewrite for a plain case change (upper/lower/title) or literal formatting (bold/italic/underline) — those already have dedicated actions above; only use rewrite when the wording/tone/style itself needs to change.
 - A dictation-like sentence with no clear command intent is a noop (e.g. "let's open the meeting with a quick recap" → {"action":"noop","reason":"dictation, not a command"}).
 - Output the JSON object and nothing else.`;
 

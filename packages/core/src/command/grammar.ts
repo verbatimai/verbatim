@@ -38,6 +38,13 @@ export function validateIntent(o: unknown): CommandIntent | null {
       if (a.what === "literal" && typeof a.text === "string" && a.text.length > 0)
         return { action: "insert", what: "literal", text: a.text };
       return null;
+    case "rewrite":
+      // P1c — free-form instruction; require a non-empty instruction AND an in-range
+      // target (same requiredness as format/delete/case above — a rewrite with no
+      // instruction or an out-of-enum target is not well-formed, so it falls to noop).
+      return typeof a.instruction === "string" && a.instruction.trim().length > 0 && inSet(TARGETS, a.target)
+        ? { action: "rewrite", instruction: a.instruction, target: a.target }
+        : null;
     case "launch":
       // P2 — free app name; require a non-empty string (the executor passes it as an
       // `open -a` arg, never through a shell).
