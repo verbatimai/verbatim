@@ -72,7 +72,17 @@
             </select>
           </label>
         </div>
+        <div id="detected" class="detected" hidden>
+          <span class="dot"></span>
+          <div>
+            <b>Sounds like a call is running.</b>
+            <small>Sustained audio on the system-output device.</small>
+          </div>
+          <button id="detectedStart" class="btn primary sm">Start recording</button>
+        </div>
+
         <div class="controls">
+          <label class="watch"><input type="checkbox" id="watchToggle" /> <span>Watch for meetings</span></label>
           <button id="testBtn" class="btn ghost">Test levels</button>
           <button id="startBtn" class="btn primary">Start recording</button>
           <button id="stopBtn" class="btn danger" hidden>Stop &amp; write the note</button>

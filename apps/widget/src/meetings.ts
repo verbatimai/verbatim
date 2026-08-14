@@ -36,6 +36,9 @@ const els = {
   savedPath: $("savedPath"),
   reveal: $<HTMLButtonElement>("revealBtn"),
   badge: $("exactBadge"),
+  watch: $<HTMLInputElement>("watchToggle"),
+  detected: $("detected"),
+  detectedStart: $<HTMLButtonElement>("detectedStart"),
 };
 
 let ws: WebSocket | null = null;
@@ -192,8 +195,73 @@ function renderNote(n: any) {
   els.note.hidden = false;
 }
 
+// ── meeting detection (opt-in) ───────────────────────────────────────────────
+// A real "meeting detected" feature is N3 in the plan: calendar + attendees via
+// EventKit, plus tapping a specific meeting-app PID. That needs native code.
+//
+// This is the honest cheap version: when you opt in, we open ONLY the loopback
+// device — never the microphone — and watch for sustained audio. Anything playing
+// through system output trips it, so it works for Meet, Zoom and Slack huddles
+// alike without knowing anything about them. No audio is sent anywhere; the RMS
+// never leaves this function.
+let watcher: { ctx: AudioContext; stream: MediaStream; node: ScriptProcessorNode } | null = null;
+let loudSince = 0;
+const SPEECH_RMS = 0.008;   // above room noise, below normal speech
+const SUSTAIN_MS = 2500;    // ignore a notification chime
+
+async function startWatching() {
+  if (watcher || recording) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: els.sysSel.value ? { exact: els.sysSel.value } : undefined,
+        echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1,
+      },
+    });
+    const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
+    const node = ctx.createScriptProcessor(4096, 1, 1);
+    node.onaudioprocess = (ev) => {
+      const buf = ev.inputBuffer.getChannelData(0);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+      const rms = Math.sqrt(sum / buf.length);
+      els.meterThem.style.width = `${Math.min(100, Math.round(rms * 900))}%`;
+      const now = Date.now();
+      if (rms > SPEECH_RMS) {
+        if (!loudSince) loudSince = now;
+        if (now - loudSince > SUSTAIN_MS) els.detected.hidden = false;
+      } else if (loudSince && now - loudSince > 400) {
+        loudSince = 0;
+      }
+    };
+    const mute = ctx.createGain();
+    mute.gain.value = 0;
+    ctx.createMediaStreamSource(stream).connect(node);
+    node.connect(mute);
+    mute.connect(ctx.destination);
+    watcher = { ctx, stream, node };
+    setStatus("Watching system audio for a call (mic stays off).");
+  } catch (e: any) {
+    els.watch.checked = false;
+    setStatus(`Could not watch that device: ${e?.message ?? e}`, "err");
+  }
+}
+
+function stopWatching() {
+  if (!watcher) return;
+  try { watcher.node.onaudioprocess = null; watcher.node.disconnect(); } catch { /* noop */ }
+  try { watcher.stream.getTracks().forEach((t) => t.stop()); } catch { /* noop */ }
+  try { void watcher.ctx.close(); } catch { /* noop */ }
+  watcher = null;
+  loudSince = 0;
+  els.detected.hidden = true;
+  els.meterThem.style.width = "0%";
+}
+
 // ── session ──────────────────────────────────────────────────────────────────
 async function start() {
+  stopWatching();
+  els.detected.hidden = true;
   rows.length = 0;
   renderRows();
   els.note.hidden = true;
@@ -315,6 +383,8 @@ els.notes.addEventListener("input", () => {
   }, 600);
 });
 
+els.watch.addEventListener("change", () => (els.watch.checked ? void startWatching() : stopWatching()));
+els.detectedStart.addEventListener("click", () => void start());
 els.start.addEventListener("click", () => void start());
 els.stop.addEventListener("click", () => void stop());
 els.test.addEventListener("click", () => void testLevels());

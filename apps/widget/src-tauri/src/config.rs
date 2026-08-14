@@ -46,6 +46,8 @@ pub struct AppConfig {
     pub wake_word_handler: String,   // P3 — which handler a detection fires: "dictate" | "command" (default "dictate")
     pub wake_word_threshold: f32,    // P3 — detection score threshold 0..1 (default 0.5, live-tunable via atomics, no restart)
     pub wake_word_model: String,     // P3 — wake-word model asset id under resources/wakeword/ (default stock "hey_jarvis")
+    pub show_transcript: bool,       // Widget redesign — show the live-transcript/correction-reveal bubble while dictating (default true; off = pill only, text still corrects + injects silently)
+    pub show_removed: bool,          // Widget redesign — during the correction reveal, fade removed spans instead of collapsing them immediately (default true)
 }
 
 impl Default for AppConfig {
@@ -81,6 +83,8 @@ impl Default for AppConfig {
             wake_word_handler: "dictate".into(),
             wake_word_threshold: 0.5,
             wake_word_model: "hey_jarvis".into(),
+            show_transcript: true,
+            show_removed: true,
         }
     }
 }

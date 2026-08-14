@@ -86,3 +86,17 @@
 @media (max-width: 980px) {
   .setup .row, .split { grid-template-columns: 1fr; }
 }
+
+/* ── meeting detection banner (opt-in) ─────────────────────────── */
+.detected {
+  display: flex; align-items: center; gap: 12px; margin-top: 14px;
+  padding: 11px 14px; border-radius: 11px;
+  border: 1px solid rgba(52,168,110,0.4); background: rgba(52,168,110,0.10);
+}
+.detected .dot { width: 8px; height: 8px; border-radius: 50%; background: #2f9e6d; flex: none; animation: pulse 1.4s ease-in-out infinite; }
+.detected b { font-size: 13px; display: block; }
+.detected small { font-size: 11.5px; color: var(--text-dim); }
+.detected .btn { margin-left: auto; }
+.btn.sm { padding: 6px 12px; font-size: 12px; }
+.watch { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-dim); cursor: pointer; }
+.watch input { accent-color: var(--accent); }

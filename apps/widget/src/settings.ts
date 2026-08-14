@@ -43,6 +43,8 @@ type AppConfig = {
   wakeWordEnabled?: boolean; // P-series — always-listening on-device wake word
   wakeWordHandler?: string; // P-series — "dictate" | "command"
   wakeWordThreshold?: number; // P-series — detection threshold 0..1
+  showTranscript?: boolean; // Widget redesign — live-transcript/correction-reveal bubble (default true)
+  showRemoved?: boolean; // Widget redesign — fade (vs. instantly cut) removed spans during the reveal (default true)
 };
 
 // Mirrors packages/core's provider registries' `requiredKeys` and Rust's
@@ -72,6 +74,8 @@ const capabilityErrorsEl = $("capabilityErrors");
 const vendorKeysEl = $("vendorKeys");
 const dockIconEl = $<HTMLInputElement>("dockIcon");
 const muteOthersEl = $<HTMLInputElement>("muteOthers");
+const showTranscriptEl = $<HTMLInputElement>("showTranscript");
+const showRemovedEl = $<HTMLInputElement>("showRemoved");
 const launchAtLoginEl = $<HTMLInputElement>("launchAtLogin");
 const debugEl = $<HTMLInputElement>("debugMode");
 const resetBtnEl = $<HTMLButtonElement>("resetBtn");
@@ -725,6 +729,19 @@ function initMuteOthers() {
   muteOthersEl.onchange = () => { void patchConfig({ muteOthers: muteOthersEl.checked }); };
 }
 
+// ---- Widget redesign — live-transcript bubble + removed-span fade. Rust field/behaviour
+// already exist (config.rs); this is the UI. Mirrors initMuteOthers(). ----
+function initShowTranscript() {
+  if (!showTranscriptEl) return;
+  showTranscriptEl.checked = config.showTranscript !== false;
+  showTranscriptEl.onchange = () => { void patchConfig({ showTranscript: showTranscriptEl.checked }); };
+}
+function initShowRemoved() {
+  if (!showRemovedEl) return;
+  showRemovedEl.checked = config.showRemoved !== false;
+  showRemovedEl.onchange = () => { void patchConfig({ showRemoved: showRemovedEl.checked }); };
+}
+
 // ---- P-series — allow system commands gate (launch/volume/shortcut delegation). Rust
 // field/behaviour already exist; this is the UI. Mirrors initMuteOthers(). ----
 function initSystemCommands() {
@@ -962,6 +979,8 @@ function refreshControls() {
   initProviderControls();
   initDockIcon();
   initMuteOthers();
+  initShowTranscript();
+  initShowRemoved();
   initSystemCommands();
   initWakeWord();
   initLaunchAtLogin();
@@ -1012,6 +1031,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   initProviderControls();
   initDockIcon();
   initMuteOthers();
+  initShowTranscript();
+  initShowRemoved();
   initSystemCommands();
   initWakeWord();
   initLaunchAtLogin();

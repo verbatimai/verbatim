@@ -7,36 +7,19 @@
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body data-theme="system">
-  <div id="root" class="orb-view">
-    <!-- Idle: a small floating orb. Click it (or press ⌥Space) to dictate. -->
-    <button class="orb" id="orb" title="Dictate  (⌥Space)">
-      <svg width="26" height="26" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" aria-hidden="true">
-        <path d="M11 23V41"/><path d="M21 16V48"/><path d="M31 20V44"/>
-        <path d="M40 22H54"/><path d="M40 32H54"/><path d="M40 42H48"/>
-      </svg>
-    </button>
-
-    <!-- Active: the full card — live streaming transcript / diff / final output. -->
-    <div class="card">
-      <div class="titlebar" data-tauri-drag-region>
-        <span class="glyph" data-tauri-drag-region aria-hidden="true">
-          <svg width="15" height="15" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" aria-hidden="true">
-            <path d="M11 23V41"/><path d="M21 16V48"/><path d="M31 20V44"/>
-            <path d="M40 22H54"/><path d="M40 32H54"/><path d="M40 42H48"/>
-          </svg>
-        </span>
-        <span class="brand" data-tauri-drag-region>Verbatim</span>
-        <span class="statuspill"><span class="dot" id="dot"></span><span id="statusText">Idle</span></span>
-        <span class="level" id="level" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-        <button class="icon-btn" id="settingsBtn" title="Settings">⚙</button>
-        <button class="icon-btn" id="collapseBtn" title="Dismiss">✕</button>
-      </div>
+  <div id="root" class="idle">
+    <!-- Bubble: live transcript (opt-in) / correction reveal / last-result / error.
+         One component, several modes — never all at once. Hidden entirely while idle
+         and while listening with "show live transcript" off. -->
+    <div class="bubble" id="bubble" hidden>
+      <button class="bubble-x" id="bubbleClose" title="Dismiss" hidden>✕</button>
+      <span class="bubble-tag" id="bubbleTag" hidden></span>
+      <button class="copy-btn" id="copyBtn" disabled>Copy</button>
 
       <div class="banner" id="banner" hidden>
         <div class="banner-row">
           <span class="banner-dot"></span>
           <span class="banner-msg" id="bannerMsg"></span>
-          <button class="banner-x" id="bannerClose" aria-label="Dismiss">✕</button>
         </div>
         <div class="banner-actions" id="bannerActions" hidden>
           <button id="openMic" class="banner-btn" hidden>Open Microphone Settings</button>
@@ -47,27 +30,26 @@
         <div class="banner-log" id="bannerLog" hidden></div>
       </div>
 
-      <div class="body">
-        <div class="lbl"><span>Live preview · rough, catches up as you speak</span></div>
-        <div class="transcript" id="transcript">
-          <span class="hint">Press <b>Demo</b> to replay a sample, or <b>Start</b> to dictate. ⌥Space toggles the widget.</span>
-        </div>
+      <div class="transcript" id="transcript"></div>
+      <div class="fold-ring" id="foldRing" hidden></div>
+    </div>
 
-        <div class="final">
-          <div class="lbl">
-            <span>Final output · clean &amp; inserted into the focused field</span>
-            <button id="copyBtn" class="copy-btn" disabled>Copy</button>
-          </div>
-          <div class="txt" id="finalOut"></div>
-        </div>
-
-        <div class="controls">
-          <button id="demo" class="primary">▶&nbsp;Demo</button>
-          <button id="start" class="ghost">🎙&nbsp;Start</button>
-          <button id="stop" class="ghost" disabled>■&nbsp;Stop</button>
-          <label class="toggle"><input type="checkbox" id="showRemoved" checked /> show removed</label>
-        </div>
+    <!-- Pill: orb (idle/listening) + waveform + conditional Stop. No titlebar, no
+         Demo/Start — the orb itself (click or ⌥Space) starts a session. -->
+    <div class="pill" id="pill">
+      <span class="err-badge" id="errBadge" hidden></span>
+      <button class="cancel-x" id="collapseBtn" title="Cancel (discard)" hidden>✕</button>
+      <button class="orb" id="orb" title="Dictate  (⌥Space)">
+        <svg width="20" height="20" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" aria-hidden="true">
+          <path d="M11 23V41"/><path d="M21 16V48"/><path d="M31 20V44"/>
+          <path d="M40 22H54"/><path d="M40 32H54"/><path d="M40 42H48"/>
+        </svg>
+      </button>
+      <div class="wave" id="level" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
       </div>
+      <button class="stopbtn" id="stop" title="Stop &amp; insert" hidden><span></span></button>
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>

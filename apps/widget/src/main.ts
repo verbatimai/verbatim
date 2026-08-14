@@ -1,14 +1,28 @@
-// Verbatim widget frontend (M3 Phase 3.1).
-// Reuses the M2 experience: the transcript streams as ONE clean growing line
-// (locked text + volatile tail); on Stop the backend batch-transcribes, runs
-// cleanup (the "what was removed" diff) and formatting, and returns the final text.
+// Verbatim widget frontend (M3 Phase 3.1, redesigned as a pill/waveform + bubble — see
+// docs/product/claude/widget-ui-redesign.md). Reuses the M2 experience: the transcript
+// streams as ONE clean growing line (locked text + volatile tail); on Stop the backend
+// batch-transcribes, runs cleanup (the "what was removed" diff) and formatting, and
+// returns the final text.
 //
 // Widget-specific seam: when the `formatted` message arrives, we hand the text to
 // the Rust `inject_text` command, which pastes it into whatever field is focused in
 // the app underneath (the panel is non-activating + non-key, so focus never left it).
 //
-// Pipeline + vendor key stay in the M2 backend (WS). Demo mode needs no mic/key.
-// The client-side core pipeline + BYOK/keychain is Phase 3.5.
+// UI shape: no titlebar (Settings/Quit/Show-Last-Result live on the menu-bar tray) and
+// no separate "final output" box (Copy lives in the bubble; the clean text is injected
+// directly). Idle = a bare orb. Click it or fire the hotkey and it nudges left while a
+// real waveform (driven by the same AnalyserNode as the old level meter) grows beside
+// it, plus a Stop button — UNLESS this press resolves to push-to-talk (holding the key),
+// in which case Rust tells us via a `dictation:"hold"` event and we hide Stop, since
+// releasing the key is what ends the session. "Show live transcript" (config) gates a
+// bubble above the pill: streaming text while listening, then the correction reveal
+// (strike → fade/collapse) on Stop, auto-folding back to the bare orb after ~2s. With
+// it off, the pill stays waveform-only and the corrected text is still injected — just
+// quietly, with a brief "done" flash instead of the reveal.
+//
+// Pipeline + vendor key stay in the M2 backend (WS). Demo mode needs no mic/key (no UI
+// trigger currently — the redesign dropped the Demo button; `connect("demo")` still
+// works if someone wants to wire it back in, e.g. from the tray).
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, currentMonitor } from "@tauri-apps/api/window";
@@ -27,6 +41,20 @@ void invoke<{ theme?: string }>("get_config")
   .catch(() => applyOverlayTheme("system"));
 void listen<{ theme?: string }>("config-changed", (e) => applyOverlayTheme(e.payload?.theme));
 
+// ---- widget-redesign prefs: whether to show the live-transcript/correction bubble at
+// all, and whether removed spans fade before disappearing vs cut immediately. Both are
+// real config fields (config.rs), default true — read once at boot + kept live via the
+// same config-changed event. ----
+let cfgShowTranscript = true;
+let cfgShowRemoved = true;
+function applyPrefs(c: any) {
+  if (!c) return;
+  cfgShowTranscript = c.showTranscript !== false;
+  cfgShowRemoved = c.showRemoved !== false;
+}
+void invoke<any>("get_config").then(applyPrefs).catch(() => {});
+void listen<any>("config-changed", (e) => applyPrefs(e.payload));
+
 type Op = { type: "keep" | "remove" | "replace"; text: string; replacement?: string; reason?: string };
 type ServerMsg =
   | { type: "ready"; stt: string; correction: string }
@@ -41,28 +69,36 @@ type ServerMsg =
   | { type: "done" };
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const dot = $("dot"), statusText = $("statusText"), transcriptEl = $("transcript"), finalOut = $("finalOut");
-const demoBtn = $<HTMLButtonElement>("demo"), startBtn = $<HTMLButtonElement>("start"), stopBtn = $<HTMLButtonElement>("stop");
-const showRemoved = $<HTMLInputElement>("showRemoved");
+const transcriptEl = $("transcript");
+const root = $("root"), orb = $<HTMLButtonElement>("orb"), pill = $("pill");
+const wave = $("level"); // reused id from the old titlebar meter — now the main waveform
+const stopBtn = $<HTMLButtonElement>("stop");
+const errBadge = $("errBadge");
+const collapseBtn = $<HTMLButtonElement>("collapseBtn"); // now the pill's small cancel-x
+const bubble = $("bubble"), bubbleTag = $("bubbleTag"), bubbleClose = $<HTMLButtonElement>("bubbleClose");
+const foldRing = $("foldRing");
 const banner = $("banner"), bannerMsg = $("bannerMsg"), bannerActions = $("bannerActions");
-const bannerClose = $<HTMLButtonElement>("bannerClose");
 const openMicBtn = $<HTMLButtonElement>("openMic"), retryMicBtn = $<HTMLButtonElement>("retryMic");
 const openAxBtn = $<HTMLButtonElement>("openAx");
 const copyErr = $<HTMLButtonElement>("copyErr"), bannerLog = $("bannerLog");
 const copyBtn = $<HTMLButtonElement>("copyBtn");
-const root = $("root"), orb = $<HTMLButtonElement>("orb");
-const collapseBtn = $<HTMLButtonElement>("collapseBtn");
-const card = document.querySelector<HTMLElement>(".card")!;
-const settingsBtn = $<HTMLButtonElement>("settingsBtn");
-// Phase 4.9: the overlay's inline settings panel is gone — all configuration (keys,
-// providers, hotkey, language, mute-others, permissions) lives in the focusable Settings
-// window (settings.html / settings.ts). The gear just opens it.
+// Settings/Quit/Show-Last-Result all live on the menu-bar tray now (tray.rs) — Phase 4.9
+// already removed the overlay's inline settings panel; this redesign removes the
+// titlebar's gear/✕ too, since the tray already covers both.
 
-// Two views: idle "orb" (small floating dot) and active "card" (full streaming UI).
-// Both sit bottom-center; resize + reposition on switch.
+// ---- window sizing: idle orb / listening pill (no bubble) / expanded (bubble showing).
+// Every resize keeps the window's current BOTTOM-CENTER point fixed, so the pill (which
+// always sits at the bottom of the flex column — see style.css #root) stays visually
+// anchored while the window grows upward/outward for the bubble, and the existing
+// monitor clamp below naturally makes it grow toward whichever side has room rather than
+// always the same direction. ----
 const appWin = getCurrentWindow();
-const ORB = 74, CARD_W = 440, CARD_H = 360;
-let orbPos: { x: number; y: number } | null = null; // logical top-left where the orb lives
+const SIZES = {
+  idle: { w: 78, h: 78 },
+  pill: { w: 300, h: 78 },
+  expanded: { w: 400, h: 260 },
+} as const;
+type ViewMode = keyof typeof SIZES;
 
 const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 async function monitorLogical() {
@@ -74,46 +110,113 @@ async function monitorLogical() {
   } catch { return null; }
 }
 
-async function setView(v: "orb" | "card") {
-  const isCard = v === "card";
-  root.classList.toggle("card-view", isCard);
-  root.classList.toggle("orb-view", !isCard);
-  const w = isCard ? CARD_W : ORB, h = isCard ? CARD_H : ORB;
+async function resizeAnchored(w: number, h: number) {
   try {
-    if (isCard) {
-      // Capture the orb's REAL current position (wherever it was dragged to) straight
-      // from the window BEFORE resizing — don't trust the orbPos variable, which can be
-      // stale if a drag didn't update it. This is the anchor for the card, and also what
-      // the orb returns to on close.
-      try {
-        const s = await appWin.scaleFactor();
-        const p = await appWin.outerPosition();
-        orbPos = { x: p.x / s, y: p.y / s };
-      } catch {}
-      await appWin.setSize(new LogicalSize(w, h));
-      // Open the card centred on the orb's spot, clamped on-screen.
-      const a = orbPos ?? { x: 0, y: 0 };
-      let x = a.x + ORB / 2 - w / 2;
-      let y = a.y + ORB / 2 - h / 2;
-      const m = await monitorLogical();
-      if (m) {
-        x = clampN(x, m.ox + 8, m.ox + m.w - w - 8);
-        y = clampN(y, m.oy + 8, m.oy + m.h - h - 8);
-      }
-      await appWin.setPosition(new LogicalPosition(x, y));
-    } else {
-      await appWin.setSize(new LogicalSize(w, h));
-      // Restore the orb to exactly where the user left it.
-      if (orbPos) await appWin.setPosition(new LogicalPosition(orbPos.x, orbPos.y));
+    const s = await appWin.scaleFactor();
+    const p = await appWin.outerPosition();
+    const cur = await appWin.outerSize();
+    const curW = cur.width / s, curH = cur.height / s;
+    const cx = p.x / s + curW / 2;      // current horizontal center
+    const bottomY = p.y / s + curH;     // current bottom edge
+    let x = cx - w / 2;
+    let y = bottomY - h;
+    const m = await monitorLogical();
+    if (m) {
+      x = clampN(x, m.ox + 8, m.ox + m.w - w - 8);
+      y = clampN(y, m.oy + 8, m.oy + m.h - h - 8);
     }
+    await appWin.setSize(new LogicalSize(w, h));
+    await appWin.setPosition(new LogicalPosition(x, y));
+  } catch {}
+}
+async function setViewMode(v: ViewMode) {
+  const s = SIZES[v];
+  await resizeAnchored(s.w, s.h);
+}
+function desiredMode(): ViewMode {
+  if (!bubble.hidden) return "expanded";
+  if (pill.classList.contains("listening")) return "pill";
+  return "idle";
+}
+async function syncViewMode() { await setViewMode(desiredMode()); }
+
+// First launch: park the orb bottom-centre. Later transitions never need this — they
+// all anchor off the window's OWN current position (resizeAnchored above), so wherever
+// the user last dragged the pill to is exactly where the next state grows from.
+async function initOrbPosition() {
+  const m = await monitorLogical();
+  const s = SIZES.idle;
+  const x = m ? m.ox + (m.w - s.w) / 2 : 120;
+  const y = m ? m.oy + m.h - s.h - 96 : 120;
+  try {
+    await appWin.setSize(new LogicalSize(s.w, s.h));
+    await appWin.setPosition(new LogicalPosition(x, y));
   } catch {}
 }
 
-// First launch: park the orb bottom-centre, then remember that as its position.
-async function initOrbPosition() {
-  const m = await monitorLogical();
-  orbPos = m ? { x: m.ox + (m.w - ORB) / 2, y: m.oy + m.h - ORB - 96 } : { x: 120, y: 120 };
-  await setView("orb");
+// ---- bubble: live transcript / correction reveal / last-result / error — one surface,
+// shown/hidden as a unit. `hidden` is the authoritative visibility flag (desiredMode()
+// above reads it); `.show` just drives the fade transition. ----
+function showBubble() {
+  bubble.hidden = false;
+  requestAnimationFrame(() => bubble.classList.add("show"));
+  void syncViewMode();
+}
+function hideBubble() {
+  bubble.classList.remove("show", "tagged");
+  bubbleTag.hidden = true;
+  bubbleClose.hidden = true;
+  cancelFold();
+  setTimeout(() => {
+    if (!bubble.classList.contains("show")) bubble.hidden = true;
+    void syncViewMode();
+  }, 190);
+}
+function setBubbleTag(text: string | null) {
+  if (text) { bubbleTag.hidden = false; bubbleTag.textContent = text; bubble.classList.add("tagged"); }
+  else { bubbleTag.hidden = true; bubble.classList.remove("tagged"); }
+}
+
+// Auto fold-back: a small ring in the bubble's corner counts down ~2s (correction reveal
+// only — last-result/error never auto-close) before collapsing everything to the orb.
+let foldRAF = 0;
+function cancelFold() {
+  if (foldRAF) cancelAnimationFrame(foldRAF);
+  foldRAF = 0;
+  foldRing.hidden = true;
+  foldRing.classList.remove("show");
+  foldRing.style.setProperty("--p", "0");
+}
+function startFold(afterMs = 2000) {
+  cancelFold();
+  foldRing.hidden = false;
+  requestAnimationFrame(() => foldRing.classList.add("show"));
+  const start = performance.now();
+  const step = (t: number) => {
+    const p = Math.min(1, (t - start) / afterMs);
+    foldRing.style.setProperty("--p", String(Math.round(p * 100)));
+    if (p < 1) { foldRAF = requestAnimationFrame(step); }
+    else { foldRAF = 0; closeToIdle(); }
+  };
+  foldRAF = requestAnimationFrame(step);
+}
+function closeToIdle() {
+  cancelFold();
+  hideBubble();
+  pill.classList.remove("listening", "show-stop", "done");
+  root.classList.remove("command-mode");
+  void setViewMode("idle");
+}
+
+function enterListening() {
+  pill.classList.remove("done");
+  // Default to "show Stop" (tap/toggle, or a plain orb click — neither has a hold
+  // concept). If this press turns out to be push-to-talk, a `dictation:"hold"` /
+  // `command:"hold"` event (fired by Rust once it can tell — see shortcuts.rs/fnkey.rs)
+  // removes it a moment later; a quick tap never sees that event, so Stop stays put.
+  pill.classList.add("listening", "show-stop");
+  errBadge.classList.remove("show");
+  void syncViewMode();
 }
 
 // Which kind of session the SAME audio path (startLive) is capturing: normal dictation
@@ -121,12 +224,13 @@ async function initOrbPosition() {
 // only the terminal handler differs (formatted→inject vs intent→run_command).
 let captureMode: "live" | "command" = "live";
 
-// Open the full card and start a fresh dictation session (streaming visible throughout).
+// Open the pill and start a fresh dictation session (streaming visible throughout, if
+// the "show live transcript" setting is on).
 function beginDictation() {
   clearBanner();
   captureMode = "live";
   root.classList.remove("command-mode");
-  void setView("card");
+  enterListening();
   reset();
   if (ws) { try { ws.close(); } catch {} ws = null; }
   void startLive();
@@ -134,12 +238,12 @@ function beginDictation() {
 
 // P1 — command mode: identical audio session to dictation (getUserMedia → PCM stream →
 // stop/finalize), differing only in mode:"command" on the start frame and the terminal
-// `intent` handler. A distinct card class flags command mode in the UI.
+// `intent` handler. A distinct root class flags command mode in the UI (violet accent).
 function beginCommand() {
   clearBanner();
   captureMode = "command";
   root.classList.add("command-mode");
-  void setView("card");
+  enterListening();
   reset();
   if (ws) { try { ws.close(); } catch {} ws = null; }
   void startLive();
@@ -155,7 +259,10 @@ let micStream: MediaStream | null = null;
 let analyser: AnalyserNode | null = null;
 let levelRAF = 0;
 
-// Live mic-level meter (5 bars in the titlebar), driven by an AnalyserNode.
+// The waveform — real mic-level bars (18 of them, see index.html), driven by an
+// AnalyserNode. This IS the "does it react to your voice" bar: near-silent input keeps
+// every bar close to its resting height; speaking pushes them up in real time. Same
+// mechanism as the old 5-bar titlebar meter, just bigger and re-themed.
 const levelBars = Array.from(document.querySelectorAll<HTMLElement>("#level i"));
 function startLevelMeter() {
   if (!analyser) return;
@@ -168,8 +275,9 @@ function startLevelMeter() {
     for (let i = 0; i < n; i++) {
       let sum = 0;
       for (let j = 0; j < band; j++) sum += buf[i * band + j] || 0;
-      const avg = sum / band / 255; // 0..1
-      levelBars[i].style.height = (3 + Math.pow(avg, 0.7) * 13).toFixed(1) + "px";
+      let avg = sum / band / 255; // 0..1
+      if (avg < 0.02) avg = 0; // noise floor — true silence reads as a flat line, not a jitter
+      levelBars[i].style.height = (3 + Math.pow(avg, 0.7) * 27).toFixed(1) + "px";
     }
     levelRAF = requestAnimationFrame(tick);
   };
@@ -184,12 +292,21 @@ function stopLevelMeter() {
 const TYPING = `<span class="typing"><i></i><i></i><i></i></span>`;
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-function setStatus(cls: string, text: string) { dot.className = "dot " + cls; statusText.textContent = text; }
 
-// Single notification banner under the title bar. Explicitly shown/cleared so it can
-// never go stale (e.g. a mic-permission notice must vanish the moment the mic works).
+// Presentational only now (no titlebar dot/status text) — "err" lights the small red
+// badge on the pill's corner; the orb's tooltip carries the text for anyone hovering.
+function setStatus(cls: string, text: string) {
+  if (cls === "err") { errBadge.hidden = false; requestAnimationFrame(() => errBadge.classList.add("show")); }
+  else errBadge.classList.remove("show");
+  orb.title = text ? `Dictate  (⌥Space) — ${text}` : "Dictate  (⌥Space)";
+}
+
+// Single notification banner, now living inside the bubble (no separate titlebar strip).
+// Explicitly shown/cleared so it can never go stale (e.g. a mic-permission notice must
+// vanish the moment the mic works).
 type BannerActions = "none" | "mic" | "ax";
 function showBanner(kind: "err" | "warn" | "info", msg: string, actions: BannerActions = "none") {
+  cancelFold();
   banner.className = "banner " + kind;
   bannerMsg.textContent = msg;
   openMicBtn.hidden = actions !== "mic";
@@ -199,19 +316,34 @@ function showBanner(kind: "err" | "warn" | "info", msg: string, actions: BannerA
   bannerLog.hidden = true;
   bannerActions.hidden = actions === "none";
   banner.hidden = false;
+  setBubbleTag(null);
+  bubbleClose.hidden = false;
+  bubbleClose.onclick = () => clearBanner();
+  showBubble();
 }
-function clearBanner() { banner.hidden = true; bannerActions.hidden = true; copyErr.hidden = true; bannerLog.hidden = true; }
+function clearBanner() {
+  const wasShown = !banner.hidden;
+  banner.hidden = true;
+  bannerActions.hidden = true;
+  copyErr.hidden = true;
+  bannerLog.hidden = true;
+  errBadge.classList.remove("show");
+  // Only close the bubble if the banner was actually the thing showing — a defensive
+  // clearBanner() at the top of beginDictation()/startLive() must never stomp on an
+  // unrelated live-transcript or last-result bubble that's already open.
+  if (wasShown) { bubbleClose.hidden = true; hideBubble(); }
+}
 
 // Full text of the last backend error + the log-file path (both untruncated), so the
 // user can copy the complete detail for reporting even though the banner is short.
 let lastErrorFull = "";
 let lastErrorFile = "";
 
-// Turn raw backend errors into a short, human line (the status pill is small, and
-// dumping vendor JSON reads as broken).
+// Turn raw backend errors into a short, human line (the bubble is small, and dumping
+// vendor JSON reads as broken).
 function friendlyError(msg: string): string {
   if (/DAILY_CAP_EXCEEDED|cap reached|requests_too_many|\b429\b/i.test(msg))
-    return "PyAI daily cap reached (resets 00:00 UTC) — use Demo or another key";
+    return "PyAI daily cap reached (resets 00:00 UTC) — try again later or use another key";
   if (/microphone|getusermedia/i.test(msg)) return "microphone error";
   const m = msg.replace(/\s+/g, " ").trim();
   return m.length > 110 ? m.slice(0, 110) + "…" : m;
@@ -220,14 +352,17 @@ function friendlyError(msg: string): string {
 function resetCopy() {
   finalText = "";
   copyBtn.disabled = true;
-  copyBtn.classList.remove("copied");
+  copyBtn.classList.remove("copied", "visible");
   copyBtn.textContent = "Copy";
 }
 
 function reset() {
-  transcriptEl.innerHTML = `<span class="hint">Listening…</span>`;
-  finalOut.textContent = "";
   resetCopy();
+  if (cfgShowTranscript) {
+    setBubbleTag(null);
+    transcriptEl.innerHTML = `<span class="hint">Listening…</span>`;
+    showBubble();
+  }
 }
 
 function renderLive(m: Extract<ServerMsg, { type: "live" }>) {
@@ -240,6 +375,7 @@ function renderLive(m: Extract<ServerMsg, { type: "live" }>) {
 // One-time diff over the finished transcript: strike what cleanup removed.
 async function animateCorrection(m: Extract<ServerMsg, { type: "correction" }>) {
   if (!m.ops.some((o) => o.type !== "keep")) return; // nothing removed -> leave clean transcript as-is
+  setBubbleTag("what we removed");
   transcriptEl.innerHTML = "";
   m.ops.forEach((o, i) => {
     if (o.type === "keep") {
@@ -271,91 +407,118 @@ async function animateCorrection(m: Extract<ServerMsg, { type: "correction" }>) 
     if (o.type === "replace") transcriptEl.querySelector(`.repl-new[data-new="${i}"]`)?.classList.replace("hidden", "show");
   }
   await sleep(250);
-  transcriptEl.querySelectorAll<HTMLElement>(".op.rm").forEach((s) => s.classList.add(showRemoved.checked ? "faded" : "collapsed"));
+  transcriptEl.querySelectorAll<HTMLElement>(".op.rm").forEach((s) => s.classList.add(cfgShowRemoved ? "faded" : "collapsed"));
 }
 
+function isBubbleShown() { return !bubble.hidden; }
+
 // The widget seam: paste the finalized text into the focused field of the app
-// underneath, via the Rust inject_text (clipboard + synthetic ⌘V) command.
-async function injectFinal(text: string) {
-  if (!text.trim()) return;
+// underneath, via the Rust inject_text (clipboard + synthetic ⌘V) command. Returns a
+// discriminated outcome so the caller can tell "done, safe to auto-fold" from "a banner
+// is now showing and needs the user to read/dismiss it".
+async function injectFinal(text: string): Promise<"ok" | "no_access" | "secure" | "no_field" | "failed"> {
+  if (!text.trim()) return "ok";
   try {
     // Rust returns where the text went; the fallback cases already put it on the clipboard.
     const result = await invoke<string>("inject_text", { text });
     if (result === "no_access") {
       setStatus("err", "grant Accessibility");
       showBanner("err", "Grant Accessibility so the widget can insert text (also needed for pasting). Enable Verbatim (or your terminal, in dev), then quit & relaunch. Text is copied — press ⌘V meanwhile.", "ax");
+      return "no_access";
     } else if (result === "secure") {
       setStatus("err", "secure field");
       showBanner("warn", "That looks like a password / secure field — not inserting. The text is on your clipboard (⌘V) if you need it elsewhere.");
+      return "secure";
     } else if (result === "no_field") {
       setStatus("done", "copied");
       showBanner("info", "No text field was focused — copied to your clipboard. Press ⌘V where you want it.");
+      return "no_field";
     } else {
       setStatus("done", "inserted ✓");
+      return "ok";
     }
   } catch (e) {
-    // Text stays visible in the Final Output box + the Copy button, so nothing is lost.
+    // Text stays copyable via the bubble's Copy button, so nothing is lost.
     setStatus("err", "inject failed");
     showBanner("err", "Injection failed — grant Accessibility (System Settings → Privacy → Accessibility), then retry. Use Copy above meanwhile.");
+    return "failed";
   }
 }
 
 // P1 — the command-mode seam: hand the classified intent to Rust's run_command executor,
 // which performs one editing action on the focused field via synthetic keystrokes. Routes
-// the returned status like injectFinal (same secure / no_field / no_access banners).
-async function runCommandIntent(intent: any) {
+// the returned status like injectFinal (same secure / no_field / no_access banners), and
+// returns the same "ok" sentinel so the intent handler can auto-fold identically.
+async function runCommandIntent(intent: any): Promise<"ok" | "blocked"> {
   try {
     const result = await invoke<string>("run_command", { intent });
     if (result === "no_access") {
       setStatus("err", "grant Accessibility");
       showBanner("err", "Grant Accessibility so Verbatim can run commands (System Settings → Privacy → Accessibility). Enable Verbatim (or your terminal, in dev), then quit & relaunch.", "ax");
+      return "blocked";
     } else if (result === "secure") {
       setStatus("err", "secure field");
       showBanner("warn", "That looks like a password / secure field — the command wasn't run.");
+      return "blocked";
     } else if (result === "no_field") {
       setStatus("done", "no field");
       showBanner("info", "No editable text field was focused — nothing to run the command on.");
+      return "blocked";
     } else if (result === "noop") {
       setStatus("done", "no action");
+      return "ok";
     } else if (result === "disabled") {
       // P2 — a system command arrived while the opt-in flag is off.
       setStatus("done", "commands off");
       showBanner("info", "System commands are turned off — enable “Allow system commands” in Settings to run “open Slack”, volume, or a Shortcut.");
+      return "blocked";
     } else if (result === "unavailable") {
       // P2 — the macOS facility is missing (e.g. no `shortcuts` CLI pre-Monterey).
       setStatus("err", "unavailable");
       showBanner("warn", "That needs macOS 12+ Shortcuts — the “shortcuts” command isn’t available on this Mac.");
+      return "blocked";
     } else {
       setStatus("done", "done ✓");
+      return "ok";
     }
   } catch (e) {
     setStatus("err", "command failed");
     showBanner("err", "Running the command failed — grant Accessibility (System Settings → Privacy → Accessibility), then retry.");
+    return "blocked";
   }
+}
+
+// After a successful outcome (no banner now showing), flash the pill briefly, then either
+// hold the correction reveal open for ~2s (transcript setting on) or drop straight back
+// to the idle orb (off) — shared by both the dictation and command-mode terminal paths.
+function settleAfterSuccess() {
+  pill.classList.add("done");
+  setTimeout(() => {
+    pill.classList.remove("done");
+    if (cfgShowTranscript && isBubbleShown()) startFold(2000);
+    else closeToIdle();
+  }, 650);
 }
 
 function handle(m: ServerMsg) {
   if (m.type === "ready") { setStatus("live", `listening (${m.stt} + ${m.correction})`); }
-  else if (m.type === "live") renderLive(m);
+  else if (m.type === "live") { if (cfgShowTranscript) renderLive(m); }
   else if (m.type === "correction") {
-    void animateCorrection(m);
+    if (cfgShowTranscript) void animateCorrection(m);
     void invoke("set_last_raw", { text: m.raw }).catch(() => {}); // 5.4 — remember raw for revert-to-raw
     setStatus("fix", "polishing…");
-    // Show the cleaned text immediately (before the formatter finishes) so the output
-    // isn't a long blank spinner — the polished version replaces it on `formatted`.
-    if (m.cleanText && m.cleanText.trim()) finalOut.textContent = m.cleanText;
   }
   else if (m.type === "formatted") {
     finalText = m.text;
     if (m.text.trim()) lastResult = m.text; // remember for "Show Last Result"
-    finalOut.textContent = m.text;
-    copyBtn.disabled = !m.text.trim(); // always copyable, even if injection lands nowhere
-    void injectFinal(m.text);
+    copyBtn.disabled = !m.text.trim();
+    copyBtn.classList.toggle("visible", !!m.text.trim()); // always copyable, even if injection lands nowhere
+    void injectFinal(m.text).then((outcome) => { if (outcome === "ok") settleAfterSuccess(); });
   }
   else if (m.type === "intent") {
     // P1 — command mode: hand the classified intent to the Rust executor. It runs ONE
     // editing action on the focused field and returns where it went (like inject_text).
-    void runCommandIntent(m.intent);
+    void runCommandIntent(m.intent).then((outcome) => { if (outcome === "ok") settleAfterSuccess(); });
   }
   else if (m.type === "error") {
     setStatus("err", "error");
@@ -370,9 +533,9 @@ function handle(m: ServerMsg) {
     teardownAudio();
     if (ws) { try { ws.close(); } catch {} ws = null; } // next session starts fresh
     resetButtons();
-    // Stay open on the final result (card doesn't auto-collapse) so the transcript,
-    // diff and output remain visible for review. Dismiss with ✕ or ⌥Space.
-    // (Auto-collapse was: setTimeout(() => void setView("orb"), 1400);)
+    // Deliberately NOT force-closing here — the fold-back timer (or the immediate
+    // close for "show transcript" off) started from settleAfterSuccess() above is what
+    // ends the session visually; `done` may well arrive mid-reveal.
   }
 }
 
@@ -464,10 +627,11 @@ async function startLive() {
   } catch (e) {
     // Only show the "access needed" banner for a REAL permission denial — otherwise we
     // were wrongly claiming the mic was blocked when it wasn't.
+    pill.classList.remove("listening", "show-stop"); // no audio session actually started
     const name = (e as any)?.name ?? "";
     if (name === "NotAllowedError" || name === "SecurityError" || name === "PermissionDeniedError") {
       setStatus("err", "mic blocked");
-      showBanner("err", "Microphone access needed — enable Verbatim (or your terminal, in dev) under Microphone, then quit & relaunch. Demo works without a mic.", "mic");
+      showBanner("err", "Microphone access needed — enable Verbatim (or your terminal, in dev) under Microphone, then quit & relaunch.", "mic");
     } else if (name === "NotFoundError" || name === "OverconstrainedError") {
       setStatus("err", "no mic"); showBanner("err", "No microphone found.");
     } else {
@@ -534,26 +698,25 @@ async function restoreOthersAudio() {
 function stop() {
   setStatus("fix", "finishing up…");
   resetCopy();
-  finalOut.innerHTML = TYPING; // loading indicator on the OUTPUT while it computes
-  demoBtn.disabled = true; startBtn.disabled = true; stopBtn.disabled = true;
+  cancelFold();
+  // Keep .listening (frozen waveform) — it reads as "still wrapping up" — but the
+  // action's been taken, so hide Stop; teardownAudio() below also stops the meter.
+  pill.classList.remove("show-stop");
+  stopBtn.disabled = true;
   teardownAudio();
   ws?.send(JSON.stringify({ type: "stop" }));
 }
 
-function buttonsBusy() { demoBtn.disabled = true; startBtn.disabled = true; stopBtn.disabled = false; }
-function resetButtons() { demoBtn.disabled = false; startBtn.disabled = false; stopBtn.disabled = true; }
+function buttonsBusy() { stopBtn.disabled = false; }
+function resetButtons() { stopBtn.disabled = true; }
 
-demoBtn.onclick = async () => { clearBanner(); reset(); finalOut.innerHTML = TYPING; buttonsBusy(); stopBtn.disabled = true; await connect("demo"); };
-startBtn.onclick = () => void startLive();
 stopBtn.onclick = () => stop();
-bannerClose.onclick = () => clearBanner();
 
-// Settings — the gear opens the separate, focusable Settings window. This non-key overlay
-// can't take keyboard focus, so all configuration (keys, providers, hotkey, language,
-// mute-others, permissions) lives there. Phase 4.9 removed the old inline panel.
-settingsBtn.onclick = () => { void invoke("show_settings_window").catch(() => {}); };
-
-// Orb: click to dictate, drag to reposition. Distinguish the two by movement.
+// Orb: click to dictate (or, while already listening, to stop & insert — a second way
+// to end a toggle session besides the Stop button or a second hotkey tap); drag to
+// reposition. Distinguish click-vs-drag by movement. The orb is never hidden now (no
+// separate card view to swap it out for), so this same handler covers both idle and
+// listening states, and dragging works identically in either.
 let orbDown = false, orbMoved = false, orbPosReady = false;
 let orbStartX = 0, orbStartY = 0, orbWinLX = 0, orbWinLY = 0, orbScale = 1;
 orb.addEventListener("pointerdown", (e) => {
@@ -575,25 +738,33 @@ orb.addEventListener("pointermove", (e) => {
   const dx = e.screenX - orbStartX, dy = e.screenY - orbStartY;
   if (!orbMoved && Math.hypot(dx, dy) > 4) orbMoved = true;
   if (orbMoved) {
-    orbPos = { x: orbWinLX + dx, y: orbWinLY + dy }; // remember where the orb is dragged to
-    void appWin.setPosition(new LogicalPosition(orbPos.x, orbPos.y)).catch(() => {});
+    void appWin.setPosition(new LogicalPosition(orbWinLX + dx, orbWinLY + dy)).catch(() => {});
   }
 });
 orb.addEventListener("pointerup", (e) => {
   if (!orbDown) return;
   orbDown = false;
   try { orb.releasePointerCapture(e.pointerId); } catch {}
-  if (!orbMoved) beginDictation(); // a click, not a drag
+  if (orbMoved) return; // a drag, not a click
+  if (pill.classList.contains("listening")) { if (ws) stop(); }
+  else beginDictation();
 });
+
+// Cancel — discard the in-progress session without inserting (only visible while
+// listening; replaces the old titlebar ✕). Closes the socket WITHOUT sending {type:
+// "stop"}, so the backend never runs correction/format on it.
 collapseBtn.onclick = () => {
-  // Dismiss / cancel — drop the session without inserting, return to the orb.
   if (ws) { try { ws.close(); } catch {} ws = null; }
   teardownAudio();
-  resetButtons();
   clearBanner();
-  root.classList.remove("command-mode"); // P1 — clear the command-mode indicator
-  void setView("orb");
+  closeToIdle();
 };
+
+// Bubble dismiss — for content that doesn't auto-fold (an error banner, or a reopened
+// last-result). Wired per-context by showBanner()/showLastResult(); a plain hideBubble()
+// covers the fallback.
+bubbleClose.onclick = () => hideBubble();
+
 copyBtn.onclick = async () => {
   if (!finalText) return;
   try {
@@ -619,39 +790,50 @@ copyErr.onclick = async () => {
   setTimeout(() => { copyErr.textContent = "Copy details"; }, 1600);
 };
 
-// ⌥Space drives dictation from Rust: hold = push-to-talk, tap = toggle.
+// ⌥Space drives dictation from Rust: hold = push-to-talk, tap = toggle. We default to
+// showing Stop the moment "start" arrives (see enterListening()); a "hold" event fires
+// once Rust can tell this press is a hold (immediately for the Fn/PTT path, or after
+// HOLD_MS for the configurable toggle hotkey) and hides it. A quick tap-then-release
+// never sees "hold" at all, so Stop stays visible throughout — correct for toggle mode.
 void listen<string>("dictation", (e) => {
   if (e.payload === "start") beginDictation();
+  else if (e.payload === "hold") pill.classList.remove("show-stop");
   else if (e.payload === "stop") { if (ws) stop(); }
 });
 
 // P1 — the command-mode hotkey drives command capture from Rust (same tap/hold state
-// machine as dictation, separate statics). Reuses the same stop()/finalize audio path;
-// the backend replies with an `intent` frame instead of `formatted`.
+// machine as dictation, separate statics + its own hold-confirmation timer). Reuses the
+// same stop()/finalize audio path; the backend replies with an `intent` frame instead of
+// `formatted`.
 void listen<string>("command", (e) => {
   if (e.payload === "start") beginCommand();
+  else if (e.payload === "hold") pill.classList.remove("show-stop");
   else if (e.payload === "stop") { if (ws) stop(); }
 });
 
-// Tray "Show Last Result" → open the card showing the previous dictation (no new session),
-// so the user can re-copy it. lastResult survives reset() between sessions.
+// Tray "Show Last Result" → reopen the bubble with the previous dictation (no new
+// session), so the user can re-copy it. Unlike the live/correction reveal, this does
+// NOT auto-fold — it stays until dismissed (bubbleClose) or a new dictation starts.
+// lastResult survives reset() between sessions.
 async function showLastResult() {
   clearBanner();
-  await setView("card");
-  reset();
-  resetButtons();
+  root.classList.remove("command-mode");
+  pill.classList.remove("listening", "show-stop");
   if (lastResult.trim()) {
-    transcriptEl.innerHTML = `<span class="hint">Your last dictation — press <b>Copy</b>, or ⌥Space to dictate again.</span>`;
-    finalOut.textContent = lastResult;
+    setBubbleTag("last result");
+    transcriptEl.innerHTML = `<span class="stable">${esc(lastResult)}</span>`;
     finalText = lastResult;
     copyBtn.disabled = false;
-    setStatus("done", "last result");
+    copyBtn.classList.add("visible");
   } else {
+    setBubbleTag(null);
     transcriptEl.innerHTML = `<span class="hint">Nothing dictated yet. Press ⌥Space or click the orb to start.</span>`;
-    setStatus("", "idle");
+    resetCopy();
   }
+  bubbleClose.hidden = false;
+  bubbleClose.onclick = () => hideBubble();
+  showBubble();
 }
 void listen("show-last", () => { void showLastResult(); });
 
-reset();
 void initOrbPosition(); // start as the floating orb, bottom-centre; drag to move

@@ -199,6 +199,34 @@
             </div>
             <div class="set-row">
               <div class="meta">
+                <h3>Show live transcript while dictating</h3>
+                <p>
+                  Show the streaming transcript and the "what we removed" reveal
+                  in a small bubble above the widget. Off = the widget stays a
+                  plain waveform pill; text still corrects and inserts, just
+                  quietly.
+                </p>
+              </div>
+              <label class="switch"
+                ><input type="checkbox" id="showTranscript" /><span></span
+              ></label>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>Show what was removed</h3>
+                <p>
+                  During the correction reveal, fade out fillers/false
+                  starts/self-corrections before they disappear instead of
+                  cutting them immediately. Only visible when the live
+                  transcript above is on.
+                </p>
+              </div>
+              <label class="switch"
+                ><input type="checkbox" id="showRemoved" /><span></span
+              ></label>
+            </div>
+            <div class="set-row">
+              <div class="meta">
                 <h3>
                   Mute dictation sounds <span class="tag planned">Planned</span>
                 </h3>
@@ -474,6 +502,7 @@
               <div class="meta">
                 <h3>Wake word <span class="tag alpha">Beta</span></h3>
                 <p>
+                  Say <strong>&ldquo;Hey&nbsp;Jarvis&rdquo;</strong> to start.
                   Always-listening, on-device. The mic (and the macOS orange
                   indicator) stay on while enabled.
                 </p>

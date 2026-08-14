@@ -131,6 +131,23 @@ pub fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                                 *COMMAND_RECORDING.lock().unwrap() = true;
                                 *COMMAND_STARTED.lock().unwrap() = true;
                                 let _ = app.emit("command", "start");
+                                // Mirrors the dictation toggle's hold-confirmation timer above
+                                // (own generation counter so the two hotkeys never invalidate
+                                // each other's timers).
+                                let gen = crate::state::COMMAND_PRESS_GEN
+                                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                                    + 1;
+                                let app_for_timer = app.clone();
+                                std::thread::spawn(move || {
+                                    std::thread::sleep(std::time::Duration::from_millis(HOLD_MS as u64));
+                                    let same_press = crate::state::COMMAND_PRESS_GEN
+                                        .load(std::sync::atomic::Ordering::SeqCst)
+                                        == gen;
+                                    let still_recording = *COMMAND_RECORDING.lock().unwrap();
+                                    if same_press && still_recording {
+                                        let _ = app_for_timer.emit("command", "hold");
+                                    }
+                                });
                             }
                         }
                         ShortcutState::Released => {
@@ -186,6 +203,29 @@ pub fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                             *RECORDING.lock().unwrap() = true;
                             *STARTED_THIS_PRESS.lock().unwrap() = true;
                             let _ = app.emit("dictation", "start");
+                            // Widget redesign — we don't know yet whether this resolves to a
+                            // tap (toggle) or a hold (push-to-talk); that's only decided at
+                            // Released (see below) or once HOLD_MS has passed. Spawn a one-shot
+                            // timer that re-checks after HOLD_MS: if the SAME press is still
+                            // recording, it's definitely a hold, so tell the widget to hide its
+                            // Stop button (`dictation:"hold"`). A quick tap that releases before
+                            // this fires never sees it, so the button stays visible — correct,
+                            // since that's toggle mode. PRESS_GEN guards against a stale timer
+                            // from a stopped/rapidly-restarted press firing late.
+                            let gen = crate::state::PRESS_GEN
+                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                                + 1;
+                            let app_for_timer = app.clone();
+                            std::thread::spawn(move || {
+                                std::thread::sleep(std::time::Duration::from_millis(HOLD_MS as u64));
+                                let same_press = crate::state::PRESS_GEN
+                                    .load(std::sync::atomic::Ordering::SeqCst)
+                                    == gen;
+                                let still_recording = *RECORDING.lock().unwrap();
+                                if same_press && still_recording {
+                                    let _ = app_for_timer.emit("dictation", "hold");
+                                }
+                            });
                         }
                     }
                     ShortcutState::Released => {
@@ -207,7 +247,6 @@ pub fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                             let _ = app.emit("dictation", "stop");
                         }
                     }
-                    _ => {}
                 }
             })
             .build(),

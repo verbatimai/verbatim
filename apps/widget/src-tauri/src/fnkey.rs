@@ -167,6 +167,11 @@ fn fn_press(app: &AppHandle) {
         let _ = win.show();
     }
     let _ = app.emit("dictation", "start");
+    // Widget redesign — an Fn/PTT press is unconditionally a hold (there's no toggle
+    // variant for the bare-key path), so tell the widget immediately to hide its Stop
+    // button; releasing the key is what ends the session. Mirrors the delayed "hold"
+    // signal the regular toggle hotkey sends once it can tell (shortcuts.rs).
+    let _ = app.emit("dictation", "hold");
 }
 
 fn fn_release(app: &AppHandle) {

@@ -32,6 +32,15 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.
 # Phase 3.4 — read the focused element's role via the Accessibility API (ApplicationServices
 # is linked directly in axinject.rs) to decide paste vs refuse vs copy.
 core-foundation = "0.10"
+# P3 — wake word: download the openWakeWord ONNX models on first enable (wake.rs `ensure_models`).
+# ureq's default features enable rustls TLS (HTTPS + following the GitHub release redirect).
+ureq = "2"
+# P3 — wake word inference: ONNX Runtime (runs the 3 openWakeWord models). `download-binaries`
+# fetches a prebuilt ONNX Runtime shared lib at build time, so no system install is required.
+ort = { version = "2.0.0-rc.13", features = ["download-binaries"] }
+# P3 — wake word audio: cross-platform capture — an INDEPENDENT always-on 16 kHz input stream,
+# separate from the webview's getUserMedia dictation mic (macOS allows multiple mic clients).
+cpal = "0.15"
 
 # Keep the binary name stable for tauri.
 [[bin]]

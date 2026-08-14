@@ -28,19 +28,29 @@ Boundaries the dev agent marked `// MAC SPIKE:` (all in `wake.rs`), each needing
 - teardown drops the stream (releases mic / clears the orange dot).
 - `wake_mic_status`: real mic TCC read (AVFoundation `authorizationStatus(for:.audio)`); currently a conservative `is_running()` stand-in.
 
-## Gates / decisions needed (parked for Mayank / the Mac)
-- **⚠ Model license gate (must-fix 4):** verify `melspectrogram.onnx` + `embedding_model.onnx` (Google speech-embedding derivatives) may be redistributed inside an MIT app **before** bundling. If not, the bundling approach changes (download-on-first-enable, or a different embedding). *This is a real decision, parked here per the "hold items needing Mayank" rule — it doesn't block the spike, but it gates shipping.*
+## Gates / decisions
+- **✅ Model-license gate RESOLVED (14 Aug 2026) → download-on-first-use.** Rather than bundling `melspectrogram.onnx` + `embedding_model.onnx` (Google speech-embedding derivatives), the app now **downloads all three `.onnx` files from openWakeWord's v0.5.1 release** into a writable app-data dir on first enable (`wake.rs` `ensure_models` → `download_file`, via `ureq`). Verbatim never redistributes them, so the redistribution-license question doesn't arise. No `tauri.conf.json bundle.resources` entry needed.
 - **Custom "hey verbatim" model:** v1 proves the pipeline on a stock phrase ("hey jarvis"); training a custom word is a separate effort (data + a training run).
-- **Cargo deps + resource bundling:** `ort`/`cpal`/`ndarray` + `tauri.conf.json` resources aren't in the cloud snapshot; documented in a `// P3 Cargo deps:` block atop `wake.rs`, to be applied on the Mac.
+- **Cargo deps:** `ort`/`cpal`/`ndarray`/**`ureq`** aren't in the cloud snapshot; documented in the `// P3 Cargo deps:` block atop `wake.rs`, to be added on the Mac.
 
 ## On-Mac checklist
-- [ ] resolve the model-license gate; obtain the 3 `.onnx` assets.
-- [ ] add `ort`/`cpal`/`ndarray` to `Cargo.toml`; bundle assets via `tauri.conf.json` resources.
+- [x] add `ort`/`cpal`/`ureq` to `Cargo.toml` (14 Aug — `ndarray` dropped: the pipeline uses plain `Vec<f32>` buffers, no `ndarray` needed; no resource bundling — models download on first enable).
+- [ ] verify the `.onnx` asset URLs resolve on openWakeWord's v0.5.1 release (the `.tflite` names with a `.onnx` extension).
 - [ ] `cargo build`; models load; stock phrase detects at threshold (measure false-accept/reject).
 - [ ] detection fires dictate/command activation identically to the hotkey; **self-trigger gate holds** (phrase during a session does nothing).
 - [ ] toggle starts/stops from Settings; survives restart; disabled = no mic/orange-dot.
 - [ ] CPU/battery overhead measured (record machine spec); confirm `generate_handler!` cfg-gated entry compiles.
 - [ ] add the Settings UI (toggle + handler picker + threshold slider + always-listening/on-device copy).
 
+## Detection pipeline implemented (14 Aug 2026)
+The Mac-spike core is now authored in `wake.rs` (was a stub `run_listen_thread`):
+- **Deps added** to `apps/widget/src-tauri/Cargo.toml` (macOS target): `ort = { version = "2", features = ["download-binaries"] }`, `cpal = "0.15"` (alongside the already-present `ureq = "2"`). `ndarray` proved unnecessary — buffers are plain `Vec<f32>`/`VecDeque<f32>`.
+- **`WakePipeline`** — holds the 3 `ort` sessions (mel / embedding / wake) + streaming buffers; `load()` commits them from the downloaded files and logs graph input names (spike aid); `feed()` streams audio → 80 ms mel CHUNKs → 76-frame embedding windows (step 8) → the 16-embedding wake window → score, applying openWakeWord's `mel/10 + 2` transform and int16-magnitude input.
+- **Capture** — `cpal` default input device + `build_input_stream` (f32) → `mpsc` channel; the loop resamples device-rate → 16 kHz mono int16-range and feeds the pipeline. PATIENCE (3 consecutive over-threshold predictions) + a per-utterance latch + the DEBOUNCE window gate firing; threshold/handler stay live-tunable atomics.
+- **Activation** unchanged — `fire_activation` keeps the must-fix self-trigger gate (`RECORDING || COMMAND_RECORDING` → no-op) and the full show()+flag+emit handshake.
+- **Settings** — the Wake-word row now reads *Say “Hey Jarvis” to start.* so the trigger phrase is visible in the UI.
+- **Known risk (in-file `// ⚠ ort 2.x API`):** `Session::builder`/`commit_from_file`, `Tensor::from_array`, `run(ort::inputs![..])`, `try_extract_tensor::<f32>` target ort 2.x and may need small compiler-driven tweaks; mel params / tensor shapes are validated against openWakeWord's reference on the Mac.
+- **Not cloud-compilable** (native audio + ONNX). Next: `cargo build` on the Mac, then tune threshold against false-accept/reject.
+
 ## Held items needing Mayank
-- **Model-license gate** (above) — a genuine decision before shipping wake word; parked, not blocking the spike.
+- None blocking. (The model-license gate is resolved via download-on-first-use; the remaining work is the on-Mac spike — deps + the cpal/ort audio pipeline.)
