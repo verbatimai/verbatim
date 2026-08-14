@@ -205,9 +205,14 @@ fn fire_activation(app: &AppHandle) -> bool {
 const CHUNK: usize = 1280; // 80 ms @ 16 kHz — one streaming step
 const MEL_BINS: usize = 32; // mel bands the melspectrogram model emits
 const EMB_WINDOW_MELS: usize = 76; // mel frames per embedding window
-const EMB_STEP_MELS: usize = 8; // advance 8 mel frames (= 80 ms) per new embedding
 const EMB_DIM: usize = 96; // embedding vector length
 const WAKE_WINDOW: usize = 16; // embeddings the wake-word classifier reads (~1.28 s)
+const MEL_CONTEXT: usize = 480; // 160*3 raw samples of lookback fed to each melspec call. openWakeWord
+                                // runs melspec on CHUNK+480 samples; its frame formula (ceil(N/160)-3)
+                                // drops exactly these 3 context frames, so each call emits 8 fresh,
+                                // non-overlapping frames aligned to the new CHUNK.
+const MEL_KEEP: usize = 200; // mel frames retained (need ≥ EMB_WINDOW_MELS for the window; bound the rest)
+const RAW_KEEP: usize = 4000; // raw samples retained (need ≥ CHUNK+MEL_CONTEXT = 1760 for context)
 const MELSPEC_DIV: f32 = 10.0; // openWakeWord melspec transform: mel = mel/10 + 2
 const MELSPEC_ADD: f32 = 2.0;
 const PATIENCE: u32 = 3; // consecutive over-threshold predictions to confirm (tunable)
@@ -223,10 +228,10 @@ struct WakePipeline {
     mel: ort::session::Session,
     emb: ort::session::Session,
     word: ort::session::Session,
-    audio: Vec<f32>,     // unprocessed 16 kHz samples (int16 range)
-    mels: Vec<f32>,      // flattened mel frames: [frame * MEL_BINS]
-    mels_used: usize,    // mel-frame cursor: frames already turned into embeddings
-    embs: VecDeque<f32>, // flattened embeddings, kept to the last WAKE_WINDOW
+    raw: VecDeque<f32>,  // rolling raw 16 kHz int16-range samples (keeps ≥ CHUNK+MEL_CONTEXT for context)
+    mels: Vec<f32>,      // flattened mel frames [frame * MEL_BINS], bounded to MEL_KEEP frames
+    embs: VecDeque<f32>, // flattened embeddings, kept to the last WAKE_WINDOW (one produced per CHUNK)
+    acc: usize,          // new raw samples accumulated since the last CHUNK was processed
 }
 
 impl WakePipeline {
@@ -252,10 +257,10 @@ impl WakePipeline {
             mel,
             emb,
             word,
-            audio: Vec::new(),
+            raw: VecDeque::new(),
             mels: Vec::new(),
-            mels_used: 0,
             embs: VecDeque::new(),
+            acc: 0,
         })
     }
 
@@ -272,66 +277,85 @@ impl WakePipeline {
     }
 
     /// Push 16 kHz int16-range mono audio; returns the newest wake score if one was produced.
+    ///
+    /// Mirrors openWakeWord's streaming pipeline exactly: buffer raw audio, and every CHUNK
+    /// (1280 samples / 80 ms) run melspec on the LAST CHUNK+MEL_CONTEXT raw samples (the context
+    /// gives the model lookback; its frame formula drops those 3 frames, so 8 fresh mel frames
+    /// come out), take the LAST EMB_WINDOW_MELS (76) mel frames → ONE embedding, then score over
+    /// the last WAKE_WINDOW (16) embeddings. One embedding + one score per CHUNK — NOT a step-8
+    /// sliding window (the earlier version's cadence bug capped the score).
     fn feed(&mut self, samples: &[f32]) -> Option<f32> {
-        self.audio.extend_from_slice(samples);
         let mut newest: Option<f32> = None;
 
-        // 1) audio → mel, one 80 ms CHUNK at a time.
-        while self.audio.len() >= CHUNK {
-            let chunk: Vec<f32> = self.audio.drain(..CHUNK).collect();
-            let mel_out = match Self::run(&mut self.mel, vec![1, CHUNK as i64], chunk) {
+        for &s in samples {
+            self.raw.push_back(s);
+            self.acc += 1;
+            if self.acc < CHUNK {
+                continue;
+            }
+            self.acc = 0;
+
+            // 1) melspec on the last CHUNK + MEL_CONTEXT raw samples (context = model lookback).
+            let need = CHUNK + MEL_CONTEXT;
+            let take = need.min(self.raw.len());
+            if take < 400 {
+                continue; // openWakeWord requires ≥ 400 samples (25 ms) for a melspec frame
+            }
+            let start = self.raw.len() - take;
+            let slice: Vec<f32> = self.raw.iter().skip(start).copied().collect();
+            let mel_out = match Self::run(&mut self.mel, vec![1, take as i64], slice) {
                 Ok(o) => o,
                 Err(e) => {
                     eprintln!("[wake] melspec error: {e}");
-                    return None;
+                    return newest;
                 }
             };
-            // melspec out is [1,1,frames,32]; apply openWakeWord's transform and append.
+            // melspec out is [1,1,frames,32]; apply openWakeWord's transform (x/10 + 2) and append.
             for v in &mel_out {
                 self.mels.push(v / MELSPEC_DIV + MELSPEC_ADD);
             }
-
-            // 2) mel → embeddings: each new 76-frame window (stepped 8) → one 96-dim embedding.
-            let total_frames = self.mels.len() / MEL_BINS;
-            while self.mels_used + EMB_WINDOW_MELS <= total_frames {
-                let begin = self.mels_used * MEL_BINS;
-                let end = begin + EMB_WINDOW_MELS * MEL_BINS;
-                let window = self.mels[begin..end].to_vec();
-                let e = match Self::run(
-                    &mut self.emb,
-                    vec![1, EMB_WINDOW_MELS as i64, MEL_BINS as i64, 1],
-                    window,
-                ) {
-                    Ok(o) => o,
-                    Err(e) => {
-                        eprintln!("[wake] embedding error: {e}");
-                        return None;
-                    }
-                };
-                // embedding out may be [1,1,1,96]; take the trailing EMB_DIM values.
-                for &v in &e[e.len().saturating_sub(EMB_DIM)..] {
-                    self.embs.push_back(v);
-                }
-                while self.embs.len() > WAKE_WINDOW * EMB_DIM {
-                    self.embs.pop_front();
-                }
-                self.mels_used += EMB_STEP_MELS;
-
-                // 3) embeddings → score, once a full 16-window is available.
-                if self.embs.len() >= WAKE_WINDOW * EMB_DIM {
-                    let feat: Vec<f32> = self.embs.iter().copied().collect();
-                    match Self::run(&mut self.word, vec![1, WAKE_WINDOW as i64, EMB_DIM as i64], feat) {
-                        Ok(o) => newest = o.first().copied(),
-                        Err(e) => eprintln!("[wake] wakeword error: {e}"),
-                    }
-                }
+            // Bound the buffers — keep only what the windows below need.
+            let frames = self.mels.len() / MEL_BINS;
+            if frames > MEL_KEEP {
+                self.mels.drain(..(frames - MEL_KEEP) * MEL_BINS);
+            }
+            while self.raw.len() > RAW_KEEP {
+                self.raw.pop_front();
             }
 
-            // Keep the mel buffer bounded — drop frames fully behind the embedding cursor.
-            if self.mels_used > EMB_WINDOW_MELS {
-                let drop_frames = self.mels_used - EMB_WINDOW_MELS;
-                self.mels.drain(..drop_frames * MEL_BINS);
-                self.mels_used -= drop_frames;
+            // 2) ONE embedding over the LAST EMB_WINDOW_MELS mel frames (once enough accumulate).
+            let frames = self.mels.len() / MEL_BINS;
+            if frames < EMB_WINDOW_MELS {
+                continue;
+            }
+            let begin = (frames - EMB_WINDOW_MELS) * MEL_BINS;
+            let window = self.mels[begin..].to_vec(); // exactly EMB_WINDOW_MELS * MEL_BINS values
+            let e = match Self::run(
+                &mut self.emb,
+                vec![1, EMB_WINDOW_MELS as i64, MEL_BINS as i64, 1],
+                window,
+            ) {
+                Ok(o) => o,
+                Err(e) => {
+                    eprintln!("[wake] embedding error: {e}");
+                    return newest;
+                }
+            };
+            // embedding out may be [1,1,1,96]; take the trailing EMB_DIM values.
+            for &v in &e[e.len().saturating_sub(EMB_DIM)..] {
+                self.embs.push_back(v);
+            }
+            while self.embs.len() > WAKE_WINDOW * EMB_DIM {
+                self.embs.pop_front();
+            }
+
+            // 3) score over the last WAKE_WINDOW embeddings, once the window is full.
+            if self.embs.len() >= WAKE_WINDOW * EMB_DIM {
+                let feat: Vec<f32> = self.embs.iter().copied().collect();
+                match Self::run(&mut self.word, vec![1, WAKE_WINDOW as i64, EMB_DIM as i64], feat) {
+                    Ok(o) => newest = o.first().copied(),
+                    Err(e) => eprintln!("[wake] wakeword error: {e}"),
+                }
             }
         }
         newest
@@ -459,6 +483,10 @@ fn run_listen_thread(app: AppHandle, model: String) {
         let samples = resample_to_16k_int16(&frame, in_rate, channels);
         if let Some(score) = pipeline.feed(&samples) {
             let threshold = load_threshold(); // live-tunable each prediction
+            // TEMP (spike): log any non-trivial score so the phrase's peak is visible for tuning.
+            if score >= 0.1 {
+                eprintln!("[wake] score {score:.3} (threshold {threshold:.2})");
+            }
             if score >= threshold {
                 over += 1;
                 if armed && over >= PATIENCE {
