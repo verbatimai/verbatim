@@ -88,6 +88,11 @@ class OpenAiSession implements STTSession {
   private active = ""; // accumulated deltas for the current utterance
   private uCounter = 0;
   private utteranceId = "u0";
+  // Set the instant close() asks the underlying ws to close while it may still be
+  // CONNECTING. The `ws` library's own close() aborts the handshake in that case and
+  // emits this EXACT benign message as an 'error' — it's a side effect of a close WE
+  // requested, not a real stream failure, so don't let it reach onError().
+  private closingBeforeOpen = false;
 
   constructor(ws: WebSocket, model: string, language?: string, detectLanguage?: boolean, keywords?: string[]) {
     this.ws = ws;
@@ -120,7 +125,10 @@ class OpenAiSession implements STTSession {
       });
     });
     ws.on("message", (d) => this.onMessage(d.toString()));
-    ws.on("error", (e) => this.ecb?.(e as Error));
+    ws.on("error", (e) => {
+      if (this.closingBeforeOpen && /closed before the connection was established/i.test((e as Error).message)) return;
+      this.ecb?.(e as Error);
+    });
     ws.on("close", () => this.ccb?.());
   }
   private ws: WebSocket;
@@ -188,6 +196,7 @@ class OpenAiSession implements STTSession {
   }
 
   close() {
+    if (this.ws.readyState === WebSocket.CONNECTING) this.closingBeforeOpen = true;
     if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
       this.ws.close();
     }

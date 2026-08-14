@@ -59,15 +59,24 @@ body{padding:11px;display:flex;align-items:flex-end;justify-content:center}
    stays visually stable as the bubble appears/disappears above it. ── */
 #root{height:100%;display:flex;flex-direction:column-reverse;align-items:center;gap:10px}
 
-/* ── pill: idle = just the orb; listening = orb + waveform + optional Stop ── */
+/* ── pill: idle = bare orb, no visible card/shadow behind it at all; listening = orb +
+   waveform + Stop inside the actual "pill" card surface. The card chrome (background/
+   border/shadow/blur) only exists while .listening — it used to be present unconditionally
+   (just at padding:7px / no translateX), which showed a dark rounded rectangle behind the
+   idle orb, visibly wider than the orb itself. .done always co-occurs with .listening (see
+   settleAfterSuccess() in main.ts — it's added on top, never alone), so gating the card on
+   .listening also covers the done-flash and command-mode states. ── */
 .pill{position:relative;flex:none;height:56px;display:flex;align-items:center;
-  background:linear-gradient(180deg,var(--card-1),var(--card-2));
-  border:1px solid var(--line);border-radius:28px;box-shadow:var(--card-shadow);
-  -webkit-backdrop-filter:blur(20px) saturate(1.4);backdrop-filter:blur(20px) saturate(1.4);
+  background:transparent;border:1px solid transparent;border-radius:28px;box-shadow:none;
+  -webkit-backdrop-filter:none;backdrop-filter:none;
   padding:7px;transform:translateX(0);
-  transition:padding .26s cubic-bezier(.2,.8,.2,1),transform .26s cubic-bezier(.2,.8,.2,1),border-color .2s,box-shadow .2s}
-.pill.listening{transform:translateX(-14px);padding:7px 14px 7px 7px}
-#root.command-mode .pill{border-color:rgba(163,113,247,.45);
+  transition:padding .26s cubic-bezier(.2,.8,.2,1),transform .26s cubic-bezier(.2,.8,.2,1),
+    border-color .2s,box-shadow .2s,background-color .2s}
+.pill.listening{transform:translateX(-14px);padding:7px 14px 7px 7px;
+  background:linear-gradient(180deg,var(--card-1),var(--card-2));
+  border-color:var(--line);box-shadow:var(--card-shadow);
+  -webkit-backdrop-filter:blur(20px) saturate(1.4);backdrop-filter:blur(20px) saturate(1.4)}
+#root.command-mode .pill.listening{border-color:rgba(163,113,247,.45);
   box-shadow:var(--card-shadow),0 0 0 1px rgba(163,113,247,.4),0 0 8px rgba(163,113,247,.28)}
 /* brief confirmation flash right after a successful insert (settleAfterSuccess()) */
 .pill.done{box-shadow:var(--card-shadow),0 0 0 3px rgba(63,176,163,.4)}

@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer, type Server } from "node:http";
+import { createServer as createTcpServer } from "node:net";
 import { AddressInfo } from "node:net";
 import { DeepgramSTT } from "./deepgram.stt";
 import type { TranscriptEvent } from "./types";
@@ -249,5 +250,50 @@ describe("DeepgramSTT.transcribeBatch (against a mock /v1/listen)", () => {
     const r = await batchCall({});
     expect(r.url).not.toContain("keywords=");
     expect(r.url).not.toContain("keyterm=");
+  });
+});
+
+// Regression — reported bug: "WebSocket was closed before the connection was
+// established" surfacing as a stt.stream error. An instant start→stop (or just a
+// slow vendor handshake) can call close() while the socket is still CONNECTING;
+// the `ws` library then aborts the handshake and emits that exact message as an
+// 'error'. It's a side effect of a close WE asked for, not a real stream failure,
+// so onError() must stay silent for it while onClose() still fires normally.
+describe("DeepgramSTT close() while still CONNECTING (regression)", () => {
+  it("does not surface the handshake-abort error to onError, and still closes", async () => {
+    // Accept the TCP connection but never complete the WS handshake, so the
+    // socket stays CONNECTING until we close it ourselves.
+    const server = createTcpServer(() => {});
+    await new Promise<void>((r) => server.listen(0, r));
+    const port = (server.address() as AddressInfo).port;
+    process.env.DEEPGRAM_WS_URL = `ws://localhost:${port}`;
+
+    const stt = new DeepgramSTT();
+    const session = await stt.startSession({ apiKey: "k" });
+    let errored: Error | undefined;
+    let closed = false;
+    session.onError((e) => { errored = e; });
+    session.onClose(() => { closed = true; });
+    session.close();
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(errored).toBeUndefined();
+    expect(closed).toBe(true);
+
+    server.close();
+    delete process.env.DEEPGRAM_WS_URL;
+  });
+
+  it("still surfaces a genuine connection error that has nothing to do with our own close()", async () => {
+    process.env.DEEPGRAM_WS_URL = "ws://127.0.0.1:1"; // nothing listens on port 1
+    const stt = new DeepgramSTT();
+    const session = await stt.startSession({ apiKey: "k" });
+    const errored = await new Promise<Error | undefined>((resolve) => {
+      session.onError((e) => resolve(e));
+      setTimeout(() => resolve(undefined), 500);
+    });
+    expect(errored).toBeDefined();
+    session.close();
+    delete process.env.DEEPGRAM_WS_URL;
   });
 });

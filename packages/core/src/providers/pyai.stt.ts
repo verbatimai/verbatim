@@ -61,10 +61,18 @@ class PyAiSession implements STTSession {
   private tcb?: (e: TranscriptEvent) => void;
   private ecb?: (e: Error) => void;
   private ccb?: () => void;
+  // Set the instant close()/finalize() asks the underlying ws to close while it may
+  // still be CONNECTING. The `ws` library's own close() aborts the handshake in that
+  // case and emits this EXACT benign message as an 'error' — it's a side effect of a
+  // close WE requested, not a real stream failure, so don't let it reach onError().
+  private closingBeforeOpen = false;
 
   constructor(private ws: WebSocket) {
     ws.on("message", (data) => this.onMessage(data.toString()));
-    ws.on("error", (e) => this.ecb?.(e as Error));
+    ws.on("error", (e) => {
+      if (this.closingBeforeOpen && /closed before the connection was established/i.test((e as Error).message)) return;
+      this.ecb?.(e as Error);
+    });
     ws.on("close", () => this.ccb?.());
   }
 
@@ -112,6 +120,7 @@ class PyAiSession implements STTSession {
   }
 
   close() {
+    if (this.ws.readyState === WebSocket.CONNECTING) this.closingBeforeOpen = true;
     if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
       this.ws.close();
     }

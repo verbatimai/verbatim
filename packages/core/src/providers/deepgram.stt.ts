@@ -128,10 +128,19 @@ class DeepgramSession implements STTSession {
   // 5.1 — Deepgram closes an idle socket after ~10s of no audio (m4.4-deepgram-plan.md).
   // A periodic KeepAlive during silence keeps the live preview socket open across pauses.
   private keepAlive?: ReturnType<typeof setInterval>;
+  // Set the instant close()/finalize() asks the underlying ws to close while it may
+  // still be CONNECTING (e.g. an instant start→stop, or a slow vendor handshake).
+  // The `ws` library's own close() aborts the handshake in that case and emits this
+  // EXACT benign message as an 'error' — it's a side effect of a close WE requested,
+  // not a real stream failure, so don't let it reach onError() as a terminal STT error.
+  private closingBeforeOpen = false;
 
   constructor(private ws: WebSocket) {
     ws.on("message", (d) => this.onMessage(d.toString()));
-    ws.on("error", (e) => this.ecb?.(e as Error));
+    ws.on("error", (e) => {
+      if (this.closingBeforeOpen && /closed before the connection was established/i.test((e as Error).message)) return;
+      this.ecb?.(e as Error);
+    });
     ws.on("close", () => { this.stopKeepAlive(); this.ccb?.(); });
     this.keepAlive = setInterval(() => {
       if (this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "KeepAlive" }));
@@ -222,6 +231,7 @@ class DeepgramSession implements STTSession {
 
   close() {
     this.stopKeepAlive();
+    if (this.ws.readyState === WebSocket.CONNECTING) this.closingBeforeOpen = true;
     if (
       this.ws.readyState === WebSocket.OPEN ||
       this.ws.readyState === WebSocket.CONNECTING
