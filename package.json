@@ -1,6 +1,6 @@
 {
   "name": "verbatim",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Real-time, vendor-agnostic dictation with visible corrections.",
   "license": "MIT",

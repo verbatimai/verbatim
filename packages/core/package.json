@@ -1,6 +1,6 @@
 {
   "name": "@verbatim/core",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Vendor-neutral core: streaming STT + visible-correction pipeline.",
   "license": "MIT",
   "type": "module",
