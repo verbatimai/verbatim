@@ -42,6 +42,21 @@
         "focus": true,
         "skipTaskbar": false,
         "visible": false
+      },
+      {
+        "label": "onboarding",
+        "title": "Welcome to Verbatim",
+        "url": "onboarding.html",
+        "width": 440,
+        "height": 480,
+        "resizable": false,
+        "decorations": true,
+        "transparent": false,
+        "alwaysOnTop": true,
+        "center": true,
+        "focus": true,
+        "skipTaskbar": false,
+        "visible": false
       }
     ],
     "security": { "csp": null }

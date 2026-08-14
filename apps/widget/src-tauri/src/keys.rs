@@ -90,3 +90,12 @@ pub fn delete_key(app: tauri::AppHandle, vendor: String) -> Result<(), String> {
     let acct = vendor_key_name(&vendor).ok_or_else(|| format!("unknown vendor: {vendor}"))?;
     secrets::secret_delete(&app, acct)
 }
+
+/// Onboarding gate: is ANY vendor key saved? No dedicated "onboarded" config flag — this
+/// check is naturally idempotent (once any key exists it's false forever) and self-heals
+/// if the user later deletes every key.
+pub fn any_vendor_key_saved(app: &tauri::AppHandle) -> bool {
+    ["pyai", "deepgram", "openai", "anthropic"]
+        .iter()
+        .any(|v| vendor_key_name(v).map(|acct| secrets::secret_has(app, acct)).unwrap_or(false))
+}
