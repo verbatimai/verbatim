@@ -312,7 +312,6 @@
               </div>
               <div class="control-col align-end">
                 <select id="correctionProvider">
-                  <option value="pyai">PyAI</option>
                   <option value="openai">OpenAI</option>
                   <option value="anthropic">Anthropic</option>
                 </select>
@@ -546,6 +545,25 @@
                      "score >= threshold" true on nearly any audio (fires immediately, not on
                      the wake phrase) and used to leave the listener permanently disarmed after
                      its first fire — see wake.rs store_threshold's matching clamp. -->
+              </div>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>Spoken greeting</h3>
+                <p>
+                  When the wake word fires, reply out loud
+                  (&ldquo;Hello Mayank, how can I help you?&rdquo;) before
+                  listening. Uses the vendor below to synthesize the reply.
+                </p>
+              </div>
+              <div class="control-col align-end">
+                <label class="switch"
+                  ><input type="checkbox" id="wakeWordGreeting" /><span></span
+                ></label>
+                <select id="ttsProvider">
+                  <option value="pyai">PyAI</option>
+                  <option value="deepgram">Deepgram</option>
+                </select>
               </div>
             </div>
           </div>

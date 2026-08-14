@@ -51,6 +51,8 @@ type AppConfig = {
   wakeWordEnabled?: boolean; // P-series — always-listening on-device wake word
   wakeWordHandler?: string; // P-series — "dictate" | "command"
   wakeWordThreshold?: number; // P-series — detection threshold 0..1
+  wakeWordGreeting?: boolean; // P3 — speak a hardcoded reply when the wake word fires (default true)
+  ttsProvider?: string; // P3 — text-to-speech vendor for the wake-word greeting: "pyai" | "deepgram" (default "pyai")
   showTranscript?: boolean; // Widget redesign — live-transcript/correction-reveal bubble (default true)
   showRemoved?: boolean; // Widget redesign — fade (vs. instantly cut) removed spans during the reveal (default true)
   historyLimit?: number; // dictation history — how many recent entries to show: 10 | 20 | 50
@@ -129,6 +131,8 @@ const systemCommandsEl = $<HTMLInputElement>("systemCommands");
 const wakeWordEnableEl = $<HTMLInputElement>("wakeWordEnable");
 const wakeWordHandlerEl = $<HTMLSelectElement>("wakeWordHandler");
 const wakeWordThresholdEl = $<HTMLInputElement>("wakeWordThreshold");
+const wakeWordGreetingEl = $<HTMLInputElement>("wakeWordGreeting");
+const ttsProviderEl = $<HTMLSelectElement>("ttsProvider");
 
 let config: AppConfig = {
   sttProvider: "pyai",
@@ -772,6 +776,16 @@ function initWakeWord() {
   wakeWordEnableEl.onchange = () => { void patchConfig({ wakeWordEnabled: wakeWordEnableEl.checked }); };
   wakeWordHandlerEl.onchange = () => { void patchConfig({ wakeWordHandler: wakeWordHandlerEl.value }); };
   wakeWordThresholdEl.onchange = () => { void patchConfig({ wakeWordThreshold: Number(wakeWordThresholdEl.value) }); };
+  // P3 — spoken greeting on wake ("Hello Mayank, how can I help you?", hardcoded for now)
+  // + which TTS vendor synthesizes it. Mirrors the three controls above.
+  if (wakeWordGreetingEl) {
+    wakeWordGreetingEl.checked = config.wakeWordGreeting !== false; // default on
+    wakeWordGreetingEl.onchange = () => { void patchConfig({ wakeWordGreeting: wakeWordGreetingEl.checked }); };
+  }
+  if (ttsProviderEl) {
+    ttsProviderEl.value = config.ttsProvider ?? "pyai";
+    ttsProviderEl.onchange = () => { void patchConfig({ ttsProvider: ttsProviderEl.value }); };
+  }
 }
 
 // ---- launch at login (1.2) — Rust syncs the macOS login item as a set_config side-effect ----

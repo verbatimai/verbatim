@@ -23,3 +23,8 @@ export * from "./providers/reconnect";
 export * from "./command/types";
 export * from "./command/registry";
 export * from "./command/grammar";
+// P3 — text-to-speech (its own vendor-agnostic role, distinct from correction). First
+// consumer: the wake-word listener's spoken greeting (apps/backend/src/server.ts's
+// "speak" message).
+export * from "./tts/types";
+export * from "./tts/registry";

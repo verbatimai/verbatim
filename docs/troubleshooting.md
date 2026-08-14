@@ -14,9 +14,11 @@ This appears only when you click **Start dictation** (live mode). Two options:
 - **For live mode**, give the backend a key. Easiest: create a `.env` file at the repo root (copy `.env.example`) with:
   ```
   PYAI_API_KEY=pyai_...
+  OPENAI_API_KEY=sk-...
   STT_PROVIDER=pyai
-  CORRECTION_PROVIDER=pyai
+  CORRECTION_PROVIDER=openai
   ```
+  (PyAI was removed as a correction vendor — `CORRECTION_PROVIDER` is `openai` | `anthropic` now; PyAI stays the STT + TTS default.)
   The backend loads `.env` on start (watch for `[backend] loaded env from …` and `PYAI_API_KEY=set` in its logs). Restart the backend after editing `.env`. You can also just export it: `PYAI_API_KEY=... npm run dev`.
 
 ## Backend starts but the browser shows an error on "Start dictation"

@@ -10,8 +10,9 @@ streams `live` / `correction` / `done` events back to the web client.
 npm install
 # offline demo (no key, no mic) — the browser can request mode:"demo"
 npm run backend
-# live: provide a key in the server env
-PYAI_API_KEY=... STT_PROVIDER=pyai CORRECTION_PROVIDER=pyai npm run backend
+# live: provide a key in the server env (CORRECTION_PROVIDER: openai | anthropic —
+# PyAI was removed as a correction vendor; it stays the STT + TTS default)
+PYAI_API_KEY=... OPENAI_API_KEY=... STT_PROVIDER=pyai CORRECTION_PROVIDER=openai npm run backend
 ```
 Listens on `ws://localhost:8787` (override with `PORT`).
 

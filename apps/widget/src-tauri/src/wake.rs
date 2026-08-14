@@ -204,6 +204,13 @@ fn fire_activation(app: &AppHandle) -> bool {
         *crate::RECORDING.lock().unwrap() = true;
         let _ = app.emit("dictation", "start");
     }
+    // Spoken reply — ONLY the wake-word source fires this (never the hotkey/PTT paths),
+    // so a hands-free "Hey Jarvis" gets an audible reply but pressing ⌥Space doesn't.
+    // Fired unconditionally here; the "wakeWordGreeting" on/off toggle and the TTS vendor
+    // choice are read on the frontend (config is already there via get_config/
+    // config-changed) rather than threaded through another Rust atomic — see
+    // apps/widget/src/main.ts's playWakeGreeting().
+    let _ = app.emit("wake-detected", ());
     true
 }
 

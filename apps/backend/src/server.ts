@@ -9,7 +9,7 @@
 import { readFileSync, existsSync, appendFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import { getSTTProvider, getCorrectionProvider, getIntentProvider, assertIntentKeys, TranscriptAccumulator, localFormat, expandSnippets, Telemetry, startReconnectingSession, type STTSession, type STTProvider, type CorrectionProvider, type Snippet, type FormatMode } from "@verbatim/core";
+import { getSTTProvider, getCorrectionProvider, getIntentProvider, assertIntentKeys, getTtsProvider, TranscriptAccumulator, localFormat, expandSnippets, Telemetry, startReconnectingSession, type STTSession, type STTProvider, type CorrectionProvider, type Snippet, type FormatMode } from "@verbatim/core";
 
 // ── Complete PyAI error log ───────────────────────────────────────────────────
 // The widget's banner truncates long responses (e.g. a 401 HTML body), so every raw
@@ -63,7 +63,13 @@ loadEnv();
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? "127.0.0.1";
 const DEFAULT_STT = process.env.STT_PROVIDER ?? "pyai";
-const DEFAULT_CORR = process.env.CORRECTION_PROVIDER ?? "pyai";
+// PyAI was removed as a correction vendor (packages/core/src/correction/registry.ts) —
+// it stays the STT + TTS default, but correction now defaults to openai.
+const DEFAULT_CORR = process.env.CORRECTION_PROVIDER ?? "openai";
+// P3 — wake-word spoken greeting. TTS is its own vendor-agnostic role (text -> audio),
+// independent of the correction vendor; PyAI stays the default (it already offers STT +
+// TTS — see packages/core/src/tts/pyai.ts's [verify] note on the exact endpoint).
+const DEFAULT_TTS = process.env.TTS_PROVIDER ?? "pyai";
 // Settings §1.4 — Debug mode. The Rust host injects HEAR_DEBUG=1 into this sidecar's env
 // when the Settings "Debug mode" toggle is on (and restarts us so it takes effect). Gate
 // the verbose lines below on it. NEVER log a secret/API-key value, even in debug.
@@ -373,6 +379,33 @@ wss.on("connection", (ws) => {
       }
       send(ws, { type: "rewritten", text: rewritten });
       send(ws, { type: "done" });
+    } else if (msg.type === "speak") {
+      // P3 — wake-word spoken reply (hardcoded greeting for now, see main.ts's
+      // playWakeGreeting). STANDALONE: unlike every other branch above, this never
+      // requires a prior "start" — the greeting fires on its own short-lived connection,
+      // separate from the dictation/command session's socket, so `session`/`correction`
+      // may still be null here. TTS is its OWN vendor-agnostic role (text -> audio), not
+      // folded into the correction provider — "which vendor cleans up text" and "which
+      // vendor can speak" are independent choices, mirroring the STT/correction split.
+      const text = typeof msg.text === "string" ? msg.text.trim() : "";
+      const ttsId = (typeof msg.provider === "string" && msg.provider.trim()) || DEFAULT_TTS;
+      if (!text) {
+        send(ws, { type: "error", kind: "terminal", message: "speak: no text given" });
+        return;
+      }
+      try {
+        const tts = getTtsProvider(ttsId);
+        const key = tts.requiredKeys[0] ? process.env[tts.requiredKeys[0]] : undefined;
+        if (tts.requiredKeys.length && !key) {
+          send(ws, { type: "error", kind: "terminal", message: `Speak needs ${tts.requiredKeys.join(", ")}. Add it in Settings (⚙).` });
+          return;
+        }
+        const result = await tts.synthesize(text);
+        send(ws, { type: "spoken", audio: Buffer.from(result.audio).toString("base64"), mime: result.mime });
+      } catch (e: any) {
+        logPyaiError("tts.speak", e, { ttsId, textLen: text.length });
+        send(ws, { type: "error", kind: "terminal", message: "speak failed: " + (e?.message ?? String(e)), file: LOG_FILE });
+      }
     }
   });
 
@@ -389,7 +422,7 @@ function concat(chunks: Uint8Array[]): Uint8Array {
 }
 
 console.log(`[backend] listening on ws://${HOST}:${PORT}  (browser connects via the web app's /ws proxy)`);
-console.log(`[backend] live defaults: stt=${DEFAULT_STT} correction=${DEFAULT_CORR}`);
+console.log(`[backend] live defaults: stt=${DEFAULT_STT} correction=${DEFAULT_CORR} tts=${DEFAULT_TTS}`);
 console.log(`[backend] PYAI_API_KEY=${process.env.PYAI_API_KEY ? "set" : "MISSING"}  (Demo mode needs no key)`);
 console.log(`[backend] PyAI error log: ${LOG_FILE}`);
 if (DEBUG) console.log(`[backend] HEAR_DEBUG=1 — verbose [hear] logging ON`);

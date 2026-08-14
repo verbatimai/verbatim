@@ -227,7 +227,10 @@ fn combo(enigo: &mut Enigo, mods: &[Key], key: Key) -> Result<(), String> {
 fn select_target(enigo: &mut Enigo, target: &Target) -> Result<(), String> {
     match target {
         Target::Selection => Ok(()),
-        Target::All => combo(enigo, &[Key::Meta], Key::Unicode('a')),
+        // ⌘A — explicit-flag chord (crate::inject::post_command_chord), not enigo's combo()
+        // — see the comment on post_command_chord for why (the "types a literal letter
+        // instead of the modified keystroke" bug).
+        Target::All => crate::inject::post_command_chord('a'),
         Target::LastWord | Target::LastSentence => {
             combo(enigo, &[Key::Alt, Key::Shift], Key::LeftArrow)
         }
@@ -269,7 +272,7 @@ fn execute(intent: &CommandIntent) -> Result<String, String> {
                 Style::Italic => 'i',
                 Style::Underline => 'u',
             };
-            combo(&mut enigo, &[Key::Meta], Key::Unicode(letter))?;
+            crate::inject::post_command_chord(letter)?;
             Ok("done".into())
         }
 
@@ -326,7 +329,8 @@ fn copy_selection(
 
     let previous = clipboard.get_text().ok();
     select_target(enigo, target)?;
-    combo(enigo, &[Key::Meta], Key::Unicode('c'))?;
+    // ⌘C — explicit-flag chord, same reason as select_target's ⌘A (see post_command_chord).
+    crate::inject::post_command_chord('c')?;
     thread::sleep(Duration::from_millis(120)); // settle: let ⌘C populate the pasteboard
 
     let selected = clipboard.get_text().unwrap_or_default();
@@ -368,8 +372,10 @@ fn apply_case(mode: &CaseMode, target: &Target) -> Result<String, String> {
         .map_err(|e| format!("clipboard set: {e}"))?;
     thread::sleep(Duration::from_millis(20));
 
-    // Paste the transformed text over the still-selected target.
-    combo(&mut enigo, &[Key::Meta], Key::Unicode('v'))?;
+    // Paste the transformed text over the still-selected target. Explicit-flag chord, same
+    // reason as copy_selection's ⌘C above (see post_command_chord) — this is the OTHER half
+    // of the exact bug that was reported for inject_text's plain ⌘V.
+    crate::inject::post_command_chord('v')?;
     thread::sleep(Duration::from_millis(150)); // let the paste land before we restore
 
     if let Some(prev) = previous {

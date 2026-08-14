@@ -4783,6 +4783,7 @@ version = "0.1.0"
 dependencies = [
  "arboard",
  "core-foundation 0.10.1",
+ "core-graphics 0.23.2",
  "cpal",
  "enigo",
  "keyring",

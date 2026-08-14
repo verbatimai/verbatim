@@ -309,6 +309,15 @@ const TYPING = `<span class="typing"><i></i><i></i><i></i></span>`;
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Transcript block auto-scroll: `.transcript` is capped at 2 lines (max-height, see
+// style.css) with overflow-y:auto — but nothing was ever moving scrollTop, so once the
+// streaming text (or the correction reveal) grew past 2 lines, the view stayed pinned to
+// whatever was on-screen when it first overflowed instead of following the newest line.
+// Called after every DOM mutation that can change .transcript's content height.
+function scrollTranscriptToBottom() {
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+}
+
 // Presentational only now (no titlebar dot/status text) — "err" lights the small red
 // badge on the pill's corner; the orb's tooltip carries the text for anyone hovering.
 function setStatus(cls: string, text: string) {
@@ -378,6 +387,7 @@ function reset() {
   if (cfgShowTranscript) {
     setBubbleTag(null);
     transcriptEl.innerHTML = `<span class="hint">Listening…</span>`;
+    scrollTranscriptToBottom();
     showBubble();
   }
 }
@@ -387,6 +397,7 @@ function renderLive(m: Extract<ServerMsg, { type: "live" }>) {
     `<span class="stable">${esc(m.transcript)}</span>` +
     (m.active ? ` <span class="active">${esc(m.active)}</span>` : "") +
     `<span class="caret"></span>`;
+  scrollTranscriptToBottom(); // keep the newest (volatile-tail) text in view as it grows
 }
 
 // One-time diff over the finished transcript: strike what cleanup removed.
@@ -415,6 +426,7 @@ async function animateCorrection(m: Extract<ServerMsg, { type: "correction" }>) 
       }
     }
   });
+  scrollTranscriptToBottom(); // the full correction reveal can be longer than the live tail was
   await sleep(150);
   for (let i = 0; i < m.ops.length; i++) {
     const o = m.ops[i];
@@ -926,6 +938,7 @@ async function showLastResult() {
     transcriptEl.innerHTML = `<span class="hint">Nothing dictated yet. Press ⌥Space or click the orb to start.</span>`;
     resetCopy();
   }
+  scrollTranscriptToBottom();
   bubbleClose.hidden = false;
   bubbleClose.onclick = () => hideBubble();
   showBubble();

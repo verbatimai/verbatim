@@ -17,7 +17,7 @@ use tauri::Emitter;
 #[serde(rename_all = "camelCase", default)]
 pub struct AppConfig {
     pub stt_provider: String,        // "pyai" | "deepgram" | "openai"
-    pub correction_provider: String, // "pyai" | "openai" | "anthropic"
+    pub correction_provider: String, // "openai" | "anthropic" (PyAI removed as a correction vendor — it stays STT + TTS only)
     pub stt_model: String,           // optional per-vendor model override; "" = provider default
     pub correction_model: String,    // optional per-vendor model override; "" = provider default
     pub language: String,            // BCP-47 tag, default "en"
@@ -46,6 +46,8 @@ pub struct AppConfig {
     pub wake_word_handler: String,   // P3 — which handler a detection fires: "dictate" | "command" (default "dictate")
     pub wake_word_threshold: f32,    // P3 — detection score threshold 0..1 (default 0.3, live-tunable via atomics, no restart — see wake.rs PATIENCE/AGC notes: 0.5-0.6 was above the real utterance's sustained plateau, so genuine detections never satisfied PATIENCE; going below ~0.25 risks firing on ambient-noise score blips instead)
     pub wake_word_model: String,     // P3 — wake-word model asset id under resources/wakeword/ (default stock "hey_jarvis")
+    pub wake_word_greeting: bool,    // P3 — speak a hardcoded reply ("Hello Mayank, how can I help you?") when the wake word fires (default true)
+    pub tts_provider: String,        // P3 — text-to-speech vendor for the wake-word greeting: "pyai" | "deepgram" (default "pyai" — PyAI already offers STT + TTS)
     pub show_transcript: bool,       // Widget redesign — show the live-transcript/correction-reveal bubble while dictating (default true; off = pill only, text still corrects + injects silently)
     pub show_removed: bool,          // Widget redesign — during the correction reveal, fade removed spans instead of collapsing them immediately (default true)
     pub history_limit: u32,          // dictation history — how many recent entries to show: 10 | 20 | 50 (default 20)
@@ -55,7 +57,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             stt_provider: "pyai".into(),
-            correction_provider: "pyai".into(),
+            correction_provider: "openai".into(),
             stt_model: String::new(),
             correction_model: String::new(),
             language: "en".into(),
@@ -84,6 +86,8 @@ impl Default for AppConfig {
             wake_word_handler: "dictate".into(),
             wake_word_threshold: 0.3,
             wake_word_model: "hey_jarvis".into(),
+            wake_word_greeting: true,
+            tts_provider: "pyai".into(),
             show_transcript: true,
             show_removed: true,
             history_limit: 20,

@@ -10,6 +10,7 @@ import {
 const NO_ENV: Record<string, string | undefined> = {};
 const PYAI_ONLY = { PYAI_API_KEY: "k" };
 const PYAI_AND_OPENAI = { PYAI_API_KEY: "k", OPENAI_API_KEY: "o" };
+const DEEPGRAM_AND_OPENAI = { DEEPGRAM_API_KEY: "d", OPENAI_API_KEY: "o" };
 const BOTH_KEYS = { PYAI_API_KEY: "k", DEEPGRAM_API_KEY: "d" };
 
 describe("AppSettings resolver", () => {
@@ -27,17 +28,19 @@ describe("AppSettings resolver", () => {
   });
 
   it("resolves STT and correction independently (mix-and-match)", () => {
+    // PyAI remains valid for STT; correction is openai/anthropic only (PyAI was
+    // removed as a correction vendor — it stays the STT + TTS default).
     const r = resolveProviders({
       sttProvider: "deepgram",
-      correctionProvider: "pyai",
+      correctionProvider: "anthropic",
       language: "en",
     });
     expect(r.stt.id).toBe("deepgram");
-    expect(r.correction.id).toBe("pyai");
+    expect(r.correction.id).toBe("anthropic");
   });
 
   it("falls back to 'en' when language is blank", () => {
-    const r = resolveProviders({ sttProvider: "pyai", correctionProvider: "pyai", language: "" });
+    const r = resolveProviders({ sttProvider: "pyai", correctionProvider: "openai", language: "" });
     expect(r.language).toBe("en");
   });
 });
@@ -57,34 +60,34 @@ describe("capabilityErrors", () => {
   it("still flags the STT key when only the correction key is present", () => {
     const settings: AppSettings = {
       sttProvider: "deepgram",
-      correctionProvider: "pyai",
+      correctionProvider: "openai",
       language: "en",
     };
-    const errs = capabilityErrors(settings, PYAI_ONLY); // has PYAI but not DEEPGRAM
+    const errs = capabilityErrors(settings, PYAI_AND_OPENAI); // has OPENAI but not DEEPGRAM
     expect(errs.some((e) => /STT 'deepgram'.*DEEPGRAM_API_KEY/.test(e))).toBe(true);
-    expect(errs.some((e) => /Correction/.test(e))).toBe(false); // pyai correction is satisfied
+    expect(errs.some((e) => /Correction/.test(e))).toBe(false); // openai correction is satisfied
   });
 
   it("blocks a non-English language on PyAI (English-only guard)", () => {
     const errs = capabilityErrors(
-      { sttProvider: "pyai", correctionProvider: "pyai", language: "fr" },
-      PYAI_ONLY,
+      { sttProvider: "pyai", correctionProvider: "openai", language: "fr" },
+      PYAI_AND_OPENAI,
     );
     expect(errs.some((e) => /English-only/.test(e))).toBe(true);
   });
 
   it("allows non-English when STT is a multilingual vendor", () => {
     const errs = capabilityErrors(
-      { sttProvider: "deepgram", correctionProvider: "pyai", language: "fr" },
-      BOTH_KEYS,
+      { sttProvider: "deepgram", correctionProvider: "openai", language: "fr" },
+      DEEPGRAM_AND_OPENAI,
     );
     expect(errs).toEqual([]);
   });
 
   it("accepts English region tags (en-US) on PyAI", () => {
     const errs = capabilityErrors(
-      { sttProvider: "pyai", correctionProvider: "pyai", language: "en-US" },
-      PYAI_ONLY,
+      { sttProvider: "pyai", correctionProvider: "openai", language: "en-US" },
+      PYAI_AND_OPENAI,
     );
     expect(errs).toEqual([]);
   });
@@ -92,16 +95,16 @@ describe("capabilityErrors", () => {
   // 3.2 — auto-detect language relaxation + the preserved PyAI-English-only warning.
   it("auto-detect on + non-PyAI STT relaxes the fixed-language guard", () => {
     const errs = capabilityErrors(
-      { sttProvider: "deepgram", correctionProvider: "pyai", language: "fr", autoDetectLanguage: true },
-      BOTH_KEYS,
+      { sttProvider: "deepgram", correctionProvider: "openai", language: "fr", autoDetectLanguage: true },
+      DEEPGRAM_AND_OPENAI,
     );
     expect(errs).toEqual([]); // no language error for a multilingual vendor under auto-detect
   });
 
   it("auto-detect on + PyAI STT STILL warns English-only (never silenced)", () => {
     const errs = capabilityErrors(
-      { sttProvider: "pyai", correctionProvider: "pyai", language: "fr", autoDetectLanguage: true },
-      PYAI_ONLY,
+      { sttProvider: "pyai", correctionProvider: "openai", language: "fr", autoDetectLanguage: true },
+      PYAI_AND_OPENAI,
     );
     expect(errs.some((e) => /English-only/.test(e))).toBe(true); // warning preserved
     expect(errs.some((e) => /Auto-detect doesn't apply/.test(e))).toBe(true); // distinct note added
@@ -109,10 +112,21 @@ describe("capabilityErrors", () => {
 
   it("surfaces a clear message for an unknown vendor id", () => {
     const errs = capabilityErrors(
-      { sttProvider: "nope" as never, correctionProvider: "pyai", language: "en" },
+      { sttProvider: "nope" as never, correctionProvider: "openai", language: "en" },
       PYAI_ONLY,
     );
     expect(errs.some((e) => /Unknown STT provider 'nope'/.test(e))).toBe(true);
+  });
+
+  it("surfaces a clear message for a removed correction vendor id (pyai)", () => {
+    // PyAI was removed as a correction option (it stays STT + TTS only) — selecting
+    // it as correctionProvider must fail the same way any other unknown id does,
+    // not silently resolve to something else.
+    const errs = capabilityErrors(
+      { sttProvider: "pyai", correctionProvider: "pyai" as never, language: "en" },
+      BOTH_KEYS,
+    );
+    expect(errs.some((e) => /Unknown correction provider 'pyai'/.test(e))).toBe(true);
   });
 });
 

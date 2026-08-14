@@ -32,6 +32,13 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.
 # Phase 3.4 — read the focused element's role via the Accessibility API (ApplicationServices
 # is linked directly in axinject.rs) to decide paste vs refuse vs copy.
 core-foundation = "0.10"
+# Bugfix (Aug 2026) — inject.rs::post_command_chord posts ⌘-chords via raw CGEvent calls
+# with the Command flag explicitly stamped on the letter event itself, instead of relying
+# on enigo's implicit modifier-flag inference (which intermittently dropped the flag and
+# typed a literal letter over the selection instead of running the modified keystroke).
+# Pinned to "0.23" to match enigo 0.2.1's own core-graphics dependency (already resolved in
+# Cargo.lock) rather than introducing a third divergent version of the crate.
+core-graphics = "0.23"
 # P3 — wake word: download the openWakeWord ONNX models on first enable (wake.rs `ensure_models`).
 # ureq's default features enable rustls TLS (HTTPS + following the GitHub release redirect).
 ureq = "2"

@@ -88,12 +88,9 @@ type CorrectionCap = {
   models: Model[];
 };
 
+// PyAI was REMOVED as a correction vendor (packages/core/src/correction/registry.ts) —
+// it stays the STT + TTS default, but no longer backs the cleanup/format/rewrite pass.
 export const CORRECTION: Record<string, CorrectionCap> = {
-  pyai: {
-    label: "PyAI",
-    // single/fixed — the server ignores correction model overrides; select DISABLED.
-    models: [{ id: "gpt-5.6-sol", label: "gpt-5.6-sol" }],
-  },
   openai: {
     label: "OpenAI",
     models: [

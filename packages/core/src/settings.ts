@@ -13,8 +13,12 @@ import { getCorrectionProvider } from "./correction/registry";
 
 /** User-selectable STT vendors (demo/`fixture` is internal, not offered here). */
 export type SttVendor = "pyai" | "deepgram" | "openai";
-/** User-selectable correction vendors (`mock` is internal, not offered here). */
-export type CorrectionVendor = "pyai" | "openai" | "anthropic";
+/**
+ * User-selectable correction vendors (`mock` is internal, not offered here).
+ * PyAI was REMOVED as a correction vendor (registry.ts) — it stays the STT + TTS
+ * default, but no longer backs the cleanup/format/rewrite pass.
+ */
+export type CorrectionVendor = "openai" | "anthropic";
 
 export interface AppSettings {
   /** Streaming speech-to-text vendor. */
