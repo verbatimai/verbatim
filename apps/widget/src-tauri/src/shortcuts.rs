@@ -14,8 +14,8 @@ pub fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
     use crate::config::{apply_autostart, migrate_legacy_config, read_config};
-    use crate::hotkey::{apply_paste_last_hotkey, apply_revert_raw_hotkey, parse_accelerator, CURRENT_PASTE_LAST, CURRENT_REVERT_RAW, CURRENT_TOGGLE};
-    use crate::state::{HOLD_MS, LAST_RAW, LAST_RESULT, PRESS_AT, RECORDING, STARTED_THIS_PRESS};
+    use crate::hotkey::{apply_command_hotkey, apply_paste_last_hotkey, apply_revert_raw_hotkey, parse_accelerator, CURRENT_COMMAND, CURRENT_PASTE_LAST, CURRENT_REVERT_RAW, CURRENT_TOGGLE};
+    use crate::state::{COMMAND_PRESS_AT, COMMAND_RECORDING, COMMAND_STARTED, HOLD_MS, LAST_RAW, LAST_RESULT, PRESS_AT, RECORDING, STARTED_THIS_PRESS};
 
     // The toggle hotkey — from the config store (default ⌥Space), configurable
     // at runtime via set_config/set_toggle_hotkey. On first run, migrate the
@@ -102,6 +102,58 @@ pub fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                     return;
                 }
 
+                // P1 — command-mode accelerator: same tap/hold state machine as
+                // dictation, but driving the separate COMMAND_* statics and emitting
+                // `command` start/stop (the webview runs the same audio session, then
+                // routes the classified intent through run_command). Compared against
+                // CURRENT_COMMAND so it can be re-registered at runtime.
+                let is_command = CURRENT_COMMAND
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .map_or(false, |t| t == shortcut);
+                if is_command {
+                    match event.state() {
+                        ShortcutState::Pressed => {
+                            #[cfg(target_os = "macos")]
+                            crate::axinject::probe();
+
+                            *COMMAND_PRESS_AT.lock().unwrap() = Some(Instant::now());
+                            let was_recording = *COMMAND_RECORDING.lock().unwrap();
+                            if was_recording {
+                                *COMMAND_RECORDING.lock().unwrap() = false;
+                                *COMMAND_STARTED.lock().unwrap() = false;
+                                let _ = app.emit("command", "stop");
+                            } else {
+                                if let Some(win) = app.get_webview_window("main") {
+                                    let _ = win.show();
+                                }
+                                *COMMAND_RECORDING.lock().unwrap() = true;
+                                *COMMAND_STARTED.lock().unwrap() = true;
+                                let _ = app.emit("command", "start");
+                            }
+                        }
+                        ShortcutState::Released => {
+                            let held = COMMAND_PRESS_AT
+                                .lock()
+                                .unwrap()
+                                .map(|t| t.elapsed().as_millis())
+                                .unwrap_or(0);
+                            let started = {
+                                let mut s = COMMAND_STARTED.lock().unwrap();
+                                let v = *s;
+                                *s = false;
+                                v
+                            };
+                            if started && held >= HOLD_MS {
+                                *COMMAND_RECORDING.lock().unwrap() = false;
+                                let _ = app.emit("command", "stop");
+                            }
+                        }
+                    }
+                    return;
+                }
+
                 // Compare against the CURRENTLY-registered toggle (it can change
                 // at runtime), not a captured constant.
                 let is_toggle = CURRENT_TOGGLE
@@ -169,6 +221,8 @@ pub fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let _ = apply_paste_last_hotkey(app.handle(), &read_config(app.handle()).paste_last_hotkey);
     // 5.4 — register the revert-to-raw accelerator from config ("" = unset → no-op).
     let _ = apply_revert_raw_hotkey(app.handle(), &read_config(app.handle()).revert_raw_hotkey);
+    // P1 — register the command-mode accelerator from config ("" = unset → no-op).
+    let _ = apply_command_hotkey(app.handle(), &read_config(app.handle()).command_hotkey);
 
     // Wave 4 — reconcile the Fn/PTT event tap from config at startup, so a user
     // who had PTT enabled gets the tap back on relaunch; a user who never enabled
@@ -177,6 +231,10 @@ pub fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     {
         let c = read_config(app.handle());
         crate::fnkey::set_enabled(app.handle(), c.fn_push_to_talk, &c.ptt_key);
+        // P3 — reconcile the wake-word listener at startup: starts cpal + the ONNX
+        // sessions ONLY if wake_word_enabled, so a user who never enables it is never
+        // prompted for the mic and the orange dot never appears.
+        crate::wake::set_enabled(app.handle(), c.wake_word_enabled, &c);
     }
 
     Ok(())

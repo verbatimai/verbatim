@@ -9,7 +9,7 @@
 import { readFileSync, existsSync, appendFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import { getSTTProvider, getCorrectionProvider, TranscriptAccumulator, localFormat, expandSnippets, Telemetry, startReconnectingSession, type STTSession, type STTProvider, type CorrectionProvider, type Snippet, type FormatMode } from "@verbatim/core";
+import { getSTTProvider, getCorrectionProvider, getIntentProvider, assertIntentKeys, TranscriptAccumulator, localFormat, expandSnippets, Telemetry, startReconnectingSession, type STTSession, type STTProvider, type CorrectionProvider, type Snippet, type FormatMode } from "@verbatim/core";
 
 // ── Complete PyAI error log ───────────────────────────────────────────────────
 // The widget's banner truncates long responses (e.g. a 401 HTML body), so every raw
@@ -93,6 +93,12 @@ wss.on("connection", (ws) => {
   let demo = false;
   let sttId = "";   // remembered on start so finalize()/error logs know the providers
   let corrId = "";
+  // Platform P1 — command mode. `isCommand` gates finalize() onto the intent branch (skip
+  // correction/format entirely); `cmdId` is the resolved classifier vendor; `commandModel`
+  // is the optional per-session model override ("" ⇒ undefined ⇒ adapter default).
+  let isCommand = false;
+  let cmdId = "";
+  let commandModel: string | undefined;
   let doCorrect = true; // 2.2 — self-correction toggle (parsed on `start`; !== false => on)
   let doFormat = true;  // 2.3 — formatting toggle (parsed on `start`; !== false => on)
   let langTag = "en";   // 3.4 — language tag, forwarded into the format prompt
@@ -135,6 +141,24 @@ wss.on("connection", (ws) => {
       }
     }
     raw = norm(raw);
+    // Platform P1 — command mode: classify the utterance into ONE structured editing
+    // intent and hand it back. No cleanup/format pass (correction was never constructed).
+    // Runs BEFORE the correction block; the deterministic Rust executor performs the edit.
+    if (isCommand) {
+      try {
+        const provider = getIntentProvider(cmdId);
+        assertIntentKeys(provider); // missing key → clear error, no network round-trip
+        const { intent } = await provider.interpret(raw, { model: commandModel });
+        send(ws, { type: "intent", intent, transcript: raw });
+      } catch (e: any) {
+        logPyaiError("command.interpret", e, { cmdId, rawLen: raw.length });
+        telemetry.emit({ type: "error", errorPhase: "command.interpret", correctionProvider: cmdId });
+        send(ws, { type: "error", kind: "terminal", message: "command classify failed: " + (e?.message ?? String(e)), file: LOG_FILE });
+      }
+      try { session?.close(); } catch {}
+      send(ws, { type: "done" });
+      return;
+    }
     if (raw && correction) {
       // 1) Cleanup -> drives the "what was removed" diff. If it fails, we keep
       //    going with the raw transcript as the clean text (no diff shown).
@@ -225,9 +249,17 @@ wss.on("connection", (ws) => {
       audio.length = 0;
       acc = new TranscriptAccumulator();
       demo = msg.mode === "demo";
+      // Platform P1 — command mode is a full audio-capture session (live preview + batch
+      // STT on stop), differing from dictation only in the finalize branch.
+      isCommand = msg.mode === "command";
       // Provider selection comes from the widget's config (Phase 4.8); env is the fallback.
       sttId = demo ? "fixture" : (msg.sttProvider ?? DEFAULT_STT);
       corrId = demo ? "mock" : (msg.correctionProvider ?? DEFAULT_CORR);
+      // P1 (finding 4) — resolve the classifier vendor: explicit commandProvider, else
+      // follow the correction vendor, else the env default. "" ("follow correction") must
+      // NOT reach getIntentProvider("") (which throws), so resolve it to a real id here.
+      cmdId = (msg.commandProvider && String(msg.commandProvider).trim()) || msg.correctionProvider || DEFAULT_CORR;
+      commandModel = typeof msg.commandModel === "string" && msg.commandModel.trim() ? msg.commandModel : undefined;
       const language = typeof msg.language === "string" && msg.language ? msg.language : "en";
       langTag = language;
       // 2.2 / 2.3 — behaviour toggles from the widget config; undefined (old/demo client) => on.
@@ -250,15 +282,22 @@ wss.on("connection", (ws) => {
       telemetry = new Telemetry({ enabled: msg.telemetry === true });
       try {
         stt = getSTTProvider(sttId);
-        // A bad correction vendor in the config must NOT kill the STT/live session —
-        // fall back to the default and warn, so the live input preview still works even
-        // if the selected correction provider is invalid (e.g. a stale "deepgram").
-        try {
-          correction = getCorrectionProvider(corrId);
-        } catch (e: any) {
-          send(ws, { type: "error", message: `Correction '${corrId}' is invalid — using ${DEFAULT_CORR}. Fix it in Settings (⚙). (${e?.message ?? e})` });
-          corrId = DEFAULT_CORR;
-          correction = getCorrectionProvider(corrId);
+        // P1 — command mode skips the correction pass entirely: don't construct a
+        // correction provider (the classifier runs in finalize()). The STT session still
+        // opens below exactly as dictation, so live capture + batch-on-stop are identical.
+        if (isCommand) {
+          correction = null;
+        } else {
+          // A bad correction vendor in the config must NOT kill the STT/live session —
+          // fall back to the default and warn, so the live input preview still works even
+          // if the selected correction provider is invalid (e.g. a stale "deepgram").
+          try {
+            correction = getCorrectionProvider(corrId);
+          } catch (e: any) {
+            send(ws, { type: "error", message: `Correction '${corrId}' is invalid — using ${DEFAULT_CORR}. Fix it in Settings (⚙). (${e?.message ?? e})` });
+            corrId = DEFAULT_CORR;
+            correction = getCorrectionProvider(corrId);
+          }
         }
         // Keys come ONLY from process.env — injected by the Rust host from the OS Keychain
         // (Phase 4.8), or a repo .env in standalone dev. The webview never sends a secret.
@@ -270,7 +309,7 @@ wss.on("connection", (ws) => {
         send(ws, { type: "ready", stt: sttId, correction: corrId });
         // 3.3 — session_start metadata (no content). NoopSink unless telemetry enabled.
         telemetry.emit({ type: "session_start", sttProvider: sttId, correctionProvider: corrId, language, autoDetect, correct: doCorrect, format: doFormat });
-        console.log(`[backend] session start: stt=${sttId} correction=${corrId} lang=${language} demo=${demo}`);
+        console.log(`[backend] session start: stt=${sttId} correction=${corrId} lang=${language} demo=${demo} mode=${msg.mode}`);
         // 3.2 — forward auto-detect to the streaming adapter; 3.4 — vocabulary as the
         // Deepgram-only keyword boost (other adapters ignore `keywords`).
         const sttCfg = { apiKey: apiKey ?? "", language, detectLanguage: autoDetect, keywords: vocabulary, model: sttModel };

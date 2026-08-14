@@ -17,3 +17,9 @@ export * from "./meetings/stereo";
 export * from "./meetings/pyai.jobs";
 export * from "./net/retry";
 export * from "./providers/reconnect";
+// Command mode (platform P1). Barrel-safe subset ONLY: `./command/prompt` is deliberately
+// NOT exported — it collides with `./correction/prompt` on SYSTEM_PROMPT/userMessage
+// (TS2308). The backend consumes getIntentProvider (registry) + the CommandIntent type.
+export * from "./command/types";
+export * from "./command/registry";
+export * from "./command/grammar";

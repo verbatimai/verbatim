@@ -275,6 +275,37 @@ pub fn is_trusted() -> bool {
     unsafe { AXIsProcessTrusted() }
 }
 
+/// P1 — Classify the CURRENT focus for the command executor, WITHOUT injecting anything.
+/// Wraps the same private `read_focus` / `is_secure` / `is_editable_role` logic `inject`
+/// uses, but returns a route string the Rust `run_command` guards on BEFORE emitting any
+/// synthetic keystrokes (a wrong keystroke edits the user's document):
+///   "no_access" — Accessibility not granted (can't post keys reliably) → refuse
+///   "secure"    — a password / secure text field → never touch
+///   "editable"  — a text field we can safely edit → proceed with keystrokes
+///   "no_field"  — nothing editable focused, or AX unreadable → refuse (do nothing)
+/// Unlike `inject` (whose None-focus fallback is "just paste"), an unreadable focus here
+/// maps to "no_field": command mode biases to doing nothing when it can't confirm a field.
+pub fn focus_route() -> &'static str {
+    unsafe {
+        if !AXIsProcessTrusted() {
+            return "no_access";
+        }
+        let focus = match read_focus(400) {
+            None => return "no_field",
+            Some(f) => f,
+        };
+        let route = if is_secure(&focus) {
+            "secure"
+        } else if focus.writable || is_editable_role(&focus.role) {
+            "editable"
+        } else {
+            "no_field"
+        };
+        focus.release();
+        route
+    }
+}
+
 // ─────────────────────────────── diagnostic ─────────────────────────────────
 
 /// One-shot diagnostic dump, fired on the ⌥Space press while the widget is still hidden.

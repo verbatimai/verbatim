@@ -36,6 +36,13 @@ type AppConfig = {
   telemetry?: boolean; // 3.3 — anonymous, metadata-only telemetry (default off; transport parked)
   fnPushToTalk?: boolean; // Wave 4 — hold a bare key (Fn) to dictate
   pttKey?: string; // Wave 4 — "fn" | "right_cmd" | "right_opt"
+  commandHotkey?: string; // P-series — global accelerator to start/stop command mode ("" = unset)
+  commandProvider?: string; // P-series — command provider (no UI; type-completeness)
+  commandModel?: string; // P-series — command model (no UI; type-completeness)
+  systemCommands?: boolean; // P-series — gate for launch/volume/shortcut delegation
+  wakeWordEnabled?: boolean; // P-series — always-listening on-device wake word
+  wakeWordHandler?: string; // P-series — "dictate" | "command"
+  wakeWordThreshold?: number; // P-series — detection threshold 0..1
 };
 
 // Mirrors packages/core's provider registries' `requiredKeys` and Rust's
@@ -100,6 +107,12 @@ const openImEl = $<HTMLButtonElement>("openIm");
 const pttEnableEl = $<HTMLInputElement>("pttEnable");
 const pttKeyEl = $<HTMLSelectElement>("pttKey");
 const pttStatusEl = $("pttStatus");
+const commandCaptureEl = $<HTMLInputElement>("commandCapture");
+const commandClearEl = $<HTMLButtonElement>("commandClear");
+const systemCommandsEl = $<HTMLInputElement>("systemCommands");
+const wakeWordEnableEl = $<HTMLInputElement>("wakeWordEnable");
+const wakeWordHandlerEl = $<HTMLSelectElement>("wakeWordHandler");
+const wakeWordThresholdEl = $<HTMLInputElement>("wakeWordThreshold");
 
 let config: AppConfig = {
   sttProvider: "pyai",
@@ -503,6 +516,19 @@ function pasteLastCollision(accel: string): string | null {
   const c = canonHotkey(accel);
   if (c && c === canonHotkey(config.hotkey)) return "That's your dictation toggle — pick another.";
   if (c && c === canonHotkey(TEST_PASTE_ACCEL)) return "⌥⇧V is reserved — pick another.";
+  if (c && config.commandHotkey && c === canonHotkey(config.commandHotkey)) return "That's your command mode hotkey — pick another.";
+  return null;
+}
+// P-series — the command-mode capture's guard: like pasteLastCollision but keyed off the
+// OTHER combos (toggle, reserved paste-test, paste-last, revert-raw) so the command hotkey
+// can't duplicate any of them. Excludes config.commandHotkey itself so re-picking the same
+// combo isn't reported as a self-collision.
+function commandCollision(accel: string): string | null {
+  const c = canonHotkey(accel);
+  if (c && c === canonHotkey(config.hotkey)) return "That's your dictation toggle — pick another.";
+  if (c && c === canonHotkey(TEST_PASTE_ACCEL)) return "⌥⇧V is reserved — pick another.";
+  if (c && config.pasteLastHotkey && c === canonHotkey(config.pasteLastHotkey)) return "That's your paste-last hotkey — pick another.";
+  if (c && config.revertRawHotkey && c === canonHotkey(config.revertRawHotkey)) return "That's your revert-to-raw hotkey — pick another.";
   return null;
 }
 function refreshPasteLastUI() {
@@ -546,6 +572,29 @@ if (revertRawClearEl) {
   revertRawClearEl.onclick = async () => {
     await patchConfig({ revertRawHotkey: "" });
     refreshRevertRawUI();
+  };
+}
+
+// P-series — command-mode accelerator (start/stop voice command mode; edits + system
+// commands). Mirrors paste-last/revert-raw: click-to-record, "" = unset, its own collision
+// guard (commandCollision) so it can't duplicate the toggle/paste-last/revert-raw. Rust
+// registers the global shortcut.
+function refreshCommandUI() {
+  if (!commandCaptureEl) return;
+  commandCaptureEl.value = config.commandHotkey ? describeHotkey(config.commandHotkey) : "Click, then press a combo";
+}
+if (commandCaptureEl) {
+  makeHotkeyCapture(commandCaptureEl, async (accel) => {
+    const conflict = commandCollision(accel);
+    if (conflict) { commandCaptureEl.value = conflict; setTimeout(refreshCommandUI, 1600); return; }
+    await patchConfig({ commandHotkey: accel });
+    refreshCommandUI();
+  }, refreshCommandUI);
+}
+if (commandClearEl) {
+  commandClearEl.onclick = async () => {
+    await patchConfig({ commandHotkey: "" });
+    refreshCommandUI();
   };
 }
 hotkeyClearEl.onclick = async () => {
@@ -674,6 +723,26 @@ function initMuteOthers() {
   if (!muteOthersEl) return;
   muteOthersEl.checked = !!config.muteOthers;
   muteOthersEl.onchange = () => { void patchConfig({ muteOthers: muteOthersEl.checked }); };
+}
+
+// ---- P-series — allow system commands gate (launch/volume/shortcut delegation). Rust
+// field/behaviour already exist; this is the UI. Mirrors initMuteOthers(). ----
+function initSystemCommands() {
+  if (!systemCommandsEl) return;
+  systemCommandsEl.checked = !!config.systemCommands;
+  systemCommandsEl.onchange = () => { void patchConfig({ systemCommands: systemCommandsEl.checked }); };
+}
+
+// ---- P-series — wake word (beta): always-listening, on-device. Persists enable +
+// handler ("dictate"|"command") + detection threshold (0..1). Rust field/behaviour exist. ----
+function initWakeWord() {
+  if (!wakeWordEnableEl || !wakeWordHandlerEl || !wakeWordThresholdEl) return;
+  wakeWordEnableEl.checked = !!config.wakeWordEnabled;
+  wakeWordHandlerEl.value = config.wakeWordHandler ?? "dictate";
+  wakeWordThresholdEl.value = String(config.wakeWordThreshold ?? 0.5);
+  wakeWordEnableEl.onchange = () => { void patchConfig({ wakeWordEnabled: wakeWordEnableEl.checked }); };
+  wakeWordHandlerEl.onchange = () => { void patchConfig({ wakeWordHandler: wakeWordHandlerEl.value }); };
+  wakeWordThresholdEl.onchange = () => { void patchConfig({ wakeWordThreshold: Number(wakeWordThresholdEl.value) }); };
 }
 
 // ---- launch at login (1.2) — Rust syncs the macOS login item as a set_config side-effect ----
@@ -893,6 +962,8 @@ function refreshControls() {
   initProviderControls();
   initDockIcon();
   initMuteOthers();
+  initSystemCommands();
+  initWakeWord();
   initLaunchAtLogin();
   initDebug();
   initSelfCorrect();
@@ -905,6 +976,7 @@ function refreshControls() {
   refreshHotkeyUI();
   refreshPasteLastUI();
   refreshRevertRawUI();
+  refreshCommandUI();
   void initPtt();
   renderCapabilityErrors();
 }
@@ -940,6 +1012,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   initProviderControls();
   initDockIcon();
   initMuteOthers();
+  initSystemCommands();
+  initWakeWord();
   initLaunchAtLogin();
   initDebug();
   initSelfCorrect();
@@ -951,6 +1025,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   refreshHotkeyUI();
   refreshPasteLastUI();
   refreshRevertRawUI();
+  refreshCommandUI();
   void initMicDevice();
   void initVocabulary();
   void initSnippets();

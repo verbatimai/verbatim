@@ -14,6 +14,14 @@ pub static RECORDING: Mutex<bool> = Mutex::new(false);
 pub static PRESS_AT: Mutex<Option<Instant>> = Mutex::new(None);
 pub static STARTED_THIS_PRESS: Mutex<bool> = Mutex::new(false);
 
+/// P1 command-mode state. Separate from the dictation statics so the two hotkeys never
+/// cross-talk: a quick tap toggles command capture, a hold is push-to-talk (record while
+/// held, classify on release). The shortcut handler drives these exactly like RECORDING /
+/// PRESS_AT / STARTED_THIS_PRESS but emits the `command` event instead of `dictation`.
+pub static COMMAND_RECORDING: Mutex<bool> = Mutex::new(false);
+pub static COMMAND_PRESS_AT: Mutex<Option<Instant>> = Mutex::new(None);
+pub static COMMAND_STARTED: Mutex<bool> = Mutex::new(false);
+
 /// ≥ this held = push-to-talk; below = a tap (toggle).
 pub const HOLD_MS: u128 = 300;
 

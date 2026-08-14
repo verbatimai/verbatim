@@ -38,6 +38,14 @@ pub struct AppConfig {
     pub telemetry: bool,             // 3.3 — anonymous, metadata-only telemetry (default off; transport parked)
     pub fn_push_to_talk: bool,       // Wave 4 — hold a bare key (Fn) to dictate (needs Input Monitoring)
     pub ptt_key: String,             // Wave 4 — which bare key: "fn" | "right_cmd" | "right_opt"
+    pub command_provider: String,    // P1 — command-mode classifier vendor ("" = follow correction_provider, resolved in the backend)
+    pub command_model: String,       // P1 — optional per-vendor model override for command mode; "" = provider default
+    pub command_hotkey: String,      // P1 — global accelerator to start/stop command mode ("" = unset)
+    pub system_commands: bool,       // P2 — allow system commands (launch/volume/shortcut) via macOS delegation (default false, opt-in)
+    pub wake_word_enabled: bool,     // P3 — always-on on-device wake-word listener (default false, opt-in; engages the mic + orange dot)
+    pub wake_word_handler: String,   // P3 — which handler a detection fires: "dictate" | "command" (default "dictate")
+    pub wake_word_threshold: f32,    // P3 — detection score threshold 0..1 (default 0.5, live-tunable via atomics, no restart)
+    pub wake_word_model: String,     // P3 — wake-word model asset id under resources/wakeword/ (default stock "hey_jarvis")
 }
 
 impl Default for AppConfig {
@@ -65,6 +73,14 @@ impl Default for AppConfig {
             telemetry: false,
             fn_push_to_talk: false,
             ptt_key: "fn".into(),
+            command_provider: String::new(),
+            command_model: String::new(),
+            command_hotkey: String::new(),
+            system_commands: false,
+            wake_word_enabled: false,
+            wake_word_handler: "dictate".into(),
+            wake_word_threshold: 0.5,
+            wake_word_model: "hey_jarvis".into(),
         }
     }
 }
@@ -134,12 +150,37 @@ pub fn set_config(app: tauri::AppHandle, patch: serde_json::Value) -> Result<App
     if next.revert_raw_hotkey != old.revert_raw_hotkey {
         let _ = crate::hotkey::apply_revert_raw_hotkey(&app, &next.revert_raw_hotkey);
     }
+    // P1 — re-register the command-mode accelerator only when it changes ("" = unregister).
+    #[cfg(desktop)]
+    if next.command_hotkey != old.command_hotkey {
+        let _ = crate::hotkey::apply_command_hotkey(&app, &next.command_hotkey);
+    }
     // Wave 4 — start/stop the Fn PTT event tap when the toggle OR the key changes. Only
     // runs the tap when enabled, so a user who never turns PTT on is never prompted for
     // Input Monitoring.
     #[cfg(target_os = "macos")]
     if next.fn_push_to_talk != old.fn_push_to_talk || next.ptt_key != old.ptt_key {
         crate::fnkey::set_enabled(&app, next.fn_push_to_talk, &next.ptt_key);
+    }
+    // P3 — wake-word listener reconcile. SELECTIVE (should-fix 1): tearing down cpal +
+    // reloading the 3 ONNX sessions is heavy, so ONLY a change to `wake_word_enabled` or
+    // `wake_word_model` restarts the listener. `wake_word_threshold` / `wake_word_handler`
+    // are pushed LIVE to the running thread via atomics (mirrors fnkey's AtomicI64
+    // PTT_KEYCODE) — no restart. Threshold/handler are pushed unconditionally-on-change so
+    // the running thread always reflects the latest config even across a restart.
+    #[cfg(target_os = "macos")]
+    {
+        if next.wake_word_enabled != old.wake_word_enabled
+            || next.wake_word_model != old.wake_word_model
+        {
+            crate::wake::set_enabled(&app, next.wake_word_enabled, &next);
+        }
+        if next.wake_word_threshold != old.wake_word_threshold {
+            crate::wake::set_threshold(next.wake_word_threshold);
+        }
+        if next.wake_word_handler != old.wake_word_handler {
+            crate::wake::set_handler(&next.wake_word_handler);
+        }
     }
     // Phase 7 (Fix 3) — apply the Dock-icon activation policy live when it flips (no
     // restart). The overlay panel's non-key behaviour is unaffected by the policy.
@@ -180,11 +221,15 @@ pub fn clear_config(app: tauri::AppHandle) -> Result<AppConfig, String> {
         let _ = crate::hotkey::apply_hotkey(&app, &def.hotkey); // re-register default ⌥Space
         let _ = crate::hotkey::apply_paste_last_hotkey(&app, &def.paste_last_hotkey); // 2.1 — default "" unregisters
         let _ = crate::hotkey::apply_revert_raw_hotkey(&app, &def.revert_raw_hotkey); // 5.4 — default "" unregisters
+        let _ = crate::hotkey::apply_command_hotkey(&app, &def.command_hotkey); // P1 — default "" unregisters
     }
     apply_autostart(&app, def.launch_at_login); // default false → remove login item
     // Wave 4 — default fn_push_to_talk=false, so tear the PTT event tap down on reset.
     #[cfg(target_os = "macos")]
     crate::fnkey::set_enabled(&app, def.fn_push_to_talk, &def.ptt_key);
+    // P3 — default wake_word_enabled=false, so tear the wake-word listener down on reset.
+    #[cfg(target_os = "macos")]
+    crate::wake::set_enabled(&app, def.wake_word_enabled, &def);
     // Phase 7 (Fix 3) — re-apply the default Dock-icon policy so a Reset that clears a
     // previously-on dock icon takes effect live (default dock_icon=false ⇒ Accessory).
     #[cfg(target_os = "macos")]

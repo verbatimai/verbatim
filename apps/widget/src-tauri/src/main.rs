@@ -20,12 +20,15 @@
 //!   axinject.rs   macOS AX focus read + paste routing
 //!   fnkey.rs      Fn / bare-modifier push-to-talk (CGEventTap)
 //!   inject.rs     clipboard + ⌘V primitives
+//!   command.rs    P1 command-mode executor (CommandIntent → enigo keystrokes)
+//!   syscommand.rs P2 system commands (CommandIntent → open / osascript / shortcuts)
 //!
 //! Cross-module note: `secrets.rs` and `fnkey.rs` reach a few items as `crate::…`
 //! (`read_config`, `KEYCHAIN_SERVICE`, `RECORDING`). The `pub(crate) use` re-exports
 //! below keep those paths valid, so those files need no edits.
 
 mod backend;
+mod command;
 mod config;
 mod hotkey;
 mod inject;
@@ -42,14 +45,28 @@ mod window;
 #[cfg(target_os = "macos")]
 mod axinject;
 
+// P2 — system commands delegated to macOS (open / osascript / shortcuts). macOS-only: it
+// drives macOS binaries and reuses `system::set_output_muted`. `run_command` (already listed
+// in the invoke_handler) dispatches to it; no new tauri command is registered.
+#[cfg(target_os = "macos")]
+mod syscommand;
+
 // Wave 4 — Fn / bare-modifier push-to-talk (listen-only CGEventTap). macOS-only.
 #[cfg(target_os = "macos")]
 mod fnkey;
+
+// P3 — always-on on-device wake-word listener (openWakeWord via cpal + ort). macOS-only:
+// it owns an independent cpal capture and fires the SAME activation seam as the hotkeys.
+#[cfg(target_os = "macos")]
+mod wake;
 
 // Re-exports that keep the pre-split `crate::…` paths working for modules that use them.
 pub(crate) use config::read_config;
 pub(crate) use keys::KEYCHAIN_SERVICE;
 pub(crate) use state::RECORDING;
+// P3 — re-export COMMAND_RECORDING for symmetry with RECORDING, so wake.rs reaches both
+// session flags as `crate::…` for the self-trigger gate + the command-handler start.
+pub(crate) use state::COMMAND_RECORDING;
 
 fn main() {
     let mut builder = tauri::Builder::default();
@@ -107,6 +124,9 @@ fn main() {
             system::set_output_muted,
             hotkey::get_toggle_hotkey,
             hotkey::set_toggle_hotkey,
+            hotkey::get_command_hotkey,
+            hotkey::set_command_hotkey,
+            command::run_command,
             window::hide_widget,
             window::show_settings_window,
             config::get_config,
@@ -125,7 +145,9 @@ fn main() {
             keys::key_delete,
             keys::set_key,
             keys::has_key,
-            keys::delete_key
+            keys::delete_key,
+            #[cfg(target_os = "macos")]
+            wake::wake_mic_status
         ])
         .build(tauri::generate_context!())
         .expect("error while building the Verbatim widget")

@@ -438,6 +438,63 @@
                 </div>
               </div>
             </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>Command mode hotkey</h3>
+                <p>
+                  Start/stop voice command mode (edits + system commands). Needs
+                  at least one modifier (⌥/⌃/⌘/⇧).
+                </p>
+              </div>
+              <div class="control-col align-end">
+                <div class="hotkey-row">
+                  <input
+                    id="commandCapture"
+                    class="hotkey"
+                    type="text"
+                    readonly
+                    value="Click, then press a combo"
+                  />
+                  <button id="commandClear" class="btn ghost" title="Clear">
+                    Clear
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>Allow system commands</h3>
+                <p>Let commands open apps, change volume, and run macOS Shortcuts.</p>
+              </div>
+              <label class="switch"
+                ><input type="checkbox" id="systemCommands" /><span></span
+              ></label>
+            </div>
+            <div class="set-row">
+              <div class="meta">
+                <h3>Wake word <span class="tag alpha">Beta</span></h3>
+                <p>
+                  Always-listening, on-device. The mic (and the macOS orange
+                  indicator) stay on while enabled.
+                </p>
+              </div>
+              <div class="control-col align-end">
+                <label class="switch"
+                  ><input type="checkbox" id="wakeWordEnable" /><span></span
+                ></label>
+                <select id="wakeWordHandler">
+                  <option value="dictate">Dictate</option>
+                  <option value="command">Command</option>
+                </select>
+                <input
+                  type="range"
+                  id="wakeWordThreshold"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                />
+              </div>
+            </div>
           </div>
         </section>
 

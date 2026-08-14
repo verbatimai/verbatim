@@ -42,6 +42,27 @@ export interface ResolvedProviders {
   stt: STTProvider;
   correction: CorrectionProvider;
   language: string;
+  /**
+   * Platform P1 — command-mode classifier vendor. Optional; when unset (or ""), the
+   * backend follows `correctionProvider` (resolved lazily in server.ts, not here — a
+   * missing value must NOT throw). Mirrors the correction vendor set.
+   */
+  commandProvider?: CorrectionVendor;
+  /** Platform P1 — per-vendor model override for command mode ("" ⇒ provider default). */
+  commandModel?: string;
+  /**
+   * Platform P3 — always-on on-device wake-word listener. Optional, off by default.
+   * FLAT camelCase (must-fix 3): the store is a superset of AppSettings with same-key
+   * camelCase fields, and set_config's shallow merge is one level deep, so a nested
+   * object would NOT round-trip into the flat Rust `wake_word_*` fields.
+   */
+  wakeWordEnabled?: boolean;
+  /** Platform P3 — which handler a detection fires: "dictate" | "command" (default "dictate"). */
+  wakeWordHandler?: "dictate" | "command";
+  /** Platform P3 — detection score threshold 0..1 (default 0.5; live-tunable, no listener restart). */
+  wakeWordThreshold?: number;
+  /** Platform P3 — wake-word model asset id under resources/wakeword/ (default stock "hey_jarvis"). */
+  wakeWordModel?: string;
 }
 
 /**

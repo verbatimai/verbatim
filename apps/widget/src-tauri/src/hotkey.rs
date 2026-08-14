@@ -23,6 +23,12 @@ pub static CURRENT_PASTE_LAST: std::sync::Mutex<Option<tauri_plugin_global_short
 pub static CURRENT_REVERT_RAW: std::sync::Mutex<Option<tauri_plugin_global_shortcut::Shortcut>> =
     std::sync::Mutex::new(None);
 
+/// P1 — the command-mode accelerator currently registered ("" = none). The shortcut
+/// handler compares the fired shortcut against this so it can be re-registered at runtime.
+#[cfg(desktop)]
+pub static CURRENT_COMMAND: std::sync::Mutex<Option<tauri_plugin_global_shortcut::Shortcut>> =
+    std::sync::Mutex::new(None);
+
 /// Map a preset id → an actual Shortcut. Keep this list in sync with the buttons in the
 /// Settings UI (main.ts HOTKEYS).
 #[cfg(desktop)]
@@ -222,4 +228,35 @@ pub fn set_toggle_hotkey(app: tauri::AppHandle, id: String) -> Result<(), String
     // Store-backed: set_config persists the hotkey, re-registers it (apply_hotkey), and
     // emits config-changed.
     crate::config::set_config(app, serde_json::json!({ "hotkey": id })).map(|_| ())
+}
+
+/// P1 — Register / re-register the command-mode global accelerator. Mirrors
+/// `apply_paste_last_hotkey`: accepts the empty string (unset → unregister only, no error).
+/// The handler runs the same tap/hold state machine as dictation but emits `command`.
+#[cfg(desktop)]
+pub fn apply_command_hotkey(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    let gs = app.global_shortcut();
+    if let Some(old) = CURRENT_COMMAND.lock().unwrap().take() {
+        let _ = gs.unregister(old);
+    }
+    if id.trim().is_empty() {
+        return Ok(()); // "" = disabled (unregister only)
+    }
+    let sc = parse_accelerator(id).ok_or_else(|| format!("unrecognized hotkey: {id}"))?;
+    gs.register(sc).map_err(|e| e.to_string())?;
+    *CURRENT_COMMAND.lock().unwrap() = Some(sc);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_command_hotkey(app: tauri::AppHandle) -> String {
+    crate::config::read_config(&app).command_hotkey
+}
+
+#[tauri::command]
+pub fn set_command_hotkey(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    // Store-backed: set_config persists it, re-registers it (apply_command_hotkey), and
+    // emits config-changed. Patch key is camelCase (AppConfig #[serde(rename_all=...)]).
+    crate::config::set_config(app, serde_json::json!({ "commandHotkey": id })).map(|_| ())
 }

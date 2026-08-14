@@ -33,6 +33,10 @@ type ServerMsg =
   | { type: "live"; transcript: string; active: string }
   | { type: "correction"; raw: string; cleanText: string; ops: Op[]; valid: boolean }
   | { type: "formatted"; text: string }
+  // Platform P1 — command mode: the backend classifies the utterance into ONE structured
+  // editing intent (the CommandIntent union in @verbatim/core); the Rust run_command
+  // executor performs it. Typed `any` here to avoid a cross-package type import in the widget.
+  | { type: "intent"; intent: any; transcript: string }
   | { type: "error"; message: string; file?: string }
   | { type: "done" };
 
@@ -112,9 +116,29 @@ async function initOrbPosition() {
   await setView("orb");
 }
 
+// Which kind of session the SAME audio path (startLive) is capturing: normal dictation
+// ("live") or P1 command mode ("command"). startLive reads this to pick the connect mode;
+// only the terminal handler differs (formatted→inject vs intent→run_command).
+let captureMode: "live" | "command" = "live";
+
 // Open the full card and start a fresh dictation session (streaming visible throughout).
 function beginDictation() {
   clearBanner();
+  captureMode = "live";
+  root.classList.remove("command-mode");
+  void setView("card");
+  reset();
+  if (ws) { try { ws.close(); } catch {} ws = null; }
+  void startLive();
+}
+
+// P1 — command mode: identical audio session to dictation (getUserMedia → PCM stream →
+// stop/finalize), differing only in mode:"command" on the start frame and the terminal
+// `intent` handler. A distinct card class flags command mode in the UI.
+function beginCommand() {
+  clearBanner();
+  captureMode = "command";
+  root.classList.add("command-mode");
   void setView("card");
   reset();
   if (ws) { try { ws.close(); } catch {} ws = null; }
@@ -276,6 +300,40 @@ async function injectFinal(text: string) {
   }
 }
 
+// P1 — the command-mode seam: hand the classified intent to Rust's run_command executor,
+// which performs one editing action on the focused field via synthetic keystrokes. Routes
+// the returned status like injectFinal (same secure / no_field / no_access banners).
+async function runCommandIntent(intent: any) {
+  try {
+    const result = await invoke<string>("run_command", { intent });
+    if (result === "no_access") {
+      setStatus("err", "grant Accessibility");
+      showBanner("err", "Grant Accessibility so Verbatim can run commands (System Settings → Privacy → Accessibility). Enable Verbatim (or your terminal, in dev), then quit & relaunch.", "ax");
+    } else if (result === "secure") {
+      setStatus("err", "secure field");
+      showBanner("warn", "That looks like a password / secure field — the command wasn't run.");
+    } else if (result === "no_field") {
+      setStatus("done", "no field");
+      showBanner("info", "No editable text field was focused — nothing to run the command on.");
+    } else if (result === "noop") {
+      setStatus("done", "no action");
+    } else if (result === "disabled") {
+      // P2 — a system command arrived while the opt-in flag is off.
+      setStatus("done", "commands off");
+      showBanner("info", "System commands are turned off — enable “Allow system commands” in Settings to run “open Slack”, volume, or a Shortcut.");
+    } else if (result === "unavailable") {
+      // P2 — the macOS facility is missing (e.g. no `shortcuts` CLI pre-Monterey).
+      setStatus("err", "unavailable");
+      showBanner("warn", "That needs macOS 12+ Shortcuts — the “shortcuts” command isn’t available on this Mac.");
+    } else {
+      setStatus("done", "done ✓");
+    }
+  } catch (e) {
+    setStatus("err", "command failed");
+    showBanner("err", "Running the command failed — grant Accessibility (System Settings → Privacy → Accessibility), then retry.");
+  }
+}
+
 function handle(m: ServerMsg) {
   if (m.type === "ready") { setStatus("live", `listening (${m.stt} + ${m.correction})`); }
   else if (m.type === "live") renderLive(m);
@@ -293,6 +351,11 @@ function handle(m: ServerMsg) {
     finalOut.textContent = m.text;
     copyBtn.disabled = !m.text.trim(); // always copyable, even if injection lands nowhere
     void injectFinal(m.text);
+  }
+  else if (m.type === "intent") {
+    // P1 — command mode: hand the classified intent to the Rust executor. It runs ONE
+    // editing action on the focused field and returns where it went (like inject_text).
+    void runCommandIntent(m.intent);
   }
   else if (m.type === "error") {
     setStatus("err", "error");
@@ -317,10 +380,10 @@ function handle(m: ServerMsg) {
 // config store) — never a key. The Rust host injects the Keychain keys into the backend
 // sidecar's env, and owns the sidecar's lifecycle, so on a cold start the loopback port
 // may not be up yet → retry briefly before giving up.
-async function connect(mode: "demo" | "live", tries = 6): Promise<void> {
+async function connect(mode: "demo" | "live" | "command", tries = 6): Promise<void> {
   // Live: fetch config + the vocabulary/snippet stores IN PARALLEL (no serial start
   // latency). Demo mode uses no config/lists. (3.4/3.5 ride the WS start frame.)
-  const [cfg, vocabulary, snippets] = mode === "live"
+  const [cfg, vocabulary, snippets] = mode !== "demo"
     ? await Promise.all([
         invoke<any>("get_config").catch(() => ({})),
         invoke<string[]>("vocab_list").catch(() => [] as string[]),
@@ -349,6 +412,8 @@ async function connect(mode: "demo" | "live", tries = 6): Promise<void> {
           telemetry: cfg.telemetry, // 3.3 — undefined in demo => backend defaults off (NoopSink)
           sttModel: cfg.sttModel,               // Phase 7 — STT model override ("" = provider default)
           correctionModel: cfg.correctionModel, // Phase 7 — correction model override ("" = default)
+          commandProvider: cfg.commandProvider, // P1 — command-mode classifier ("" ⇒ backend follows correction)
+          commandModel: cfg.commandModel,       // P1 — optional command-mode model override
         }));
         resolve();
       };
@@ -417,8 +482,9 @@ async function startLive() {
   reset();
   buttonsBusy();
   // Phase 4.8: no key here — the Rust host injects the Keychain keys into the backend
-  // sidecar's env; the webview only sends the provider/language selection.
-  await connect("live");
+  // sidecar's env; the webview only sends the provider/language selection. P1 — the same
+  // audio path serves command mode; captureMode picks the start-frame mode.
+  await connect(captureMode);
   audioCtx = new AudioContext();
   const source = audioCtx.createMediaStreamSource(micStream);
   analyser = audioCtx.createAnalyser();
@@ -525,6 +591,7 @@ collapseBtn.onclick = () => {
   teardownAudio();
   resetButtons();
   clearBanner();
+  root.classList.remove("command-mode"); // P1 — clear the command-mode indicator
   void setView("orb");
 };
 copyBtn.onclick = async () => {
@@ -555,6 +622,14 @@ copyErr.onclick = async () => {
 // ⌥Space drives dictation from Rust: hold = push-to-talk, tap = toggle.
 void listen<string>("dictation", (e) => {
   if (e.payload === "start") beginDictation();
+  else if (e.payload === "stop") { if (ws) stop(); }
+});
+
+// P1 — the command-mode hotkey drives command capture from Rust (same tap/hold state
+// machine as dictation, separate statics). Reuses the same stop()/finalize audio path;
+// the backend replies with an `intent` frame instead of `formatted`.
+void listen<string>("command", (e) => {
+  if (e.payload === "start") beginCommand();
   else if (e.payload === "stop") { if (ws) stop(); }
 });
 
