@@ -168,6 +168,17 @@ unsafe fn frontmost_app() -> (Pid, String, String) {
     (pid, name, bid)
 }
 
+/// Is the frontmost app OUR OWN process? `AXUIElementCreateApplication(pid)` +
+/// `AXFocusedUIElement` on our own pid is a documented macOS self-query deadlock: the
+/// request is serviced by our own main run loop, which is exactly the thread blocked
+/// waiting on the synchronous AX call — it never gets pumped, so it hangs forever. This
+/// never fired before Notes existed (Verbatim itself had no editable field to dictate
+/// into); `read_focus`/`inject`/`focus_route` must never AX-query ourselves.
+unsafe fn is_frontmost_self() -> bool {
+    let (pid, _name, _bid) = frontmost_app();
+    pid > 0 && pid == std::process::id() as Pid
+}
+
 // ─────────────────────────── focused-element read ───────────────────────────
 
 /// A focused UI element plus the facts we route on. `el` is retained (Copy rule) — the
@@ -289,6 +300,13 @@ pub fn focus_route() -> &'static str {
     unsafe {
         if !AXIsProcessTrusted() {
             return "no_access";
+        }
+        // See the self-pid guard in `inject()` below — querying our OWN process's AX tree
+        // from inside that same process can deadlock the main run loop. Our own windows
+        // (Notes, History, Settings) only ever contain plain text fields, so "editable" is
+        // always the correct route without reading anything.
+        if is_frontmost_self() {
+            return "editable";
         }
         let focus = match read_focus(400) {
             None => return "no_field",
@@ -418,6 +436,14 @@ pub fn inject(text: &str) -> String {
             let _ = crate::inject::copy_only(text);
             eprintln!("[axinject] Accessibility not granted -> copied");
             return "no_access".into();
+        }
+
+        // Frontmost app is US (e.g. dictating into a Notes/History/Settings field) —
+        // querying our own process's AX tree here would deadlock (see is_frontmost_self).
+        // Skip straight to paste: our own windows have no secure fields to guard against.
+        if is_frontmost_self() {
+            eprintln!("[axinject] frontmost is ourselves -> skip AX, paste directly");
+            return paste_fallback(text);
         }
 
         let focus = match read_focus(400) {

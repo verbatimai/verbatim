@@ -30,10 +30,12 @@
 mod backend;
 mod command;
 mod config;
+mod history;
 mod hotkey;
 mod inject;
 mod keys;
 mod lists;
+mod notes;
 mod secrets;
 mod shortcuts;
 mod state;
@@ -96,6 +98,7 @@ fn main() {
             window::configure_non_activating_panel(app);
 
             window::register_settings_close_handler(app);
+            window::register_onboarding_close_handler(app);
 
             // Phase 4.8: the app owns the backend — spawn + supervise it, injecting the
             // vendor keys from the secret store into its env (no key crosses the webview;
@@ -106,6 +109,12 @@ fn main() {
             {
                 shortcuts::setup(app)?;
                 tray::setup(app)?;
+            }
+
+            // Minimal first-run onboarding: no saved key anywhere yet — ask for one.
+            // Never shows again once any vendor key exists (see any_vendor_key_saved).
+            if !keys::any_vendor_key_saved(app.handle()) {
+                let _ = window::open_onboarding_window(app.handle());
             }
             Ok(())
         })
@@ -139,6 +148,13 @@ fn main() {
             lists::snip_list,
             lists::snip_add,
             lists::snip_delete,
+            history::history_list,
+            history::history_delete,
+            history::history_clear,
+            notes::note_list,
+            notes::note_add,
+            notes::note_update,
+            notes::note_delete,
             keys::key_save,
             keys::key_save_clipboard,
             keys::key_get,

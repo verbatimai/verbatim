@@ -3,42 +3,42 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Verbatim</title>
+  <title>Verbatim — Notes</title>
   <link rel="icon" type="image/svg+xml" href="/verbatim-logo.svg" />
   <link rel="stylesheet" href="/src/settings.css" />
   <link rel="stylesheet" href="/src/app.css" />
+  <link rel="stylesheet" href="/src/notes.css" />
 </head>
 <body class="settings-window" data-theme="system">
   <div class="shell">
-    <!-- ───────────────────────── Sidebar ───────────────────────── -->
     <aside class="sidebar">
       <div class="brand">
         <img class="brand-mark" src="/verbatim-logo.svg" alt="Verbatim" width="32" height="32" />
         <div class="brand-text">
           <strong>Verbatim</strong>
-          <small>Dictation</small>
+          <small>Notes</small>
         </div>
       </div>
 
-      <a class="create-btn" href="/notes.html">
+      <button id="sidebarNewNote" class="create-btn">
         <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
         <span>Create note</span>
-      </a>
+      </button>
 
-      <nav class="nav" id="nav">
-        <a class="nav-item" href="/notes.html">
+      <nav class="nav">
+        <button class="nav-item active">
           <svg viewBox="0 0 24 24" class="ico"><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M14 4v6h6"/></svg>
           <span>Notes</span>
-        </a>
+        </button>
         <a class="nav-item" href="/meetings.html">
           <svg viewBox="0 0 24 24" class="ico"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/></svg>
           <span>Meetings</span>
           <span class="tag">New</span>
         </a>
-        <button class="nav-item active" data-view="history">
+        <a class="nav-item" href="/app.html">
           <svg viewBox="0 0 24 24" class="ico"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-8 5"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg>
           <span>History</span>
-        </button>
+        </a>
         <a class="nav-item" href="/settings.html">
           <svg viewBox="0 0 24 24" class="ico"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           <span>Settings</span>
@@ -59,27 +59,21 @@
       </div>
     </aside>
 
-    <!-- ───────────────────────── Content ───────────────────────── -->
     <main class="content app-main">
       <header class="pane-head">
-        <h1>History</h1>
-        <p>Your recent dictation history.</p>
+        <h1>Notes</h1>
+        <p>Plain text, saved on this Mac. Save a History entry, save the current dictation, or start a blank note and dictate straight into it (⌥Space).</p>
       </header>
 
-      <div class="stat-card">
-        <span class="stat-label">Words dictated</span>
-        <span class="stat-value" id="wordsDictated">0</span>
+      <div class="notes-toolbar">
+        <button id="newNote" class="btn">+ New note — dictate or type</button>
       </div>
 
-      <div class="hist-toolbar">
-        <button id="histClear" class="btn ghost">Clear history</button>
-      </div>
+      <div id="notesEmpty" class="hist-note hidden">No notes yet — save one from History, from a dictation, or start a blank one above and press ⌥Space.</div>
 
-      <div id="histEmpty" class="hist-note hidden">No dictations yet — they'll show up here as you dictate.</div>
-
-      <div id="histGroups"></div>
+      <div id="notesGrid" class="notes-grid"></div>
     </main>
   </div>
-  <script type="module" src="/src/app.ts"></script>
+  <script type="module" src="/src/notes.ts"></script>
 </body>
 </html>

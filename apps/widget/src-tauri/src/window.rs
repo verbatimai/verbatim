@@ -151,3 +151,38 @@ pub fn register_settings_close_handler(app: &tauri::App) {
         });
     }
 }
+
+// ── Onboarding: a minimal first-run "give me an API key" window ────────────────
+// Same reasoning as the Settings window (an ordinary focusable NSWindow, needs
+// Regular activation policy to take keyboard input) — mirrors open_settings_window /
+// register_settings_close_handler exactly. Shown once from main.rs's setup() when
+// `keys::any_vendor_key_saved` is false; never reopened once a key exists.
+pub fn open_onboarding_window(app: &tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+
+    let win = app
+        .get_webview_window("onboarding")
+        .ok_or_else(|| "no 'onboarding' window".to_string())?;
+    win.show().map_err(|e| e.to_string())?;
+    win.set_focus().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn register_onboarding_close_handler(app: &tauri::App) {
+    if let Some(onboarding) = app.get_webview_window("onboarding") {
+        let app_h = app.handle().clone();
+        onboarding.on_window_event(move |event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                if let Some(w) = app_h.get_webview_window("onboarding") {
+                    let _ = w.hide();
+                }
+                #[cfg(target_os = "macos")]
+                let _ = app_h.set_activation_policy(desired_activation_policy(
+                    crate::config::read_config(&app_h).dock_icon,
+                ));
+            }
+        });
+    }
+}
