@@ -34,7 +34,7 @@ Download the Q8 baseline model:
 pip install -U huggingface_hub
 hf download nvidia/nemotron-speech-streaming-en-0.6b \
   nemotron-speech-streaming-en-0.6b.q8_0.gguf \
-  --local-dir ~/Library/Application\ Support/verbatim/models
+  --local-dir ~/Library/Application\ Support/co.saaslabs.verbatim.widget/models
 ```
 
 Optional Silero VAD (recommended for trailing-word protection):
