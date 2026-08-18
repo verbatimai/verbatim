@@ -318,6 +318,9 @@ wss.on("connection", (ws) => {
           send(ws, { type: "error", message: `Live mode needs ${stt.requiredKeys.join(", ")}. Add it in Settings (⚙), or a repo .env, or use Demo mode.` });
           return;
         }
+        if (sttId === "nemotron") {
+          send(ws, { type: "status", phase: "stt", state: "local-asr" });
+        }
         send(ws, { type: "ready", stt: sttId, correction: corrId });
         // 3.3 — session_start metadata (no content). NoopSink unless telemetry enabled.
         telemetry.emit({ type: "session_start", sttProvider: sttId, correctionProvider: corrId, language, autoDetect, correct: doCorrect, format: doFormat });

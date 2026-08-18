@@ -56,6 +56,12 @@ type AppConfig = {
   showTranscript?: boolean; // Widget redesign — live-transcript/correction-reveal bubble (default true)
   showRemoved?: boolean; // Widget redesign — fade (vs. instantly cut) removed spans during the reveal (default true)
   historyLimit?: number; // dictation history — how many recent entries to show: 10 | 20 | 50
+  asrModelPath?: string; // local Nemotron GGUF path ("" = default app data location)
+  asrStreamingMs?: number; // 160 | 560 | 1120 streaming latency preset (default 560)
+  asrUseMetal?: boolean; // Metal backend (default true on Apple Silicon)
+  asrVadModelPath?: string; // optional Silero VAD GGUF
+  asrVadOnset?: number;
+  asrVadOffset?: number;
 };
 
 // Mirrors packages/core's provider registries' `requiredKeys` and Rust's
