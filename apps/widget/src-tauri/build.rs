@@ -9,7 +9,7 @@ fn main() {
         if let Ok(prefix) = std::env::var("NEMO_SPEECH_PREFIX") {
             let lib_dir = format!("{prefix}/lib");
             println!("cargo:rustc-link-search=native={lib_dir}");
-            println!("cargo:rustc-link-lib=dylib=nemo_speech_asr");
+            println!("cargo:rustc-link-lib=dylib=nemo_speech_asr_c");
             // RPATH so the dylib resolves at runtime relative to the installed SDK lib/.
             println!("cargo:rustc-link-arg=-Wl,-rpath,{lib_dir}");
             println!("cargo:rustc-cfg=nemo_speech_linked");

@@ -54,18 +54,7 @@ pub struct AsrWorkerConfig {
 
 impl AsrWorkerConfig {
     pub fn from_app(app: &AppHandle, cfg: &AppConfig) -> Self {
-        let model_path = if cfg.asr_model_path.is_empty() {
-            app.path()
-                .app_data_dir()
-                .map(|d| {
-                    d.join("models/nemotron-speech-streaming-en-0.6b.q8_0.gguf")
-                        .to_string_lossy()
-                        .into()
-                })
-                .unwrap_or_else(|_| "models/nemotron-speech-streaming-en-0.6b.q8_0.gguf".into())
-        } else {
-            cfg.asr_model_path.clone()
-        };
+        let model_path = resolve_model_path(app, cfg);
         Self {
             model_path,
             streaming_ms: cfg.asr_streaming_ms,
@@ -76,6 +65,38 @@ impl AsrWorkerConfig {
             language: cfg.language.clone(),
         }
     }
+}
+
+/// Resolve GGUF path: explicit setting → Tauri app_data/models → legacy download dir.
+fn resolve_model_path(app: &AppHandle, cfg: &AppConfig) -> String {
+    const MODEL_FILE: &str = "nemotron-speech-streaming-en-0.6b.q8_0.gguf";
+
+    if !cfg.asr_model_path.is_empty() {
+        return cfg.asr_model_path.clone();
+    }
+
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(d) = app.path().app_data_dir() {
+        candidates.push(d.join("models").join(MODEL_FILE));
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        candidates.push(
+            std::path::PathBuf::from(home)
+                .join("Library/Application Support/verbatim/models")
+                .join(MODEL_FILE),
+        );
+    }
+
+    for path in &candidates {
+        if path.is_file() {
+            return path.to_string_lossy().into();
+        }
+    }
+
+    candidates
+        .first()
+        .map(|p| p.to_string_lossy().into())
+        .unwrap_or_else(|| format!("models/{MODEL_FILE}"))
 }
 
 pub struct AsrWorker {
@@ -178,6 +199,13 @@ fn worker_main(
 
     if let Err(e) = ensure_engine(&mut engine, &worker_cfg, &metrics) {
         eprintln!("[asr] model load failed: {e}");
+        if !ffi::is_linked() {
+            eprintln!(
+                "[asr] NeMo-Speech.cpp is not linked — rebuild with:\n\
+                   export NEMO_SPEECH_PREFIX=$HOME/nemo-speech\n\
+                   cargo build -p verbatim-widget --features nemotron"
+            );
+        }
     }
 
     while let Ok(cmd) = rx.recv() {

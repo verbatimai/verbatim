@@ -94,6 +94,7 @@ pub fn infer_quantization(model_path: &str) -> String {
 #[cfg(nemo_speech_linked)]
 mod linked {
     use super::*;
+    use std::ffi::CString;
     use std::os::raw::{c_char, c_float, c_int, c_void};
 
     #[repr(C)]
@@ -169,12 +170,13 @@ mod linked {
 
     pub type Recognizer = c_void;
     pub type Stream = c_void;
-    pub type Result = c_void;
+    pub type AsrResultHandle = c_void;
 
     const OK: c_int = 0;
 
     extern "C" {
         pub fn nemo_speech_asr_version() -> *const c_char;
+        pub fn nemo_speech_asr_last_error() -> *const c_char;
         pub fn nemo_speech_asr_recognition_options_default() -> RecognitionOptions;
         pub fn nemo_speech_asr_create(cfg: *const RecognizerConfig, out: *mut *mut Recognizer) -> c_int;
         pub fn nemo_speech_asr_destroy(recognizer: *mut Recognizer);
@@ -191,18 +193,18 @@ mod linked {
         ) -> c_int;
         pub fn nemo_speech_asr_stream_finish(stream: *mut Stream) -> c_int;
         pub fn nemo_speech_asr_stream_force_endpoint(stream: *mut Stream) -> c_int;
-        pub fn nemo_speech_asr_stream_next(stream: *mut Stream, out: *mut *mut Result) -> c_int;
+        pub fn nemo_speech_asr_stream_next(stream: *mut Stream, out: *mut *mut AsrResultHandle) -> c_int;
         pub fn nemo_speech_asr_stream_close(stream: *mut Stream);
-        pub fn nemo_speech_asr_result_is_final(result: *const Result) -> bool;
-        pub fn nemo_speech_asr_result_transcript(result: *const Result, alt: usize) -> *const c_char;
-        pub fn nemo_speech_asr_result_destroy(result: *mut Result);
+        pub fn nemo_speech_asr_result_is_final(result: *const AsrResultHandle) -> bool;
+        pub fn nemo_speech_asr_result_transcript(result: *const AsrResultHandle, alt: usize) -> *const c_char;
+        pub fn nemo_speech_asr_result_destroy(result: *mut AsrResultHandle);
         pub fn nemo_speech_asr_recognize_f32(
             recognizer: *mut Recognizer,
             options: *const RecognitionOptions,
             samples: *const c_float,
             n_samples: usize,
             sample_rate: c_int,
-            out: *mut *mut Result,
+            out: *mut *mut AsrResultHandle,
         ) -> c_int;
     }
 
@@ -306,7 +308,7 @@ mod linked {
             let lang = CString::new(language).unwrap_or_default();
             opts.language_code = lang.as_ptr();
 
-            let mut out: *mut Result = std::ptr::null_mut();
+            let mut out: *mut AsrResultHandle = std::ptr::null_mut();
             let st = unsafe {
                 nemo_speech_asr_recognize_f32(
                     self.ptr,
@@ -367,7 +369,7 @@ mod linked {
         }
 
         pub fn next_result(&mut self) -> Result<Option<(String, bool)>, AsrError> {
-            let mut out: *mut Result = std::ptr::null_mut();
+            let mut out: *mut AsrResultHandle = std::ptr::null_mut();
             let st = unsafe { nemo_speech_asr_stream_next(self.ptr, &mut out) };
             if st != OK {
                 return Err(AsrError::InferFailed(last_error()));
