@@ -56,6 +56,7 @@ type AppConfig = {
   showTranscript?: boolean; // Widget redesign — live-transcript/correction-reveal bubble (default true)
   showRemoved?: boolean; // Widget redesign — fade (vs. instantly cut) removed spans during the reveal (default true)
   historyLimit?: number; // dictation history — how many recent entries to show: 10 | 20 | 50
+  setupState?: string; // first-run onboarding re-entry state: "unseen" | "skipped" | "done"
 };
 
 // Mirrors packages/core's provider registries' `requiredKeys` and Rust's
@@ -150,16 +151,36 @@ function isEnglish(language: string): boolean {
   return l === "en" || l.startsWith("en-") || l.startsWith("en_");
 }
 
+// Mirrors packages/core's registries (providers/registry.ts, correction/registry.ts) —
+// kept in sync manually, same as VENDOR_ENV above. The internal `fixture`/`mock` ids are
+// deliberately absent: they aren't user-selectable, so a stored config naming one is a
+// fault to report, not a state to accept.
+const STT_REGISTERED = new Set(["pyai", "deepgram", "openai"]);
+const CORR_REGISTERED = new Set(["openai", "anthropic"]);
+
+/** One role's problems. Asking `hasKey[id]` alone (as this did) conflates two failures
+ * with a key check that answers neither:
+ *   • an id NO registry resolves — core's `capabilityErrors` surfaces the registry's own
+ *     throw, whereas here `correctionProvider: "pyai"` reported ZERO errors, because the
+ *     PyAI *key* is saved even though nothing can run the correction pass with it;
+ *   • a provider whose `requiredKeys` list is EMPTY — a shape core already supports
+ *     (fixture.stt.ts) and both `assertKeys` variants pass — which would have read
+ *     "needs undefined" here.
+ * The "needs <ENV>" wording is unchanged, so nothing that passes today starts failing. */
+function roleErrors(role: "STT" | "Correction", id: string, registered: Set<string>): string[] {
+  if (!registered.has(id)) return [`${role} '${id}' isn't a provider Verbatim can use — pick another.`];
+  const env = VENDOR_ENV[id];
+  if (!env) return []; // zero-key provider: nothing can be missing, so the role is satisfied
+  return hasKey[id] ? [] : [`${role} '${id}' needs ${env}.`];
+}
+
 /** Mirrors packages/core/src/settings.ts's `capabilityErrors` (can't be imported
  * into this standalone Vite app), using local `hasKey` in place of `process.env`. */
 function capabilityErrors(): string[] {
-  const errors: string[] = [];
-  if (!hasKey[config.sttProvider]) {
-    errors.push(`STT '${config.sttProvider}' needs ${VENDOR_ENV[config.sttProvider]}.`);
-  }
-  if (!hasKey[config.correctionProvider]) {
-    errors.push(`Correction '${config.correctionProvider}' needs ${VENDOR_ENV[config.correctionProvider]}.`);
-  }
+  const errors: string[] = [
+    ...roleErrors("STT", config.sttProvider, STT_REGISTERED),
+    ...roleErrors("Correction", config.correctionProvider, CORR_REGISTERED),
+  ];
   // 3.2 — auto-detect never silences the PyAI-English-only warning (PyAI ignores detect);
   // for non-PyAI vendors, auto-detect relaxes the fixed-language guard (mirrors core).
   if (config.sttProvider === "pyai" && !isEnglish(config.language)) {
@@ -298,9 +319,29 @@ function fillSelect(sel: HTMLSelectElement, opts: { value: string; label: string
   sel.value = value;
 }
 
+// A stored provider id that isn't one of the <option>s (e.g. the `correctionProvider:
+// "pyai"` older onboarding wrote) leaves `selectedIndex === -1`, i.e. a silently BLANK
+// select that disagrees with the config — the user sees no vendor and no reason why.
+// Surface it instead: a disabled option named after the id, selected, so the bad value
+// is visible and can only be replaced by a real one. capabilityErrors() explains it.
+// Idempotent, because initProviderControls() re-runs on every config-changed: the stale
+// placeholder is dropped first, so an id that has since become valid loses the marker.
+function selectProvider(sel: HTMLSelectElement, id: string) {
+  sel.querySelectorAll("option[data-unavailable]").forEach((o) => o.remove());
+  sel.value = id;
+  if (!id || sel.selectedIndex !== -1) return; // an empty id is "unset", not "unavailable"
+  const opt = document.createElement("option");
+  opt.value = id;
+  opt.textContent = `${id} (unavailable)`;
+  opt.disabled = true;
+  opt.dataset.unavailable = "1";
+  sel.appendChild(opt);
+  sel.value = id;
+}
+
 function initProviderControls() {
-  sttProviderEl.value = config.sttProvider;
-  correctionProviderEl.value = config.correctionProvider;
+  selectProvider(sttProviderEl, config.sttProvider);
+  selectProvider(correctionProviderEl, config.correctionProvider);
 
   sttProviderEl.onchange = async () => {
     await patchConfig({ sttProvider: sttProviderEl.value });

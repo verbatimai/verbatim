@@ -51,6 +51,7 @@ pub struct AppConfig {
     pub show_transcript: bool,       // Widget redesign — show the live-transcript/correction-reveal bubble while dictating (default true; off = pill only, text still corrects + injects silently)
     pub show_removed: bool,          // Widget redesign — during the correction reveal, fade removed spans instead of collapsing them immediately (default true)
     pub history_limit: u32,          // dictation history — how many recent entries to show: 10 | 20 | 50 (default 20)
+    pub setup_state: String,         // onboarding re-entry state: "unseen" | "skipped" | "done" (written by window::finish_onboarding)
 }
 
 impl Default for AppConfig {
@@ -91,6 +92,7 @@ impl Default for AppConfig {
             show_transcript: true,
             show_removed: true,
             history_limit: 20,
+            setup_state: "unseen".into(),
         }
     }
 }

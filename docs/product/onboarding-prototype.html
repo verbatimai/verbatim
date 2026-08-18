@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Verbatim — Onboarding design</title>
+<style>
+/* ── Verbatim tokens (lifted from apps/widget/src/settings.css) ───────────── */
+:root{
+  --bg-0:#eef1f6; --bg-1:#e6ebf3;
+  --tint-a:rgba(120,150,255,.18); --tint-b:rgba(180,130,255,.14);
+  --glass:rgba(255,255,255,.55); --glass-strong:rgba(255,255,255,.72);
+  --stroke:rgba(20,24,40,.10); --stroke-soft:rgba(20,24,40,.06);
+  --text:#1a1f2e; --text-dim:#5a6172; --text-faint:#8b91a2;
+  --accent:#7c5cf0; --accent2:#22d3ee; --accent-ink:#fff;
+  --ok:#1a7f37; --bad:#d1242f; --warn:#b45309;
+  --shadow:0 10px 40px rgba(30,40,80,.12); --radius:16px;
+  --canvas:#f4f5f9; --canvas-line:rgba(20,24,40,.07);
+}
+body[data-theme="dark"]{
+  --bg-0:#0d1017; --bg-1:#12151f;
+  --tint-a:rgba(90,120,255,.20); --tint-b:rgba(150,100,255,.16);
+  --glass:rgba(30,34,46,.55); --glass-strong:rgba(38,43,58,.72);
+  --stroke:rgba(255,255,255,.10); --stroke-soft:rgba(255,255,255,.06);
+  --text:#eef1f8; --text-dim:#a7aec1; --text-faint:#6c7386;
+  --accent:#9b7dff; --accent2:#22d3ee;
+  --ok:#3fb950; --bad:#f85149; --warn:#d29922;
+  --shadow:0 12px 44px rgba(0,0,0,.45);
+  --canvas:#0a0c11; --canvas-line:rgba(255,255,255,.06);
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--canvas); color:var(--text);
+  font:13.5px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  background-image:linear-gradient(var(--canvas-line) 1px,transparent 1px),linear-gradient(90deg,var(--canvas-line) 1px,transparent 1px);
+  background-size:32px 32px;
+}
+a{color:inherit}
+.ico{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+
+/* ── prototype chrome ───────────────────────────────────────────────────── */
+.topbar{
+  position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:16px;
+  padding:14px 26px; background:color-mix(in srgb,var(--canvas) 88%,transparent);
+  backdrop-filter:blur(14px); border-bottom:1px solid var(--stroke);
+}
+.topbar h1{font-size:15px;margin:0;font-weight:650;letter-spacing:-.01em}
+.topbar p{margin:0;font-size:11.5px;color:var(--text-faint)}
+.spacer{flex:1}
+.seg{display:flex;gap:2px;padding:2px;border-radius:9px;background:var(--stroke-soft);border:1px solid var(--stroke)}
+.seg button{
+  font:inherit;font-size:11.5px;font-weight:550;padding:5px 11px;border-radius:7px;border:none;
+  background:none;color:var(--text-dim);cursor:pointer
+}
+.seg button[aria-pressed="true"]{background:var(--glass-strong);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-faint);font-weight:700}
+
+main{padding:26px 26px 80px;max-width:1580px;margin:0 auto}
+.sect{margin:34px 0 14px;display:flex;align-items:baseline;gap:12px}
+.sect h2{font-size:13px;margin:0;font-weight:700;letter-spacing:.02em}
+.sect span{font-size:11.5px;color:var(--text-faint)}
+.hr{height:1px;background:var(--stroke);flex:1}
+
+.stage{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap}
+.notes{
+  flex:1 1 320px;min-width:300px;max-width:460px;padding:18px 20px;border-radius:14px;
+  background:var(--glass);border:1px solid var(--stroke);backdrop-filter:blur(20px)
+}
+.notes h3{margin:0 0 4px;font-size:12.5px}
+.notes .step{font-size:10.5px;color:var(--accent);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.notes ul{margin:10px 0 0;padding-left:16px}
+.notes li{font-size:12px;color:var(--text-dim);margin-bottom:7px}
+.notes li b{color:var(--text);font-weight:600}
+.notes .budget{margin-top:14px;padding-top:12px;border-top:1px solid var(--stroke);font-size:11.5px;color:var(--text-faint)}
+.notes .budget b{color:var(--text);font-variant-numeric:tabular-nums}
+
+.frameCol{display:flex;flex-direction:column;gap:9px;align-items:flex-start}
+.cap{font-size:11px;color:var(--text-faint);display:flex;gap:7px;align-items:center}
+.cap b{color:var(--text-dim);font-weight:600}
+.tools{display:flex;gap:6px;flex-wrap:wrap}
+.tool{font:inherit;font-size:11px;padding:4px 9px;border-radius:7px;border:1px solid var(--stroke);background:var(--glass-strong);color:var(--text-dim);cursor:pointer}
+.tool:hover{border-color:var(--accent);color:var(--text)}
+
+/* ── the macOS window ───────────────────────────────────────────────────── */
+.win{
+  width:440px;height:566px;border-radius:11px;overflow:hidden;position:relative;
+  border:1px solid var(--stroke);box-shadow:0 22px 60px rgba(20,26,50,.22),0 2px 6px rgba(20,26,50,.10);
+  color:var(--text);
+  background:
+    radial-gradient(120% 90% at 8% 0%,var(--tint-a),transparent 55%),
+    radial-gradient(110% 90% at 100% 100%,var(--tint-b),transparent 50%),
+    linear-gradient(160deg,var(--bg-0),var(--bg-1));
+  display:flex;flex-direction:column;
+}
+.win.static{pointer-events:none}
+.tbar{height:30px;flex:none;display:flex;align-items:center;padding:0 11px;gap:7px;border-bottom:1px solid var(--stroke-soft);background:color-mix(in srgb,var(--glass) 60%,transparent)}
+.dot{width:10px;height:10px;border-radius:50%;background:#ff5f57}
+.dot:nth-child(2){background:#febc2e}.dot:nth-child(3){background:#28c840}
+.tbar .ttl{flex:1;text-align:center;font-size:11.5px;color:var(--text-faint);margin-right:34px}
+.pane{flex:1;display:flex;flex-direction:column;padding:18px 24px 16px;overflow:hidden}
+
+.mark{width:34px;height:34px;border-radius:9px;box-shadow:0 4px 14px rgba(124,92,240,.35);flex:none}
+.head{display:flex;flex-direction:column;align-items:center;gap:9px;text-align:center}
+.head h2{font-size:17px;margin:0;font-weight:640;letter-spacing:-.01em}
+.head p{margin:0;font-size:12.5px;color:var(--text-dim);line-height:1.45}
+.dots{display:flex;gap:5px;justify-content:center;margin-top:2px}
+.dots i{width:5px;height:5px;border-radius:50%;background:var(--stroke);display:block}
+.dots i.on{background:var(--accent);width:14px;border-radius:3px}
+
+/* inline demo preview */
+.preview{
+  margin:12px 0 2px;padding:10px 13px;border-radius:11px;width:100%;
+  background:var(--glass-strong);border:1px solid var(--stroke);
+  font-size:12.5px;line-height:1.5;min-height:52px;display:flex;align-items:center;gap:8px
+}
+.preview .pvtext{flex:1;min-width:0}
+.preview .mic{width:16px;height:16px;flex:none;color:var(--accent)}
+.cut{display:inline-block;position:relative;white-space:nowrap;overflow:hidden;vertical-align:bottom;animation:cutLoop 7s cubic-bezier(.4,0,.2,1) infinite;color:var(--text-dim)}
+.cut::after{content:"";position:absolute;left:0;top:52%;height:1.4px;background:var(--bad);width:0;animation:strike 7s cubic-bezier(.4,0,.2,1) infinite}
+@keyframes strike{0%,26%{width:0}38%,62%{width:100%}72%,100%{width:100%}}
+@keyframes cutLoop{
+  0%,26%{opacity:1;max-width:220px}
+  38%{opacity:1}
+  62%{opacity:.45}
+  74%,96%{opacity:0;max-width:0}
+  100%{opacity:1;max-width:220px}
+}
+.previewTag{margin:6px 0 0;font-size:10.5px;color:var(--text-faint)}
+
+/* form bits */
+.field{position:relative;width:100%;margin-top:14px}
+.field input{
+  width:100%;padding:11px 40px 11px 13px;border-radius:10px;font:inherit;font-size:13px;
+  border:1px solid var(--stroke);background:var(--glass);color:var(--text);outline:none
+}
+.field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
+.field .eye{position:absolute;right:8px;top:50%;transform:translateY(-50%);border:none;background:none;color:var(--text-faint);cursor:pointer;padding:4px;display:flex}
+.field.bad input{border-color:var(--bad);box-shadow:0 0 0 3px color-mix(in srgb,var(--bad) 16%,transparent)}
+.meta{display:flex;align-items:center;gap:8px;margin-top:8px;min-height:24px}
+.chip{
+  display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:550;padding:4px 9px;border-radius:7px;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,var(--stroke));background:color-mix(in srgb,var(--accent) 12%,transparent);
+  color:var(--text);cursor:pointer
+}
+.chip.muted{border-color:var(--stroke);background:var(--glass-strong);color:var(--text-dim);font-weight:500;cursor:default}
+.chip .cv{opacity:.55;font-size:10px}
+.err{color:var(--bad);font-size:11.5px;margin:0}
+.okline{color:var(--ok);font-size:11.5px;margin:0;display:flex;gap:5px;align-items:center}
+.spin{width:12px;height:12px;border-radius:50%;border:1.6px solid color-mix(in srgb,var(--accent) 30%,transparent);border-top-color:var(--accent);animation:sp .7s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+.vpop{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
+.vpop button{font:inherit;font-size:11.5px;padding:5px 10px;border-radius:7px;border:1px solid var(--stroke);background:var(--glass-strong);color:var(--text-dim);cursor:pointer}
+.vpop button.sel{border-color:var(--accent);color:var(--text);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+
+.testkey{
+  margin-top:12px;width:100%;display:flex;align-items:center;gap:10px;text-align:left;
+  padding:10px 12px;border-radius:10px;cursor:pointer;font:inherit;
+  border:1px dashed color-mix(in srgb,var(--accent2) 55%,var(--stroke));
+  background:color-mix(in srgb,var(--accent2) 9%,transparent);color:var(--text)
+}
+.testkey:hover{border-style:solid}
+.testkey .bolt{width:17px;height:17px;color:var(--accent2);flex:none}
+.testkey strong{display:block;font-size:12.5px;font-weight:600}
+.testkey small{display:block;font-size:10.5px;color:var(--text-faint);line-height:1.35}
+.testkey .pill{margin-left:auto;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;color:var(--accent2);border:1px solid color-mix(in srgb,var(--accent2) 45%,transparent);border-radius:5px;padding:2px 5px;flex:none}
+
+.localcard{
+  margin-top:10px;width:100%;display:flex;align-items:center;gap:10px;text-align:left;
+  padding:10px 12px;border-radius:10px;cursor:pointer;font:inherit;
+  border:1px solid color-mix(in srgb,var(--accent) 42%,var(--stroke));
+  background:color-mix(in srgb,var(--accent) 9%,transparent);color:var(--text)
+}
+.localcard:hover{border-color:var(--accent)}
+.localcard .chipico{width:17px;height:17px;color:var(--accent);flex:none}
+.localcard strong{display:block;font-size:12.5px;font-weight:600}
+.localcard small{display:block;font-size:10.5px;color:var(--text-faint);line-height:1.35}
+.localcard .pill{margin-left:auto;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:5px;padding:2px 5px;flex:none}
+.secondRow{margin-top:10px;width:100%}
+.secondRow .lab{font-size:11px;color:var(--text-dim);font-weight:600;margin-bottom:5px;display:flex;gap:6px;align-items:center}
+.secondRow .lab em{font-style:normal;color:var(--text-faint);font-weight:500}
+.modelrow{display:flex;align-items:center;gap:10px;padding:10px 11px;border-top:1px solid var(--stroke-soft);font-size:12px}
+.modelrow:first-child{border-top:none}
+.modelrow b{font-weight:600;width:96px;flex:none}
+.modelrow .mn{flex:1;font-variant-numeric:tabular-nums}
+.modelrow .sz{color:var(--text-faint);font-size:11px;font-variant-numeric:tabular-nums}
+.modelrow select{font:inherit;font-size:11.5px;padding:4px 7px;border-radius:7px;border:1px solid var(--stroke);background:var(--glass-strong);color:var(--text)}
+.prog{height:6px;border-radius:3px;background:var(--stroke);overflow:hidden;margin-top:10px}
+.prog i{display:block;height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:3px}
+.info.good{background:color-mix(in srgb,var(--ok) 11%,transparent);border-color:color-mix(in srgb,var(--ok) 30%,transparent)}
+.info.good .ico{color:var(--ok)}
+.dlrow{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--text-dim);margin-top:10px}
+.dlrow .sz{margin-left:auto;color:var(--text-faint);font-variant-numeric:tabular-nums}
+.disc{margin-top:12px;width:100%}
+.discLink{margin-top:12px;font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:6px;cursor:pointer}
+.discLink:hover{color:var(--text);text-decoration:none}
+.disc>summary{list-style:none;cursor:pointer;font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:6px}
+.disc>summary::-webkit-details-marker{display:none}
+.disc>summary:hover{color:var(--text)}
+.disc>summary .cv{transition:transform .15s}
+.disc[open]>summary .cv{transform:rotate(90deg)}
+.kg{margin-top:9px;display:flex;flex-direction:column;border-radius:10px;overflow:hidden;border:1px solid var(--stroke);background:var(--glass-strong)}
+.kr{display:flex;align-items:center;gap:10px;padding:9px 11px;border-top:1px solid var(--stroke-soft);font-size:12px}
+.kr:first-child{border-top:none}
+.kr b{font-weight:600;width:74px;flex:none}
+.kr span{color:var(--text-faint);font-size:11px;flex:1;line-height:1.3}
+.kr a{font-size:11px;color:var(--accent);text-decoration:none;font-weight:550;white-space:nowrap}
+.kr.best{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.kr .tagbest{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)}
+
+.trust{margin:auto 0 0;padding-top:14px;display:flex;gap:7px;align-items:center;font-size:11px;color:var(--text-faint);line-height:1.35}
+.trust .ico{width:13px;height:13px;flex:none}
+.foot{margin-top:auto;padding-top:14px;display:flex;align-items:center;gap:12px}
+.trust + .foot{margin-top:0}
+.link{background:none;border:none;font:inherit;font-size:12px;color:var(--text-faint);cursor:pointer;padding:0;text-decoration:none}
+.link:hover{color:var(--text-dim);text-decoration:underline}
+.btn{font:inherit;font-size:12.5px;font-weight:550;padding:9px 16px;border-radius:9px;cursor:pointer;color:var(--text);background:var(--glass-strong);border:1px solid var(--stroke)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#fff;border-color:transparent}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn:disabled{opacity:.45;cursor:default;filter:none}
+.foot .btn{margin-left:auto}
+
+/* permission rows */
+.prow{display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-top:1px solid var(--stroke-soft)}
+.prow:first-of-type{border-top:none}
+.prow .pi{width:30px;height:30px;border-radius:9px;flex:none;display:flex;align-items:center;justify-content:center;background:var(--glass-strong);border:1px solid var(--stroke);color:var(--text-dim)}
+.prow .pb{flex:1;min-width:0}
+.prow h4{margin:0;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+.prow p{margin:3px 0 0;font-size:11.5px;color:var(--text-faint);line-height:1.4}
+.stat{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;display:inline-flex;align-items:center;gap:5px}
+.stat.y{color:var(--ok)}.stat.n{color:var(--text-faint)}
+.stat i{width:7px;height:7px;border-radius:50%;background:currentColor;display:block}
+.stat.n i{background:none;border:1.4px solid currentColor}
+.prow .btn{align-self:center;flex:none;padding:6px 11px;font-size:11.5px}
+.info{
+  display:flex;gap:9px;padding:10px 12px;border-radius:10px;margin-bottom:4px;
+  background:color-mix(in srgb,var(--warn) 12%,transparent);
+  border:1px solid color-mix(in srgb,var(--warn) 32%,transparent);font-size:11.5px;line-height:1.45
+}
+.info .ico{width:15px;height:15px;color:var(--warn);margin-top:1px}
+.info a{color:var(--accent);text-decoration:none;font-weight:600}
+
+/* try-it */
+.trybox{margin-top:14px;width:100%;border-radius:12px;border:1px solid var(--stroke);background:var(--glass-strong);padding:12px 13px;min-height:104px;display:flex;flex-direction:column;gap:8px}
+.trybox .cursor{display:inline-block;width:1.5px;height:14px;background:var(--accent);vertical-align:-2px;animation:blink 1.1s step-end infinite}
+@keyframes blink{50%{opacity:0}}
+.trybox .live{font-size:13px;line-height:1.5;min-height:40px}
+.trybox .live .dim{color:var(--text-faint)}
+.trybox .live s{color:var(--text-faint);text-decoration-color:var(--bad)}
+.trybox .lbl2{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--text-faint);font-weight:700}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border-radius:999px;background:var(--glass-strong);border:1px solid var(--stroke);font-size:11.5px;color:var(--text-dim);align-self:center;margin-top:12px}
+.pill .lv{display:flex;gap:2px;align-items:flex-end;height:12px}
+.pill .lv b{width:2px;background:var(--accent);border-radius:1px;animation:lv .9s ease-in-out infinite;display:block}
+.pill .lv b:nth-child(1){height:5px;animation-delay:0s}.pill .lv b:nth-child(2){height:11px;animation-delay:.12s}
+.pill .lv b:nth-child(3){height:7px;animation-delay:.24s}.pill .lv b:nth-child(4){height:9px;animation-delay:.36s}
+@keyframes lv{50%{transform:scaleY(.4)}}
+.tips{margin-top:14px;display:flex;flex-direction:column;gap:7px;width:100%}
+.tip{display:flex;gap:9px;align-items:center;font-size:12px;color:var(--text-dim)}
+.tip kbd{font:inherit;font-size:11px;font-weight:600;color:var(--text);border:1px solid var(--stroke);background:var(--glass-strong);border-radius:5px;padding:2px 6px}
+.done{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ok);font-weight:550;margin-top:10px}
+
+/* board */
+.board{display:flex;flex-wrap:wrap;gap:26px}
+.bcell{display:flex;flex-direction:column;gap:8px;width:440px}
+.bcell .t{font-size:11.5px;font-weight:650}
+.bcell .d{font-size:11px;color:var(--text-faint);line-height:1.4;min-height:30px}
+.bcell.sm{width:300px}
+
+/* misc mocks */
+.menubar{width:300px;border-radius:10px;overflow:hidden;border:1px solid var(--stroke);background:var(--glass-strong);backdrop-filter:blur(20px);box-shadow:var(--shadow);padding:5px}
+.mi{display:flex;align-items:center;gap:9px;padding:6px 9px;border-radius:6px;font-size:12.5px}
+.mi.hl{background:var(--accent);color:#fff}
+.mi .k{margin-left:auto;font-size:11px;opacity:.6}
+.msep{height:1px;background:var(--stroke);margin:5px 6px}
+.bubble{
+  width:300px;border-radius:16px;padding:13px 14px;background:var(--glass-strong);border:1px solid var(--stroke);
+  box-shadow:var(--shadow);backdrop-filter:blur(24px);display:flex;flex-direction:column;gap:9px
+}
+.bubble .bh{display:flex;gap:9px;align-items:flex-start;font-size:12.5px;line-height:1.4}
+.bubble .warnico{width:16px;height:16px;color:var(--warn);flex:none;margin-top:1px}
+.bubble .ba{display:flex;gap:8px;justify-content:flex-end}
+.bubble .btn{padding:6px 11px;font-size:11.5px}
+.orb{width:52px;height:52px;border-radius:50%;background:var(--glass-strong);border:1px solid var(--stroke);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(20px)}
+</style>
+</head>
+<body data-theme="light">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="vg" x1="9" y1="46" x2="34" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <symbol id="logo" viewBox="0 0 64 64">
+      <rect width="64" height="64" rx="14" fill="#08080d"/>
+      <rect x="0.5" y="0.5" width="63" height="63" rx="13.5" fill="none" stroke="#fff" stroke-opacity=".10"/>
+      <g fill="none" stroke-width="5" stroke-linecap="round">
+        <g stroke="url(#vg)"><path d="M11 23V41"/><path d="M21 16V48"/><path d="M31 20V44"/></g>
+        <g stroke="#fff"><path d="M40 22H54"/><path d="M40 32H54"/><path d="M40 42H48" stroke-opacity=".55"/></g>
+      </g>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="topbar">
+  <svg class="mark" style="width:26px;height:26px"><use href="#logo"/></svg>
+  <div>
+    <h1>Verbatim — first-run onboarding</h1>
+    <p>Target design · 3 screens · 440×566 · v1.0.0</p>
+  </div>
+  <div class="spacer"></div>
+  <span class="lbl">Build</span>
+  <div class="seg" id="segBuild">
+    <button data-b="public" aria-pressed="true">Public</button>
+    <button data-b="internal" aria-pressed="false">Internal</button>
+  </div>
+  <span class="lbl">Local runtime</span>
+  <div class="seg" id="segLocal">
+    <button data-l="off" aria-pressed="true">Absent</button>
+    <button data-l="on" aria-pressed="false">Available</button>
+  </div>
+  <span class="lbl">Theme</span>
+  <div class="seg" id="segTheme">
+    <button data-t="light" aria-pressed="true">Light</button>
+    <button data-t="dark" aria-pressed="false">Dark</button>
+  </div>
+</header>
+
+<main>
+  <div class="sect"><h2>INTERACTIVE PROTOTYPE</h2><span>type a key, click through — everything below reacts</span><div class="hr"></div></div>
+
+  <div class="stage">
+    <div class="frameCol">
+      <div class="win" id="live"></div>
+      <div class="cap"><b>Live</b> · try <code>sk-abc123</code>, <code>sk-ant-abc</code>, or a 40-char hex string</div>
+      <div class="tools">
+        <button class="tool" data-jump="1">① Connect</button>
+        <button class="tool" data-jump="2">② Permissions</button>
+        <button class="tool" data-jump="3">③ Try it</button>
+        <button class="tool" data-fill="sk-proj-9f2Ka8xQ71mZbT4vNc0LwRhE">Paste OpenAI key</button>
+        <button class="tool" data-fill="sk-ant-api03-7Hn2Vb9QpLm4">Paste Anthropic key</button>
+        <button class="tool" data-fill="3f8a1c94be27d05fa6118e42cd7930bb5e6af201">Paste Deepgram key</button>
+        <button class="tool" data-fill="pyai-live-7Kd93mQ2xVn8">Paste PyAI key</button>
+        <button class="tool" data-reset="1">Reset</button>
+      </div>
+    </div>
+    <aside class="notes" id="notes"></aside>
+  </div>
+
+  <div class="sect"><h2>SCREEN 1 — CONNECT</h2><span>the only required step</span><div class="hr"></div></div>
+  <div class="board" id="board1"></div>
+
+  <div class="sect"><h2>SCREEN 2 — PERMISSIONS</h2><span>self-advancing, never blocking</span><div class="hr"></div></div>
+  <div class="board" id="board2"></div>
+
+  <div class="sect"><h2>SCREEN 3 — TRY IT</h2><span>the habit-forming moment, and a full self-test</span><div class="hr"></div></div>
+  <div class="board" id="board3"></div>
+
+  <div class="sect"><h2>LOCAL MODELS — THE KEY-FREE PATH</h2><span>rendered only when the runtime is present</span><div class="hr"></div></div>
+  <div class="board" id="board5"></div>
+
+  <div class="sect"><h2>AFTER "SET UP LATER"</h2><span>the anti-nag surfaces — replaces today's re-open-every-launch</span><div class="hr"></div></div>
+  <div class="board" id="board4"></div>
+</main>
+
+<script>
+/* ───────── vendor model ───────── */
+const V = {
+  openai:   {name:"OpenAI",    stt:true,  corr:true,  url:"platform.openai.com", blurb:"Speech-to-text + cleanup",     get:"Get a key ↗"},
+  pyai:     {name:"PyAI",      stt:true,  corr:false, url:"pyai.com",            blurb:"Speech-to-text (Verbatim default)", get:"Get a key ↗"},
+  deepgram: {name:"Deepgram",  stt:true,  corr:false, url:"console.deepgram.com",blurb:"Speech-to-text, 30+ languages",  get:"Get a key ↗"},
+  anthropic:{name:"Anthropic", stt:false, corr:true,  url:"console.anthropic.com",blurb:"Cleanup only — needs a speech key", get:"Get a key ↗"},
+};
+function detect(k){
+  const s=(k||"").trim();
+  if(!s) return null;
+  if(/^sk-ant-/i.test(s)) return "anthropic";
+  if(/^sk-/i.test(s)) return "openai";
+  if(/^[0-9a-f]{32,48}$/i.test(s)) return "deepgram";
+  return s.length>=8 ? "pyai" : null;
+}
+/* resolver — what onboarding writes, and what it tells you */
+function resolve(v){
+  if(!v) return null;
+  const d=V[v];
+  if(d.stt&&d.corr) return {mode:"full", cfg:`stt=${v} · correction=${v} · correct+format on`, say:"You're fully set up."};
+  if(d.stt)         return {mode:"raw",  cfg:`stt=${v} · correct=false · format=false`, say:`${d.name} covers speech-to-text. Self-correction stays off until you add an OpenAI or Anthropic key.`};
+  return {mode:"needStt", cfg:`correction=${v} · speech-to-text still unset`, say:`${d.name} does the cleanup. Verbatim also needs a speech-to-text key.`};
+}
+
+/* local models — both roles, so a genuinely key-free path */
+const LOCAL = {
+  stt:  [{id:"whisper-small.en", mb:466, label:"Whisper small (English)"},
+         {id:"whisper-medium",   mb:1530,label:"Whisper medium (multilingual)"}],
+  corr: [{id:"qwen2.5-1.5b-instruct", mb:940, label:"Qwen2.5 1.5B Instruct"},
+         {id:"llama-3.2-3b-instruct", mb:1900,label:"Llama 3.2 3B Instruct"}],
+};
+const mb = n => n>=1024 ? (n/1024).toFixed(1)+" GB" : n+" MB";
+const localTotal = s => LOCAL.stt[s.mStt].mb + LOCAL.corr[s.mCorr].mb;
+
+/* combined resolver — first key, optional second key, or local */
+function combo(s){
+  if(s.source==="local") return {mode:"local",
+    cfg:`stt=local:${LOCAL.stt[s.mStt].id} · correction=local:${LOCAL.corr[s.mCorr].id} · correct+format on`,
+    say:"Everything runs on this Mac. No key, and nothing you say leaves the machine."};
+  const r = resolve(s.vendor); if(!r) return null;
+  const d2 = s.v2 ? V[s.v2] : null;
+  if(r.mode==="full") return r;
+  if(r.mode==="raw" && d2 && d2.corr)
+    return {mode:"full", cfg:`stt=${s.vendor} · correction=${s.v2} · correct+format on`, say:"Fully set up — speech and cleanup both covered."};
+  if(r.mode==="needStt" && d2 && d2.stt)
+    return {mode:"full", cfg:`stt=${s.v2} · correction=${s.vendor} · correct+format on`, say:"Fully set up."};
+  return r;
+}
+
+/* ───────── state ───────── */
+const base = () => ({
+  screen:1, build:"public", key:"", vendor:null, pick:false, reveal:false,
+  verify:"idle", help:false, mode:null, usedTest:false,
+  key2:"", v2:null, second:false,                 // the optional / required second-role key
+  localAvail:false, source:null, mStt:0, mCorr:0, dl:0,  // local-model path
+  mic:false, ax:false, tryS:"idle", skipped:false
+});
+let L = base();
+
+/* ───────── svg bits ───────── */
+const I = {
+  mic:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>',
+  key:'<svg class="ico" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 3l4 4"/><path d="M15 5l4 4"/></svg>',
+  kbd:'<svg class="ico" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>',
+  eye:'<svg class="ico" viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>',
+  bolt:'<svg class="bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/></svg>',
+  warn:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 3l9 16H3l9-16z"/><path d="M12 9v5M12 17h.01"/></svg>',
+  tick:'<svg class="ico" viewBox="0 0 24 24" style="width:15px;height:15px"><path d="M20 6L9 17l-5-5"/></svg>',
+  cog:'<svg class="ico" viewBox="0 0 24 24" style="width:15px;height:15px"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>',
+};
+const dots = n => `<div class="dots">${[1,2,3].map(i=>`<i class="${i===n?'on':''}"></i>`).join("")}</div>`;
+const tbar = t => `<div class="tbar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="ttl">${t}</span></div>`;
+
+/* ───────── screen 1 ───────── */
+function s1help(){
+  return tbar("Welcome to Verbatim") + `<div class="pane">
+    <div class="head">
+      <h2>Where to get a key</h2>
+      <p>Verbatim is bring-your-own-key. Any one of these works.</p>
+      ${dots(1)}
+    </div>
+    <div class="kg" style="margin-top:16px">
+      ${["openai","pyai","deepgram","anthropic"].map(k=>`
+        <div class="kr ${k==="openai"?"best":""}">
+          <b>${V[k].name}</b><span>${V[k].blurb}</span>
+          ${k==="openai"?`<span class="tagbest">1 key = all</span>`:""}
+          <a href="#" onclick="return false">${V[k].get}</a>
+        </div>`).join("")}
+    </div>
+    <p class="trust" style="margin-top:auto;padding-top:16px"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Keys stay in your macOS keychain and go only to the vendor you picked.</p>
+    <div class="foot">
+      <button class="link" data-act="help">‹ Back</button>
+      <button class="btn" data-act="help">I have one now</button>
+    </div>
+  </div>`;
+}
+
+function s1local(s){
+  const total = localTotal(s);
+  const body = s.dl>0 ? `
+    <div class="kg" style="margin-top:14px">
+      <div class="modelrow"><b>Speech</b><span class="mn">${LOCAL.stt[s.mStt].label}</span><span class="sz">${mb(LOCAL.stt[s.mStt].mb)}</span></div>
+      <div class="modelrow"><b>Cleanup</b><span class="mn">${LOCAL.corr[s.mCorr].label}</span><span class="sz">${mb(LOCAL.corr[s.mCorr].mb)}</span></div>
+    </div>
+    <div class="prog"><i style="width:${s.dl}%"></i></div>
+    <div class="dlrow"><span class="spin"></span>Downloading models — ${s.dl}%<span class="sz">${mb(Math.round(total*s.dl/100))} of ${mb(total)}</span></div>
+    <p class="previewTag" style="margin-top:8px">Keep going — this finishes in the background. Dictation switches on when it lands.</p>`
+  : `
+    <div class="kg" style="margin-top:14px">
+      <div class="modelrow"><b>Speech</b>
+        <select data-act="mStt">${LOCAL.stt.map((m,i)=>`<option ${i===s.mStt?"selected":""}>${m.label}</option>`).join("")}</select>
+        <span class="sz">${mb(LOCAL.stt[s.mStt].mb)}</span></div>
+      <div class="modelrow"><b>Cleanup</b>
+        <select data-act="mCorr">${LOCAL.corr.map((m,i)=>`<option ${i===s.mCorr?"selected":""}>${m.label}</option>`).join("")}</select>
+        <span class="sz">${mb(LOCAL.corr[s.mCorr].mb)}</span></div>
+      <div class="modelrow"><b>Download</b><span class="mn">once, to ~/Library/Application Support</span><span class="sz">${mb(total)}</span></div>
+      <div class="modelrow"><b>Needs</b><span class="mn">Apple silicon · ~${(total/1024*1.6).toFixed(1)} GB free disk</span></div>
+    </div>
+    <p class="previewTag" style="margin-top:10px">After the download, dictation needs no network at all. You can switch to a cloud key later in Settings — and back.</p>`;
+  return tbar("Welcome to Verbatim") + `<div class="pane">
+    <div class="head">
+      <h2>Run it all on this Mac</h2>
+      <p>No API key. Speech and cleanup both run locally.</p>
+      ${dots(1)}
+    </div>
+    ${body}
+    <p class="trust" style="margin-top:auto;padding-top:16px"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Nothing you say leaves this Mac — no key, no vendor, no network at dictation time.</p>
+    <div class="foot">
+      <button class="link" data-act="unlocal">‹ Use a key instead</button>
+      ${s.dl>0 ? `<button class="btn primary" data-act="next1">Continue</button>`
+               : `<button class="btn primary" data-act="startDl">Download &amp; continue</button>`}
+    </div>
+  </div>`;
+}
+
+function s1(s){
+  if(s.help) return s1help();
+  if(s.source==="local") return s1local(s);
+  const det = s.vendor, r = combo(s), r1 = resolve(det);
+  const shownKey = s.key ? (s.reveal ? s.key : "•".repeat(Math.min(s.key.length,34))) : "";
+  const needStt = r1 && r1.mode==="needStt";
+  // once a first key is in, the preview has done its job — give the room to the second slot
+  const compact = !!det;
+
+  let metaHtml = "";
+  if(s.verify==="checking") metaHtml = `<span class="chip muted"><span class="spin"></span>Checking with ${V[det]?.name||"the vendor"}…</span>`;
+  else if(s.verify==="bad")  metaHtml = `<p class="err">${V[det]?.name||"That vendor"} rejected this key. Check it and paste again.</p>`;
+  else if(s.verify==="offline") metaHtml = `<span class="chip muted">Couldn't reach ${V[det]?.name} — saved anyway</span>`;
+  else if(det) metaHtml = `<button class="chip" data-act="pick">Detected: ${V[det].name} <span class="cv">▾</span></button>`
+      + (needStt ? `<span style="font-size:11.5px;color:var(--warn)">cleanup only</span>`
+                 : (r1.mode==="full" ? `<span class="okline">${I.tick}covers speech + cleanup</span>`
+                                     : `<span style="font-size:11.5px;color:var(--text-faint)">speech-to-text only</span>`));
+  else if(s.key) metaHtml = `<span class="chip muted">Keep typing…</span>`;
+  else metaHtml = `<span class="chip muted" style="border-style:dashed">We detect the vendor for you</span>`;
+
+  const picker = s.pick ? `<div class="vpop">${Object.keys(V).map(k=>
+      `<button data-act="setv" data-v="${k}" class="${k===det?'sel':''}">${V[k].name}</button>`).join("")}</div>` : "";
+
+  // ── the second-role slot ──────────────────────────────────────────────────
+  // required when the first key is correction-only; optional (collapsed) when it is STT-only.
+  let secondHtml = "";
+  const wantsSecond = det && (needStt || r1.mode==="raw");
+  const wrong = wantsSecond && s.v2 && !(needStt ? V[s.v2].stt : V[s.v2].corr);
+  if(wantsSecond){
+    const okList = needStt ? "PyAI, Deepgram or OpenAI" : "OpenAI or Anthropic";
+    const shown2 = s.key2 ? (s.reveal ? s.key2 : "•".repeat(Math.min(s.key2.length,34))) : "";
+    if(needStt || s.second){
+      secondHtml = `<div class="secondRow">
+        <div class="lab">${needStt ? "Speech-to-text key" : "Cleanup key"} <em>${needStt?"required":"optional"} · ${okList}</em></div>
+        <div class="field ${wrong?"bad":""}" style="margin-top:0">
+          <input id="keyIn2" type="text" spellcheck="false" autocomplete="off" placeholder="Paste a ${okList.split(" or ")[0]} key" value="${shown2}" />
+        </div>
+        ${wrong ? `<p class="err" style="margin-top:6px">${V[s.v2].name} can't do ${needStt?"speech-to-text":"cleanup"}. Use ${okList}.</p>`
+                : (s.v2 ? `<p class="okline" style="margin-top:6px">${I.tick}${V[s.v2].name} — ${needStt?"speech":"cleanup"} covered</p>` : "")}
+      </div>`;
+    } else {
+      secondHtml = `<button class="link discLink" data-act="second">
+        <span class="cv">+</span> Add a cleanup key for self-correction <em style="font-style:normal;color:var(--text-faint)">— optional</em></button>`;
+    }
+  }
+
+  const testkey = (s.build==="internal" && !det) ? `
+    <button class="testkey" data-act="test">
+      ${I.bolt}
+      <span><strong>Use the Saaslabs test key</strong>
+      <small>PyAI speech-to-text · shared quota · adds no cleanup key</small></span>
+      <span class="pill">internal</span>
+    </button>` : "";
+
+  const localCard = (s.localAvail && !det) ? `
+    <button class="localcard" data-act="local">
+      <svg class="chipico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      <span><strong>Run it all on this Mac</strong>
+      <small>No key, no cloud. Downloads models once (~1.4 GB).</small></span>
+      <span class="pill">no key</span>
+    </button>` : "";
+
+  const help = det ? "" : `<button class="link discLink" data-act="help"><span class="cv">›</span> I don't have a key yet</button>`;
+
+  const blocked = (needStt && !(s.v2 && V[s.v2].stt)) || wrong;
+  const cont = `<button class="btn primary" data-act="next1" ${det && s.verify!=="checking" && !blocked ?"":"disabled"}>Continue</button>`;
+
+  return tbar("Welcome to Verbatim") + `<div class="pane">
+    <div class="head">
+      <svg class="mark"><use href="#logo"/></svg>
+      <h2>Welcome to Verbatim</h2>
+      <p>${compact ? (r.say||"") : "Paste one API key. That's the whole setup."}</p>
+      ${dots(1)}
+    </div>
+    ${compact ? "" : `<div class="preview">
+      <svg class="mic ico" viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+      <span class="pvtext">send it by <span class="cut">8 pm no no make it&nbsp;</span>9 pm tomorrow</span>
+    </div>
+    <p class="previewTag">Live preview — no key, no mic. This is what Verbatim does to your words.</p>`}
+    <div class="field ${s.verify==="bad"?"bad":""}">
+      <input id="keyIn" type="text" spellcheck="false" autocomplete="off" placeholder="Paste your API key" value="${shownKey}" />
+      <button class="eye" data-act="reveal" title="Show key">${I.eye}</button>
+    </div>
+    <div class="meta">${metaHtml}</div>
+    ${picker}
+    ${secondHtml}
+    ${testkey}
+    ${localCard}
+    ${help}
+    <p class="trust"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Stored in your macOS keychain. Sent only to the vendor you picked — never to us.</p>
+    <div class="foot">
+      <button class="link" data-act="later">Set up later</button>
+      ${cont}
+    </div>
+  </div>`;
+}
+
+/* ───────── screen 2 ───────── */
+function s2(s){
+  const both = s.mic && s.ax;
+  let strip = "";
+  if(s.source==="local") strip = `<div class="info good">${I.tick}<span><b>Fully local.</b> Nothing you say leaves this Mac. Verbatim still needs the two macOS permissions below.</span></div>`
+    + (s.dl>0 && s.dl<100 ? `<div class="dlrow" style="margin-bottom:8px"><span class="spin"></span>Models still downloading — ${s.dl}%<span class="sz">finishes in the background</span></div>` : "");
+  else if(s.mode==="raw") strip = `<div class="info">${I.warn}<span><b>Self-correction is off.</b> Your key covers speech-to-text only — dictation works now, and you can add an OpenAI or Anthropic key any time in <a href="#" onclick="return false">Settings</a>.</span></div>`;
+  const row = (ico,title,sub,ok,btn,act) => `
+    <div class="prow">
+      <span class="pi">${ico}</span>
+      <span class="pb">
+        <h4>${title} <span class="stat ${ok?"y":"n"}"><i></i>${ok?"Granted":"Not granted"}</span></h4>
+        <p>${sub}</p>
+      </span>
+      ${ok?"":`<button class="btn" data-act="${act}">${btn}</button>`}
+    </div>`;
+  return tbar("Welcome to Verbatim") + `<div class="pane">
+    <div class="head">
+      <h2>Two macOS permissions</h2>
+      <p>Verbatim asks for exactly these two, and nothing else.</p>
+      ${dots(2)}
+    </div>
+    <div style="margin-top:16px;width:100%">
+      ${strip}
+      ${row(I.mic,"Microphone","So Verbatim can hear you. macOS will ask once.",s.mic,"Allow","mic")}
+      ${row(I.kbd,"Accessibility","Lets Verbatim type into whatever app you're in. Without it, your text is copied to the clipboard instead.",s.ax,"Open Settings","ax")}
+      ${s.ax?"":`<p style="font-size:11px;color:var(--text-faint);margin:2px 0 0;display:flex;gap:6px;align-items:center"><span class="spin"></span>Watching for the toggle — this page updates itself when you flip it.</p>`}
+    </div>
+    <div class="foot">
+      <button class="link" data-act="back">Back</button>
+      <button class="btn primary" data-act="next2">${both?"Continue":"Continue anyway"}</button>
+    </div>
+  </div>`;
+}
+
+/* ───────── screen 3 ───────── */
+function s3(s){
+  let body;
+  if(s.source==="local" && s.dl>0 && s.dl<100) body = `
+    <div class="trybox">
+      <span class="lbl2">Almost</span>
+      <div class="live"><span class="dim">Waiting on the local model — ${s.dl}%.</span></div>
+      <div class="prog"><i style="width:${s.dl}%"></i></div>
+    </div>
+    <p class="previewTag" style="text-align:center;margin-top:10px">You can finish here and try it when the download lands.</p>`;
+  else if(s.tryS==="idle") body = `
+    <div class="trybox">
+      <span class="lbl2">Your turn</span>
+      <div class="live"><span class="dim">Hold the hotkey and speak…</span><span class="cursor"></span></div>
+    </div>
+    <div class="pill" data-act="sim" style="cursor:pointer">${I.mic} Hold <kbd style="font-size:11px">⌥Space</kbd> to dictate</div>`;
+  else if(s.tryS==="listening") body = `
+    <div class="trybox">
+      <span class="lbl2">Listening</span>
+      <div class="live">let's ship this on friday no actually thursday<span class="cursor"></span></div>
+    </div>
+    <div class="pill">${'<span class="lv"><b></b><b></b><b></b><b></b></span>'} Listening…</div>`;
+  else if(s.tryS==="correcting") body = `
+    <div class="trybox">
+      <span class="lbl2">Cleaning up</span>
+      <div class="live">Let's ship this on <s>friday no actually</s> Thursday.</div>
+    </div>
+    <div class="pill">${I.cog} Correcting…</div>`;
+  else body = `
+    <div class="trybox">
+      <span class="lbl2">Inserted</span>
+      <div class="live">Let's ship this on Thursday.</div>
+      <div class="done">${I.tick} Typed into the field, corrections and all.</div>
+    </div>`;
+
+  const tips = s.tryS==="done" ? `
+    <div class="tips">
+      <div class="tip"><kbd>⌥Space</kbd> anywhere — hold to talk, tap to toggle</div>
+      <div class="tip"><svg class="ico" style="width:15px;height:15px" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg> The menu-bar icon has your history and settings</div>
+    </div>` : "";
+
+  return tbar("Welcome to Verbatim") + `<div class="pane">
+    <div class="head">
+      <h2>${s.tryS==="done" ? "That's it — you're set." : "Give it one try"}</h2>
+      <p>${s.tryS==="done" ? "Verbatim lives in your menu bar from here." : "Hold <b>⌥Space</b> and say anything. It lands in the box below."}</p>
+      ${dots(3)}
+    </div>
+    ${body}
+    ${tips}
+    <div class="foot">
+      <button class="link" data-act="skip3">${s.tryS==="done"?"":"Skip the test"}</button>
+      <button class="btn primary" data-act="done">Done</button>
+    </div>
+  </div>`;
+}
+
+const render = s => s.screen===1 ? s1(s) : s.screen===2 ? s2(s) : s3(s);
+
+/* ───────── notes panel ───────── */
+const NOTES = {
+  1:{step:"Screen 1 of 3", t:"Connect", budget:"~40s · 1 paste · 1 click <span style='opacity:.6'>(internal: ~8s, 1 click)</span>",
+     li:["<b>One field, not a vendor quiz.</b> The vendor is detected from the key prefix and shown as an editable chip — the user never has to know that Deepgram is STT-only.",
+         "<b>The preview costs zero clicks.</b> Reuses the existing <code>mode:\"demo\"</code> path (fixture STT + mock correction) so a stranger sees what \"visible correction\" means before being asked for anything.",
+         "<b>The key is verified for real</b> before advancing — one authenticated GET via <code>ureq</code>, already a Rust dependency. A 401 is caught here, not at first dictation.",
+         "<b>The missing role gets an inline slot.</b> An STT-only key (PyAI/Deepgram) reveals a collapsed <i>Add a cleanup key — optional</i> line: one click, one paste, or ignore it. A correction-only key (Anthropic) shows the same slot <i>required</i>, and gates Continue — you can't finish a setup that can't dictate.",
+         "<b>The second field validates by role, not just by key.</b> Paste Deepgram into the cleanup slot and it says so, rather than saving a combination that fails later.",
+         "<b>Local is a third source, not a vendor.</b> When the runtime is present (toggle it in the header) a no-key card offers fully-local speech + cleanup; the model download runs in the background and never blocks setup.",
+         "<b>\"Set up later\" means later</b> — never re-prompted on launch."]},
+  2:{step:"Screen 2 of 3", t:"Permissions", budget:"~30s · 2 clicks, one of them in System Settings",
+     li:["<b>Mic is prompted here</b>, from this window's <code>getUserMedia</code> — not as a surprise mid-dictation. Tracks stop immediately.",
+         "<b>Accessibility self-advances.</b> <code>ax_trusted</code> is polled once a second while this screen is visible, so the row flips on its own when the user comes back. No \"check again\" button to hunt for.",
+         "<b>Honest about the cost of skipping:</b> without AX, text is copied to the clipboard instead of typed. The button says <i>Continue anyway</i> — it is never disabled.",
+         "<b>Degraded mode is disclosed here</b>, not hidden: an STT-only key gets the amber strip (toggle Internal + the test key to see it)."]},
+  3:{step:"Screen 3 of 3", t:"Try it", budget:"~20s · 1 hold",
+     li:["<b>The hotkey gets used once, successfully</b>, before the window closes. That's what turns setup into a habit.",
+         "<b>It doubles as an end-to-end self-test</b> — mic, STT, correction and injection all exercised in a window we control.",
+         "<b>The hotkey label is read from <code>config.hotkey</code></b>, never hardcoded (today's tray item hardcodes ⌥Space).",
+         "<b>Skippable.</b> Nothing here gates a working install."]},
+};
+function notes(s){
+  const n = NOTES[s.screen];
+  document.getElementById("notes").innerHTML = `
+    <div class="step">${n.step}</div><h3>${n.t}</h3>
+    <ul>${n.li.map(x=>`<li>${x}</li>`).join("")}</ul>
+    <div class="budget">Budget: <b>${n.budget}</b>${s.mode?`<br>Resolver wrote: <b>${resolve(s.vendor||"pyai").cfg}</b>`:""}</div>`;
+}
+
+/* ───────── live wiring ───────── */
+const liveEl = document.getElementById("live");
+function paint(keepFocus){
+  liveEl.innerHTML = render(L);
+  notes(L);
+  const inp = liveEl.querySelector("#keyIn");
+  if(inp){
+    inp.addEventListener("input", e => { L.key=e.target.value; L.vendor=detect(L.key); L.verify="idle"; L.reveal=true; paint(true); });
+    inp.addEventListener("keydown", e => { if(e.key==="Enter") act("next1"); });
+    if(keepFocus){ inp.focus(); inp.setSelectionRange(inp.value.length,inp.value.length); }
+  }
+  const inp2 = liveEl.querySelector("#keyIn2");
+  if(inp2){
+    inp2.addEventListener("input", e => { L.key2=e.target.value; L.v2=detect(L.key2); L.reveal=true; paint2(); });
+    inp2.addEventListener("keydown", e => { if(e.key==="Enter") act("next1"); });
+  }
+  liveEl.querySelectorAll("select[data-act]").forEach(sel => {
+    sel.onchange = () => act(sel.dataset.act, sel);
+  });
+}
+function paint2(){ // repaint keeping focus in the SECOND field
+  liveEl.innerHTML = render(L); notes(L);
+  const i1 = liveEl.querySelector("#keyIn");
+  if(i1) i1.addEventListener("input", e => { L.key=e.target.value; L.vendor=detect(L.key); L.verify="idle"; L.reveal=true; paint(true); });
+  const i2 = liveEl.querySelector("#keyIn2");
+  if(i2){
+    i2.addEventListener("input", e => { L.key2=e.target.value; L.v2=detect(L.key2); L.reveal=true; paint2(); });
+    i2.addEventListener("keydown", e => { if(e.key==="Enter") act("next1"); });
+    i2.focus(); i2.setSelectionRange(i2.value.length,i2.value.length);
+  }
+  liveEl.querySelectorAll("select[data-act]").forEach(sel => { sel.onchange = () => act(sel.dataset.act, sel); });
+}
+function act(a,el){
+  switch(a){
+    case "reveal": L.reveal=!L.reveal; break;
+    case "pick": L.pick=!L.pick; break;
+    case "setv": L.vendor=el.dataset.v; L.pick=false; L.verify="idle"; break;
+    case "second": L.second=true; break;
+    case "local": L.source="local"; L.key=""; L.vendor=null; break;
+    case "unlocal": L.source=null; L.dl=0; break;
+    case "mStt":  L.mStt = el.selectedIndex; break;
+    case "mCorr": L.mCorr = el.selectedIndex; break;
+    case "startDl": L.dl=8; L.mode="local"; paint();
+      { let n=8; const t=setInterval(()=>{ n=Math.min(100,n+9); L.dl=n; paint(); if(n>=100) clearInterval(t); }, 260); }
+      return;
+    case "help": L.help=!L.help; break;
+    case "test": L.usedTest=true; L.key="pyai-test-••••"; L.vendor="pyai"; L.verify="idle"; L.mode="raw"; L.screen=2; break;
+    case "next1": {
+      if(L.source==="local"){ L.mode="local"; L.screen=2; break; }
+      if(!L.vendor) break;
+      const r = combo(L);
+      if(r.mode==="needStt") break;   // the inline speech-key field gates the button instead
+      if(L.verify!=="ok"){
+        L.verify="checking"; paint();
+        setTimeout(()=>{ L.verify="ok"; L.mode=r.mode; L.screen=2; paint(); }, 950);
+        return;
+      }
+      L.mode=r.mode; L.screen=2; break;
+    }
+    case "later": L.skipped=true; L.screen=1; alert("Window closes.\n\nsetup_state = \"skipped\" — onboarding never auto-opens again.\nThe user finds it via the tray item and the first-dictation nudge (see the last board below)."); return;
+    case "mic": L.mic=true; break;
+    case "ax":  paint(); setTimeout(()=>{ L.ax=true; paint(); }, 1400); return;
+    case "back": L.screen=1; break;
+    case "next2": L.screen=3; break;
+    case "sim": L.tryS="listening"; paint();
+      setTimeout(()=>{ L.tryS="correcting"; paint(); }, 1500);
+      setTimeout(()=>{ L.tryS="done"; paint(); }, 3000); return;
+    case "skip3": L.tryS="done"; break;
+    case "done": alert("setup_state = \"done\".\n\nWindow hides via a Rust `finish_onboarding` command that ALSO reverts the activation policy — the fix for the Dock-icon leak, since hide() from JS never fires CloseRequested."); return;
+  }
+  paint();
+}
+liveEl.addEventListener("click", e => {
+  const t = e.target.closest("[data-act]"); if(!t) return;
+  act(t.dataset.act, t);
+});
+document.querySelectorAll("[data-jump]").forEach(b=>b.onclick=()=>{
+  L.screen=+b.dataset.jump;
+  if(L.screen>1 && !L.vendor){ L.key="sk-proj-9f2Ka8xQ71mZbT4vNc0LwRhE"; L.vendor="openai"; L.mode="full"; }
+  paint();
+});
+document.querySelectorAll("[data-fill]").forEach(b=>b.onclick=()=>{
+  L.key=b.dataset.fill; L.vendor=detect(L.key); L.verify="idle"; L.reveal=true; L.screen=1; paint(true);
+});
+document.querySelector("[data-reset]").onclick=()=>{ const bd=L.build, la=L.localAvail; L=base(); L.build=bd; L.localAvail=la; paint(); };
+
+/* ───────── boards ───────── */
+function cell(title,desc,st,w){
+  const s = Object.assign(base(), st);
+  return `<div class="bcell${w?" sm":""}"><div class="win static">${render(s)}</div>
+    <div class="t">${title}</div><div class="d">${desc}</div></div>`;
+}
+document.getElementById("board1").innerHTML =
+  cell("First paint","No key, nothing detected yet. The preview is already animating, the field is focused, Enter submits.",{}) +
+  cell("OpenAI key detected","The one key that fills both roles. Chip is editable in case detection is wrong; verification is the real gate.",{key:"sk-proj-9f2Ka8xQ71mZbT4vNc0LwRhE",vendor:"openai",reveal:false}) +
+  cell("Verifying","One authenticated GET, 2s timeout. Network failure ≠ rejection: it saves and says \"couldn't reach\".",{key:"sk-proj-9f2Ka8xQ71mZbT4vNc0LwRhE",vendor:"openai",verify:"checking"}) +
+  cell("Rejected","A 401 surfaces here, in the window, where it's actionable — instead of as a banner mid-dictation three minutes later.",{key:"sk-proj-badbadbad",vendor:"openai",verify:"bad"}) +
+  cell("Anthropic — can't stand alone","Correction-only. The primary button becomes <i>Add a speech key</i> and the helper list opens. Today's window happily accepts this and then fails.",{key:"sk-ant-api03-7Hn2Vb9QpLm4",vendor:"anthropic"}) +
+  cell("\"I don't have a key\"","Where the external user's real 60 seconds goes: four rows, one line each, direct links. OpenAI is flagged as the single-key option.",{help:true}) +
+  cell("Optional second key — collapsed","A PyAI key resolves to STT-only, so the cleanup slot appears as one quiet line. Skipping it is free; the amber strip on Screen 2 then names the trade-off.",{key:"pyai-live-7Kd93mQ2xVn8",vendor:"pyai"}) +
+  cell("Optional second key — filled","Anthropic pasted into the cleanup slot promotes the install to full mode: <code>stt=pyai · correction=anthropic</code>, correct+format on.",{key:"pyai-live-7Kd93mQ2xVn8",vendor:"pyai",second:true,key2:"sk-ant-api03-7Hn2Vb9QpLm4",v2:"anthropic"}) +
+  cell("Wrong role in the slot","Role-aware validation: Deepgram can't clean up, and the field says so before anything is saved.",{key:"pyai-live-7Kd93mQ2xVn8",vendor:"pyai",second:true,key2:"3f8a1c94be27d05fa6118e42cd7930bb5e6af201",v2:"deepgram"}) +
+  cell("Correction-only key → required slot","Anthropic first. The speech slot is <i>required</i> and Continue stays disabled until it's satisfied — no more finishing a setup that can't dictate.",{key:"sk-ant-api03-7Hn2Vb9QpLm4",vendor:"anthropic"}) +
+  cell("Local runtime present","The no-key card only renders when a capability check says the runtime is installed — the same structural trick as the internal test key, so today's builds show no dead end.",{localAvail:true}) +
+  cell("Internal build","<code>option_env!(\"VERBATIM_PYAI_TEST_KEY\")</code> — in a public build the constant is <code>None</code>, the command returns false, and this button cannot render. Sub-label is honest that it adds no cleanup key.",{build:"internal"});
+
+document.getElementById("board2").innerHTML =
+  cell("Nothing granted yet","Mic prompts in-window. AX row is polled and flips itself. Continue is never disabled — it relabels.",{screen:2,mode:"full"}) +
+  cell("STT-only key → disclosed","The amber strip is where a degraded config gets named, not buried. Dictation still works today; correction is an upsell, not a broken promise.",{screen:2,mode:"raw",mic:true}) +
+  cell("Both granted","Continue loses \"anyway\". Nothing else changes — no celebration, no extra click.",{screen:2,mode:"full",mic:true,ax:true});
+
+document.getElementById("board3").innerHTML =
+  cell("Idle","The hotkey is shown as a key cap, read from config — not hardcoded.",{screen:3,mode:"full",mic:true,ax:true,tryS:"idle"}) +
+  cell("Listening","Live transcript with the mic-level pill, exactly as the overlay renders it.",{screen:3,mode:"full",mic:true,ax:true,tryS:"listening"}) +
+  cell("Correcting","The strike-through reveal — the product's whole differentiator, shown once during setup.",{screen:3,mode:"full",mic:true,ax:true,tryS:"correcting"}) +
+  cell("Done","Two one-liners the user actually needs, then out of the way.",{screen:3,mode:"full",mic:true,ax:true,tryS:"done"});
+
+document.getElementById("board5").innerHTML =
+  cell("Pick the models","Both roles are local, so this is a genuinely key-free install. Sizes are shown before anything downloads — the honest cost of the option.",{localAvail:true,source:"local"}) +
+  cell("Downloading — non-blocking","Setup continues while ~1.4 GB lands. The 2-minute budget survives because the wait is moved off the critical path, not hidden.",{localAvail:true,source:"local",dl:44,mode:"local"}) +
+  cell("Permissions, fully local","The disclosure inverts: instead of an amber trade-off it's a green guarantee. The two macOS permissions are still required.",{localAvail:true,source:"local",dl:71,mode:"local",screen:2}) +
+  cell("Try it, model still landing","Screen 3 says what it's waiting for instead of failing mysteriously. Finish now, dictate when it lands.",{localAvail:true,source:"local",dl:71,mode:"local",screen:3,mic:true,ax:true});
+
+document.getElementById("board4").innerHTML = `
+  <div class="bcell sm">
+    <div class="menubar">
+      <div class="mi">Show Verbatim <span class="k">⌥Space</span></div>
+      <div class="mi">Show Last Result</div>
+      <div class="msep"></div>
+      <div class="mi hl">Finish setup…</div>
+      <div class="mi">Settings…</div>
+      <div class="msep"></div>
+      <div class="mi">Quit Verbatim</div>
+    </div>
+    <div class="t">Tray — "Finish setup…"</div>
+    <div class="d">Appears only while <code>setup_state != "done"</code>. This is how a skipper gets back in, instead of the window ambushing them at every launch.</div>
+  </div>
+  <div class="bcell sm">
+    <div class="bubble">
+      <div class="bh">${I.warn}<span><b>Verbatim isn't set up yet.</b> Add an API key and it'll start transcribing.</span></div>
+      <div class="ba"><button class="btn">Not now</button><button class="btn primary">Finish setup</button></div>
+    </div>
+    <div style="height:12px"></div>
+    <div class="orb"><svg style="width:22px;height:22px" class="ico" viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></div>
+    <div class="t">First dictation after skipping</div>
+    <div class="d">Replaces the raw <code>Provider 'pyai' needs PYAI_API_KEY</code> banner with something a human can act on. Shown at most once per launch.</div>
+  </div>`;
+
+/* ───────── chrome ───────── */
+document.querySelectorAll("#segTheme button").forEach(b=>b.onclick=()=>{
+  document.body.dataset.theme=b.dataset.t;
+  document.querySelectorAll("#segTheme button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));
+});
+document.querySelectorAll("#segLocal button").forEach(b=>b.onclick=()=>{
+  L.localAvail = b.dataset.l==="on";
+  document.querySelectorAll("#segLocal button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));
+  paint();
+});
+document.querySelectorAll("#segBuild button").forEach(b=>b.onclick=()=>{
+  L.build=b.dataset.b;
+  document.querySelectorAll("#segBuild button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));
+  paint();
+});
+paint();
+</script>
+</body>
+</html>

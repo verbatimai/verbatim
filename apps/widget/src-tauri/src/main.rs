@@ -16,6 +16,8 @@
 //!   window.rs     the non-activating NSPanel overlay + the focusable app/settings window
 //!   tray.rs       the menu-bar icon and its menu
 //!   system.rs     macOS privacy panes, permission status, output muting
+//!   testkey.rs    O6 build-time PyAI test key (option_env!) — internal builds only
+//!   verify.rs     O2 API-key verification: one authenticated GET per vendor (ureq)
 //!   text.rs       inject / copy the finalized transcript
 //!   axinject.rs   macOS AX focus read + paste routing
 //!   fnkey.rs      Fn / bare-modifier push-to-talk (CGEventTap)
@@ -40,8 +42,10 @@ mod secrets;
 mod shortcuts;
 mod state;
 mod system;
+mod testkey;
 mod text;
 mod tray;
+mod verify;
 mod window;
 
 #[cfg(target_os = "macos")]
@@ -99,6 +103,9 @@ fn main() {
 
             window::register_settings_close_handler(app);
             window::register_onboarding_close_handler(app);
+            // O6 — internal builds only: retitle the onboarding window so a leaked .app is
+            // identifiable. No-op when the build holds no test key.
+            testkey::watermark_title(app.handle());
 
             // Phase 4.8: the app owns the backend — spawn + supervise it, injecting the
             // vendor keys from the secret store into its env (no key crosses the webview;
@@ -111,9 +118,12 @@ fn main() {
                 tray::setup(app)?;
             }
 
-            // Minimal first-run onboarding: no saved key anywhere yet — ask for one.
-            // Never shows again once any vendor key exists (see any_vendor_key_saved).
-            if !keys::any_vendor_key_saved(app.handle()) {
+            // First-run onboarding (O5): open it only for a user who has never made a
+            // choice AND has no key. `setup_state` stops the nag once they pick "Set up
+            // later"/"Done"; `any_vendor_key_saved` stays as the self-healing guard, so an
+            // existing keyed install is never prompted (see keys::any_vendor_key_saved).
+            let cfg = config::read_config(app.handle());
+            if cfg.setup_state == "unseen" && !keys::any_vendor_key_saved(app.handle()) {
                 let _ = window::open_onboarding_window(app.handle());
             }
             Ok(())
@@ -167,6 +177,11 @@ fn main() {
             keys::set_key,
             keys::has_key,
             keys::delete_key,
+            verify::key_verify,
+            testkey::test_key_available,
+            testkey::use_test_key,
+            window::finish_onboarding,
+            window::show_onboarding_window,
             #[cfg(target_os = "macos")]
             wake::wake_mic_status
         ])

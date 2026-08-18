@@ -9,26 +9,11 @@
   <link rel="stylesheet" href="/src/onboarding.css" />
 </head>
 <body class="settings-window" data-theme="system">
-  <main class="onboard">
-    <img class="onboard-logo" src="/verbatim-logo.svg" alt="Verbatim" width="40" height="40" />
-    <h1>Welcome to Verbatim</h1>
-    <p class="onboard-sub">Add an API key to start dictating. Pick whichever provider you have a key for.</p>
-
-    <div id="vendorPicker" class="onboard-vendors">
-      <button class="onboard-vendor" data-vendor="pyai">PyAI <span class="tag">Recommended</span></button>
-      <button class="onboard-vendor" data-vendor="deepgram">Deepgram</button>
-      <button class="onboard-vendor" data-vendor="openai">OpenAI</button>
-      <button class="onboard-vendor" data-vendor="anthropic">Anthropic</button>
-    </div>
-
-    <input id="onboardKey" type="password" placeholder="Paste your API key" autocomplete="off" spellcheck="false" />
-    <p id="onboardError" class="onboard-error" hidden></p>
-
-    <div class="onboard-actions">
-      <button id="onboardSkip" class="btn ghost">Skip for now</button>
-      <button id="onboardSave" class="btn primary" disabled>Get started</button>
-    </div>
-  </main>
+  <!-- Everything inside is built by onboarding.ts. The two key fields in
+       particular must be created there and kept alive across re-renders (a
+       pasted key is never interpolated into markup), so no key field and no
+       per-screen structure is declared here. -->
+  <main class="onboard" id="root"></main>
   <script type="module" src="/src/onboarding.ts"></script>
 </body>
 </html>

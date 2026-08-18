@@ -93,16 +93,22 @@ Two interfaces in `packages/core` define the whole contract — `STTProvider` an
 
 ## Providers
 
-Select providers with the `STT_PROVIDER` and `CORRECTION_PROVIDER` settings. Speech-to-text
-and correction are independent, so combinations are allowed (for example Deepgram STT +
-Anthropic correction).
+Speech-to-text and correction are independent roles, so combinations are allowed (for
+example Deepgram STT + Anthropic correction). The desktop app resolves both from its own
+config store — set in the first-run window or in Settings — while the standalone backend
+reads the `STT_PROVIDER` / `CORRECTION_PROVIDER` environment variables.
 
 | Vendor | Speech-to-text | Correction | Required key |
 |---|---|---|---|
-| **PyAI** (default) | ✅ | ✅ | `PYAI_API_KEY` |
+| **PyAI** (default STT) | ✅ | — | `PYAI_API_KEY` |
 | **Deepgram** | ✅ (streaming) | — | `DEEPGRAM_API_KEY` |
 | **OpenAI** | ✅ | ✅ | `OPENAI_API_KEY` |
 | **Anthropic** | — | ✅ | `ANTHROPIC_API_KEY` |
+
+> **One key can be enough — but not every key covers both roles.** OpenAI is the only single
+> key that does. PyAI and Deepgram give you working dictation with self-correction switched
+> off; Anthropic can only clean up text something else transcribed. PyAI was removed as a
+> correction vendor (it stays the default for speech-to-text and text-to-speech).
 
 > **Multilingual:** PyAI's speech-to-text is English-only today, so non-English dictation
 > routes STT through Deepgram or OpenAI. See
@@ -153,21 +159,54 @@ For live dictation in the browser, add a key (see below) and click **Start dicta
 npm run widget
 ```
 
-The widget launches as a menu-bar app with a floating overlay. Press **⌥Space** to toggle
-dictation; focus a field in another app before you stop, and the corrected text is injected
-there. The app owns and supervises its own backend and injects your keys from the Keychain —
-there is no separate backend process to start.
+The widget launches as a menu-bar app with a floating overlay. The app owns and supervises
+its own backend and injects your keys into it — there is no separate backend process to start.
 
-> First launch requires granting **Accessibility** and **Microphone** permissions in
-> **System Settings → Privacy & Security**.
+**On a fresh install a "Welcome to Verbatim" window opens by itself** (it appears only while
+no vendor key is saved and you haven't dismissed it) and covers setup in three screens:
+
+1. **Connect** — paste **one** API key. The vendor is detected from the key's shape and shown
+   as an editable chip you can override, then checked against that vendor before anything is
+   saved: a rejected key stops there, while an unreachable vendor saves the key anyway rather
+   than calling it bad. If your key covers only one role, an inline slot offers the other.
+2. **Two macOS permissions** — **Microphone** is requested inside the window; **Accessibility**
+   deep-links to System Settings, and the window keeps polling so the row updates as soon as
+   macOS reports the grant. Neither blocks you: without Accessibility, dictation copies to the clipboard instead of typing into
+   the focused field.
+3. **Give it one try** — hold the dictation hotkey and watch the live transcript, the
+   strike-through cleanup, and the final text, in the window.
+
+What each key gets you:
+
+| The key you paste | Result |
+|---|---|
+| **OpenAI** | Both roles: speech-to-text **and** self-correction. Nothing more to add. |
+| **PyAI** or **Deepgram** | Speech-to-text only — dictation works, self-correction stays off. The optional cleanup slot takes an OpenAI or Anthropic key to switch it on, now or later in Settings. |
+| **Anthropic** | Cleanup only, so the window asks for a speech key before it lets you continue. |
+
+A key pasted into the wrong role is refused with an explanation rather than silently
+discarded. **Set up later** skips setup and is remembered — the window does not reappear on
+the next launch. To pick it up again, use **Finish setup…** in the menu-bar menu, or the
+**Finish setup** button the overlay offers if you try to dictate with nothing configured.
+
+Once you're set up, press **⌥Space** (or whatever hotkey you configured) to toggle dictation;
+focus a field in another app before you stop, and the corrected text is injected there.
+
+> The first-run flow landed on **18 Aug 2026**. It is typecheck-clean and reviewed, but the
+> Rust half has **not been compiled or run on a Mac yet** — expect rough edges on the very
+> first build, and see [`docs/onboarding/review.md`](docs/onboarding/review.md) for the known
+> open items.
 
 ## Configuration
 
 ### API keys
 
-- **Desktop app (recommended):** open **Settings (⚙)** and enter a key per vendor. Keys are
-  stored in the **OS keychain**, never on disk in plaintext, and never exposed to the
-  renderer.
+- **Desktop app (recommended):** the first-run window takes one key and works out the rest;
+  **Settings (⚙)** has a row per vendor for adding, replacing or deleting keys afterwards.
+  Keys are **never exposed to the renderer** — the Rust host injects them into the backend
+  sidecar's environment, so the webview never sees a secret. They are written to a
+  `secrets.json` with `0600` permissions in the app's config directory (the default backend);
+  a hidden `keyStorage` setting can switch that to the **macOS keychain** instead.
 - **Local development / standalone backend:** copy `.env.example` to `.env` at the repo root
   and fill in the key(s) you use. `.env` is git-ignored — never commit real keys.
 
@@ -180,7 +219,7 @@ Relevant environment variables (see [`.env.example`](.env.example) for the full 
 | Variable | Purpose | Values / default |
 |---|---|---|
 | `STT_PROVIDER` | Speech-to-text provider | `pyai` (default) · `deepgram` · `openai` |
-| `CORRECTION_PROVIDER` | Correction provider | `pyai` · `openai` · `anthropic` |
+| `CORRECTION_PROVIDER` | Correction provider | `openai` (default) · `anthropic` |
 | `PYAI_API_KEY` | PyAI key (BYOK) | — |
 | `DEEPGRAM_API_KEY` | Deepgram key (BYOK) | — |
 | `OPENAI_API_KEY` | OpenAI key (BYOK) | — |
@@ -189,7 +228,8 @@ Relevant environment variables (see [`.env.example`](.env.example) for the full 
 
 ### Settings (desktop app)
 
-The Settings window also provides a custom **vocabulary** list, snippet **text-expansion**, a
+The Settings window is where you change anything the first-run window didn't ask about. It
+also provides a custom **vocabulary** list, snippet **text-expansion**, a
 **formatting mode** (prose / message / code / raw), configurable **paste-last** and
 **revert-to-raw** hotkeys, provider/language selection, and an opt-in, **metadata-only**
 telemetry toggle (never content).

@@ -26,7 +26,7 @@
 // trigger currently — the redesign dropped the Demo button; `connect("demo")` still
 // works if someone wants to wire it back in, e.g. from the tray).
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, currentMonitor } from "@tauri-apps/api/window";
 import { LogicalSize, LogicalPosition } from "@tauri-apps/api/dpi";
 
@@ -49,10 +49,16 @@ void listen<{ theme?: string }>("config-changed", (e) => applyOverlayTheme(e.pay
 // same config-changed event. ----
 let cfgShowTranscript = true;
 let cfgShowRemoved = true;
+// First-run onboarding state ("unseen" | "skipped" | "done"), read from the same config —
+// it decides whether a "nothing is configured" failure gets the setup nudge or the raw
+// error (see handle()'s "error" branch). Only overwritten when the payload actually
+// carries the field, so a partial/demo config can't reset it to "".
+let cfgSetupState = "";
 function applyPrefs(c: any) {
   if (!c) return;
   cfgShowTranscript = c.showTranscript !== false;
   cfgShowRemoved = c.showRemoved !== false;
+  if (typeof c.setupState === "string") cfgSetupState = c.setupState;
 }
 void invoke<any>("get_config").then(applyPrefs).catch(() => {});
 void listen<any>("config-changed", (e) => applyPrefs(e.payload));
@@ -73,6 +79,15 @@ type ServerMsg =
   | { type: "error"; message: string; file?: string }
   | { type: "done" };
 
+// The one JS->JS seam: the onboarding window's "try it" screen renders the dictation it
+// asks the user to perform from these events, so it never has to depend on AX injection
+// landing inside our own window. Emitted unconditionally (nobody is listening most of the
+// time, which is free) and fire-and-forget, so this can never affect the overlay.
+type DictationProgress =
+  | { phase: "live"; transcript: string; active: string }
+  | { phase: "correction"; raw: string; cleanText: string; ops: Op[] }
+  | { phase: "final"; text: string };
+
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const transcriptEl = $("transcript");
 const root = $("root"), orb = $<HTMLButtonElement>("orb"), pill = $("pill");
@@ -86,6 +101,20 @@ const banner = $("banner"), bannerMsg = $("bannerMsg"), bannerActions = $("banne
 const openMicBtn = $<HTMLButtonElement>("openMic"), retryMicBtn = $<HTMLButtonElement>("retryMic");
 const openAxBtn = $<HTMLButtonElement>("openAx");
 const copyErr = $<HTMLButtonElement>("copyErr"), bannerLog = $("bannerLog");
+// The overlay's route back into first-run onboarding. Built here rather than in
+// index.html so the markup stays untouched; a static <button id="finishSetup"> wins if
+// one is ever added, so this can't end up rendering the button twice.
+const finishSetupBtn: HTMLButtonElement = (() => {
+  const existing = document.getElementById("finishSetup") as HTMLButtonElement | null;
+  if (existing) return existing;
+  const b = document.createElement("button");
+  b.id = "finishSetup";
+  b.className = "banner-btn";
+  b.textContent = "Finish setup";
+  b.hidden = true;
+  bannerActions.appendChild(b);
+  return b;
+})();
 const copyBtn = $<HTMLButtonElement>("copyBtn");
 // Settings/Quit/Show-Last-Result all live on the menu-bar tray now (tray.rs) — Phase 4.9
 // already removed the overlay's inline settings panel; this redesign removes the
@@ -329,7 +358,7 @@ function setStatus(cls: string, text: string) {
 // Single notification banner, now living inside the bubble (no separate titlebar strip).
 // Explicitly shown/cleared so it can never go stale (e.g. a mic-permission notice must
 // vanish the moment the mic works).
-type BannerActions = "none" | "mic" | "ax";
+type BannerActions = "none" | "mic" | "ax" | "setup";
 function showBanner(kind: "err" | "warn" | "info", msg: string, actions: BannerActions = "none") {
   cancelFold();
   stopProcessingAnim(); // an error/notice means we're not just "wrapping up" anymore — stop spinning
@@ -338,6 +367,7 @@ function showBanner(kind: "err" | "warn" | "info", msg: string, actions: BannerA
   openMicBtn.hidden = actions !== "mic";
   retryMicBtn.hidden = actions !== "mic";
   openAxBtn.hidden = actions !== "ax";
+  finishSetupBtn.hidden = actions !== "setup";
   copyErr.hidden = true;      // only shown for backend/PyAI errors (set in handle())
   bannerLog.hidden = true;
   bannerActions.hidden = actions === "none";
@@ -373,6 +403,46 @@ function friendlyError(msg: string): string {
   if (/microphone|getusermedia/i.test(msg)) return "microphone error";
   const m = msg.replace(/\s+/g, " ").trim();
   return m.length > 110 ? m.slice(0, 110) + "…" : m;
+}
+
+// The three shapes a "nothing is configured yet" backend failure takes, and the only
+// ones: providers/registry.ts's assertKeys missing-key list ("Provider 'pyai' needs:
+// PYAI_API_KEY"), either registry's unknown-id throw, and server.ts's correction
+// fallback notice ("Correction 'pyai' is invalid — using openai"). Anything else is a
+// real error and keeps the existing banner.
+const NOT_SET_UP_RE = /needs:? [A-Z_]*API_KEY|Unknown (STT|correction) provider|is invalid — using/i;
+let nudgedThisLaunch = false; // one nudge per launch — it's an invitation, not a nag
+
+// Mirrors packages/core's providers/registry.ts (kept in sync manually, like settings.ts's
+// copy) — an sttProvider outside this set is one nothing can resolve, i.e. no speech source.
+const STT_REGISTERED = new Set(["pyai", "deepgram", "openai"]);
+
+/** True only when we can POSITIVELY establish that no speech source exists: the STT id is
+ * unresolvable, or its key isn't saved. `setup_state` alone can't answer this — it stays
+ * "skipped" for the life of an install, so a user who chose "Set up later" and then added
+ * a key in Settings would keep losing their first real error of every launch (and its
+ * Copy details / log path) to a nudge that no longer applies. It also keeps the nudge off
+ * a failure that is only about the CORRECTION role: with speech configured, dictation does
+ * work, so "isn't set up yet" would be false and the real error is the useful one.
+ * On any doubt (an invoke that rejects) this returns false — the raw error wins, which is
+ * exactly today's behaviour, rather than hiding a diagnosable failure. */
+async function noSpeechSource(): Promise<boolean> {
+  try {
+    const cfg = await invoke<any>("get_config");
+    const stt = String(cfg?.sttProvider ?? "");
+    if (!STT_REGISTERED.has(stt)) return true;
+    return !(await invoke<boolean>("has_key", { vendor: stt }));
+  } catch { return false; }
+}
+
+// The "err" banner for a genuine backend failure: short line + the copy-details/log
+// affordances. Extracted because the setup nudge now decides asynchronously (it asks the
+// key store), so this is reached from both the sync and the resolved-promise path.
+function showBackendError(message: string) {
+  showBanner("err", friendlyError(message));
+  copyErr.hidden = false;                   // offer one-click copy of the complete detail
+  bannerActions.hidden = false;
+  if (lastErrorFile) { bannerLog.hidden = false; bannerLog.textContent = "Full error logged to " + lastErrorFile; }
 }
 
 function resetCopy() {
@@ -599,11 +669,18 @@ function settleAfterSuccess() {
 
 function handle(m: ServerMsg) {
   if (m.type === "ready") { setStatus("live", `listening (${m.stt} + ${m.correction})`); }
-  else if (m.type === "live") { if (cfgShowTranscript) renderLive(m); }
+  else if (m.type === "live") {
+    if (cfgShowTranscript) renderLive(m);
+    // Not gated on the bubble pref — the onboarding window needs the stream either way.
+    const p: DictationProgress = { phase: "live", transcript: m.transcript, active: m.active };
+    void emit("dictation-progress", p).catch(() => {});
+  }
   else if (m.type === "correction") {
     if (cfgShowTranscript) void animateCorrection(m);
     void invoke("set_last_raw", { text: m.raw }).catch(() => {}); // 5.4 — remember raw for revert-to-raw
     setStatus("fix", "polishing…");
+    const p: DictationProgress = { phase: "correction", raw: m.raw, cleanText: m.cleanText, ops: m.ops };
+    void emit("dictation-progress", p).catch(() => {});
   }
   else if (m.type === "formatted") {
     finalText = m.text;
@@ -611,6 +688,8 @@ function handle(m: ServerMsg) {
     copyBtn.disabled = !m.text.trim();
     copyBtn.classList.toggle("visible", !!m.text.trim()); // always copyable, even if injection lands nowhere
     void injectFinal(m.text).then((outcome) => { if (outcome === "ok") settleAfterSuccess(); });
+    const p: DictationProgress = { phase: "final", text: m.text };
+    void emit("dictation-progress", p).catch(() => {});
   }
   else if (m.type === "intent") {
     // P1 — command mode: hand the classified intent to the Rust executor. It runs ONE
@@ -628,10 +707,27 @@ function handle(m: ServerMsg) {
     setStatus("err", "error");
     lastErrorFull = m.message;               // keep the FULL message (banner shows a short form)
     if (m.file) lastErrorFile = m.file;
-    showBanner("err", friendlyError(m.message));
-    copyErr.hidden = false;                   // offer one-click copy of the complete detail
-    bannerActions.hidden = false;
-    if (lastErrorFile) { bannerLog.hidden = false; bannerLog.textContent = "Full error logged to " + lastErrorFile; }
+    // A user who skipped onboarding otherwise meets the backend's own words on their very
+    // first dictation ("Provider 'pyai' needs: PYAI_API_KEY"), which reads as a broken app
+    // rather than as unfinished setup (docs/product/onboarding-plan.md §6). Swap in the
+    // nudge + a way back into the window, once per launch; a second occurrence falls
+    // through to the normal error banner rather than being swallowed.
+    if (!nudgedThisLaunch && cfgSetupState !== "done" && NOT_SET_UP_RE.test(m.message)) {
+      // Message shape alone isn't proof: the same wording covers a configured install with
+      // a stale correctionProvider. Confirm there is really no speech source before
+      // replacing an error the user may need to report (one IPC round trip, and only on
+      // this rare branch — the success path is untouched).
+      const message = m.message;
+      void noSpeechSource().then((none) => {
+        if (none && !nudgedThisLaunch) {
+          nudgedThisLaunch = true;
+          // No copyErr/bannerLog reveal — there is nothing to report here, only setup to finish.
+          showBanner("warn", "Verbatim isn't set up yet. Add an API key and it'll start transcribing.", "setup");
+        } else showBackendError(message);
+      });
+      return;
+    }
+    showBackendError(m.message);
   }
   else if (m.type === "done") {
     teardownAudio();
@@ -657,6 +753,9 @@ async function connect(mode: "demo" | "live" | "command", tries = 6): Promise<vo
         invoke<Array<{ trigger: string; expansion: string }>>("snip_list").catch(() => []),
       ])
     : [{} as any, [] as string[], [] as Array<{ trigger: string; expansion: string }>];
+  // finish_onboarding persists setup_state through write_config, which does NOT emit
+  // config-changed — so refresh the cached value from the config this session just read.
+  if (typeof cfg.setupState === "string") cfgSetupState = cfg.setupState;
   return new Promise((resolve, reject) => {
     let opened = false;
     const attempt = (left: number) => {
@@ -892,6 +991,7 @@ copyBtn.onclick = async () => {
 openMicBtn.onclick = () => { void invoke("open_mic_settings").catch(() => {}); };
 openAxBtn.onclick = () => { void invoke("open_accessibility_settings").catch(() => {}); };
 retryMicBtn.onclick = () => { clearBanner(); void startLive(); };
+finishSetupBtn.onclick = () => { void invoke("show_onboarding_window").catch(() => {}); };
 // Copy the COMPLETE error (untruncated) + the log path for easy reporting.
 copyErr.onclick = async () => {
   const payload = (lastErrorFile ? `Log: ${lastErrorFile}\n\n` : "") + lastErrorFull;

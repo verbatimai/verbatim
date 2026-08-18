@@ -1,4 +1,12 @@
 import type { CorrectionEdit, Op } from "./types";
+import type { GlossaryEntry } from "../vocabulary/types";
+
+/**
+ * What the prompt layer accepts as "vocabulary": either a bare term (3.4's custom-vocabulary
+ * list, which is what the widget/backend send today) or a full `GlossaryEntry` carrying aliases.
+ * Type-only import, so this adds no runtime dependency from correction/ onto vocabulary/.
+ */
+export type VocabularyItem = string | GlossaryEntry;
 
 // Shared across every correction adapter — the vendor only maps this to its own
 // chat wire format. This is the "compact edits-only" format (plan §4) that keeps
@@ -77,12 +85,39 @@ function languageNote(language?: string): string {
  * are byte-identical when no vocabulary is supplied. Deliberately avoids the word
  * "language" so it never trips the language-note assertions.
  */
-function vocabularyNote(vocabulary?: string[]): string {
-  const terms = (vocabulary ?? []).map((t) => t.trim()).filter(Boolean);
-  return terms.length ? `\n\nKnown terms (preserve and spell exactly): ${terms.join(", ")}.` : "";
+function vocabularyNote(vocabulary?: VocabularyItem[]): string {
+  // Two shapes reach this function, and they render differently:
+  //   • plain strings  → the 3.4 custom-vocabulary list ("Known terms")
+  //   • GlossaryEntry  → the user glossary, which also carries ALIASES (common mishearings).
+  //     Aliases are the whole point of a glossary entry: they tell the model that "sass labs"
+  //     heard from the mic means "SaaSLabs", which a bare term list cannot express.
+  // Before this, the signature was `string[]` and the body called `t.trim()` unconditionally, so
+  // passing an entry object threw `t.trim is not a function` from inside userMessage() — i.e. a
+  // crash on the correction path, not a type-only problem.
+  const items = vocabulary ?? [];
+  const terms = items.filter((v): v is string => typeof v === "string").map((t) => t.trim()).filter(Boolean);
+  const entries = items.filter((v): v is GlossaryEntry => typeof v !== "string" && !!v && typeof v.term === "string");
+
+  let note = terms.length ? `\n\nKnown terms (preserve and spell exactly): ${terms.join(", ")}.` : "";
+  if (entries.length) {
+    // One line per entry so aliases stay attached to their term. Entries with no usable term are
+    // dropped rather than emitted as an empty bullet.
+    const lines = entries
+      .map((e) => {
+        const term = e.term.trim();
+        if (!term) return "";
+        const aliases = (e.aliases ?? []).map((a) => a.trim()).filter(Boolean);
+        return aliases.length ? `- ${term} (also heard as: ${aliases.join(", ")})` : `- ${term}`;
+      })
+      .filter(Boolean);
+    if (lines.length) {
+      note += `\n\nUser glossary — spell these exactly as written; if you hear one of the listed mishearings, use the term instead:\n${lines.join("\n")}`;
+    }
+  }
+  return note;
 }
 
-export function formatMessage(text: string, language?: string, vocabulary?: string[]): string {
+export function formatMessage(text: string, language?: string, vocabulary?: VocabularyItem[]): string {
   return `Cleaned transcript to format:\n${text}${languageNote(language)}${vocabularyNote(vocabulary)}`;
 }
 
@@ -153,7 +188,7 @@ function extractNumberedList(t: string): { lead: string; items: string[] } | nul
   return items.length >= 2 ? { lead, items } : null;
 }
 
-export function userMessage(raw: string, priorContext?: string, language?: string, vocabulary?: string[]): string {
+export function userMessage(raw: string, priorContext?: string, language?: string, vocabulary?: VocabularyItem[]): string {
   const ctx = priorContext ? `Prior context (already cleaned): ${priorContext}\n\n` : "";
   return `${ctx}Raw transcript:\n${raw}${languageNote(language)}${vocabularyNote(vocabulary)}`;
 }
