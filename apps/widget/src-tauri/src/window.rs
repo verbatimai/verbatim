@@ -169,6 +169,48 @@ pub fn open_onboarding_window(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Onboarding O5 — the ONLY way the webview may leave onboarding ("Set up later" / "Done").
+///
+/// Why a command instead of `getCurrentWindow().hide()` from JS: `hide()` never fires
+/// `CloseRequested`, so `register_onboarding_close_handler` below never runs and the app
+/// stays on `ActivationPolicy::Regular` for the rest of the session — a Dock icon that
+/// outlives onboarding despite `dockIcon: false` (onboarding-plan.md §0.6 / §6).
+///
+/// Order matters: the window is hidden and the policy reverted BEFORE the config write, so
+/// a failed write can never leave the user staring at a stuck window with a Dock icon. The
+/// write result is returned, but the visible state is already correct either way.
+#[tauri::command]
+pub fn finish_onboarding(app: tauri::AppHandle, state: String) -> Result<(), String> {
+    // 1. Validate before touching anything — only these two states are reachable from the UI.
+    if state != "skipped" && state != "done" {
+        return Err(format!("bad setup state: {state}"));
+    }
+    // 2. Full struct read, so step 4 can use write_config (no JSON merge, no
+    //    `config-changed` broadcast — nothing else in the app reacts to setup_state).
+    let mut cfg = crate::config::read_config(&app);
+    if let Some(w) = app.get_webview_window("onboarding") {
+        let _ = w.hide();
+    }
+    // 3. Revert to the CONFIGURED policy, mirroring register_settings_close_handler —
+    //    NOT a hardcoded Accessory, or a user who wants the Dock icon loses it.
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(desired_activation_policy(cfg.dock_icon));
+    // 4. Record the choice (this is what stops the launch-time nag in main.rs's setup()).
+    cfg.setup_state = state;
+    let wrote = crate::config::write_config(&app, &cfg);
+    // 5. After the write: the menu reads setup_state to decide "Finish setup…".
+    crate::tray::refresh_menu(&app);
+    // 6. Surface the write outcome; the window is already hidden and the policy reverted.
+    wrote
+}
+
+/// Re-entry from JS: the overlay's "Finish setup" banner button (the tray item calls
+/// `open_onboarding_window` directly). Same window, same activation-policy bump.
+#[tauri::command]
+pub fn show_onboarding_window(app: tauri::AppHandle) -> Result<(), String> {
+    open_onboarding_window(&app)
+}
+
 pub fn register_onboarding_close_handler(app: &tauri::App) {
     if let Some(onboarding) = app.get_webview_window("onboarding") {
         let app_h = app.handle().clone();

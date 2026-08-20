@@ -1,10 +1,14 @@
+// NOTE (18 Aug 2026): this file was PyAI STT + PyAI correction. `f484096` deleted the
+// PyAI correction adapter (correction/pyai.ts) — PyAI is STT + TTS only now — but left this
+// file importing it, so the whole suite failed to load and every PyAiSTT test below was
+// silently skipped. The PyAiCorrection describes and their mockMessagesServer helper are
+// gone; the STT coverage is unchanged. See correction/registry.ts for the current vendors.
 import { describe, it, expect, afterEach } from "vitest";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer, type Server } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import { AddressInfo } from "node:net";
 import { PyAiSTT } from "./pyai.stt";
-import { PyAiCorrection } from "../correction/pyai";
 import { Pipeline } from "../pipeline";
 import type { TranscriptEvent } from "./types";
 
@@ -152,40 +156,6 @@ describe("PyAiSTT adapter (against a faithful mock Hear server)", () => {
   });
 });
 
-// A mock that returns PyAI's Anthropic-Messages shape so the REAL PyAiCorrection
-// adapter's request/parse/reconstruct path is exercised without pyai.com.
-function mockMessagesServer(): Promise<{ base: string; server: Server; captured: { body: any } }> {
-  const captured: { body: any } = { body: null };
-  return new Promise((resolve) => {
-    const server = createServer((req, res) => {
-      let raw = "";
-      req.on("data", (c) => (raw += c));
-      req.on("end", () => {
-        try { captured.body = JSON.parse(raw); } catch { captured.body = null; }
-        const editsJson = JSON.stringify({
-          clean_text: "The total is 55 dollars",
-          edits: [
-            { raw: "The the", replacement: "The", reason: "repetition" },
-            { raw: "like ", replacement: "", reason: "filler" },
-            { raw: "fifty, ", replacement: "", reason: "false_start" },
-            { raw: "umm, ", replacement: "", reason: "filler" },
-            { raw: "fifty five", replacement: "55", reason: "grammar" },
-            { raw: " ahh", replacement: "", reason: "filler" },
-            { raw: " yeah", replacement: "", reason: "filler" },
-            { raw: " fifty five", replacement: "", reason: "repetition" },
-          ],
-        });
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ role: "assistant", content: [{ type: "text", text: editsJson }], stop_reason: "end_turn" }));
-      });
-    });
-    server.listen(0, () => {
-      const port = (server.address() as AddressInfo).port;
-      resolve({ base: `http://localhost:${port}`, server, captured });
-    });
-  });
-}
-
 describe("PyAiSTT.transcribeBatch (against a mock /v1/audio/transcriptions)", () => {
   it("posts the WAV and returns the clean transcript", async () => {
     let gotContentType = "";
@@ -208,70 +178,6 @@ describe("PyAiSTT.transcribeBatch (against a mock /v1/audio/transcriptions)", ()
     const text = await new PyAiSTT().transcribeBatch!(pcm, { apiKey: "test-key" });
     expect(text).toBe("the clean batch transcript");
     expect(gotContentType).toContain("multipart/form-data"); // sent as a file upload
-  });
-});
-
-describe("PyAiCorrection retry (PyAI is flaky under stress)", () => {
-  it("retries a transient 503 on format() and then succeeds", async () => {
-    let hits = 0;
-    const server = await new Promise<{ base: string; server: Server }>((resolve) => {
-      const s = createServer((req, res) => {
-        req.on("data", () => {});
-        req.on("end", () => {
-          hits += 1;
-          if (hits === 1) {
-            res.statusCode = 503;
-            res.end("service unavailable");
-            return;
-          }
-          res.setHeader("content-type", "application/json");
-          res.end(JSON.stringify({ role: "assistant", content: [{ type: "text", text: "Here it is:\n\n1. Phone\n2. Laptop" }] }));
-        });
-      });
-      s.listen(0, () => resolve({ base: `http://localhost:${(s.address() as AddressInfo).port}`, server: s }));
-    });
-    cleanup.push(() => server.server.close());
-    process.env.PYAI_BASE = server.base;
-    process.env.PYAI_RETRIES = "3";
-
-    const out = await new PyAiCorrection("k").format("here it is 1 phone 2 laptop");
-    expect(hits).toBe(2); // failed once, retried, succeeded
-    expect(out.text).toBe("Here it is:\n\n1. Phone\n2. Laptop"); // newlines preserved, no fences
-    delete process.env.PYAI_RETRIES;
-  });
-
-  it("throws after exhausting retries on persistent 5xx", async () => {
-    let hits = 0;
-    const server = await new Promise<{ base: string; server: Server }>((resolve) => {
-      const s = createServer((req, res) => {
-        req.on("data", () => {});
-        req.on("end", () => { hits += 1; res.statusCode = 500; res.end("boom"); });
-      });
-      s.listen(0, () => resolve({ base: `http://localhost:${(s.address() as AddressInfo).port}`, server: s }));
-    });
-    cleanup.push(() => server.server.close());
-    process.env.PYAI_BASE = server.base;
-    process.env.PYAI_RETRIES = "2";
-
-    await expect(new PyAiCorrection("k").format("x")).rejects.toThrow(/500/);
-    expect(hits).toBe(2);
-    delete process.env.PYAI_RETRIES;
-  });
-});
-
-describe("PyAiCorrection adapter (against a mock /v1/messages)", () => {
-  it("posts, parses the Anthropic body, and reconstructs the clean text", async () => {
-    const { base, server } = await mockMessagesServer();
-    cleanup.push(() => server.close());
-    process.env.PYAI_BASE = base;
-
-    const result = await new PyAiCorrection("test-key").correct(
-      "The the total is like fifty, umm, fifty five dollars ahh yeah fifty five",
-    );
-    expect(result.valid).toBe(true);
-    expect(result.cleanText).toBe("The total is 55 dollars");
-    expect(result.edits.length).toBe(8);
-    expect(result.ops.some((o) => o.type === "replace" && o.replacement === "55")).toBe(true);
   });
 });
 
@@ -305,37 +211,6 @@ describe("PyAiSTT single-model no-op (Phase 7)", () => {
     await new PyAiSTT().transcribeBatch!(new Uint8Array(3200), { apiKey: "k", model: "some-other-model" });
     expect(raw).toContain("pyai-hear");
     expect(raw).not.toContain("some-other-model");
-  });
-});
-
-// Phase 7 Fix 1 — PyAI correction SENDS the resolved model on the wire (uniform
-// threading), even though the PyAI server ignores it (findings F4) — a documented no-op.
-describe("PyAiCorrection model override (Phase 7 — sent on the wire; server ignores, F4)", () => {
-  afterEach(() => { delete process.env.PYAI_MODEL; });
-
-  it("correct sends the per-request model in the request body", async () => {
-    const { base, server, captured } = await mockMessagesServer();
-    cleanup.push(() => server.close());
-    process.env.PYAI_BASE = base;
-    await new PyAiCorrection("k").correct("The the total is fifty five", { model: "custom-x" });
-    expect(captured.body.model).toBe("custom-x");
-  });
-
-  it("empty model does NOT override (default gpt-5.6-sol on the wire)", async () => {
-    const { base, server, captured } = await mockMessagesServer();
-    cleanup.push(() => server.close());
-    process.env.PYAI_BASE = base;
-    await new PyAiCorrection("k").correct("The the total is fifty five", { model: "" });
-    expect(captured.body.model).toBe("gpt-5.6-sol");
-  });
-
-  it("empty model falls through to PYAI_MODEL", async () => {
-    const { base, server, captured } = await mockMessagesServer();
-    cleanup.push(() => server.close());
-    process.env.PYAI_BASE = base;
-    process.env.PYAI_MODEL = "pyai-env-model";
-    await new PyAiCorrection("k").correct("The the total is fifty five", { model: "" });
-    expect(captured.body.model).toBe("pyai-env-model");
   });
 });
 

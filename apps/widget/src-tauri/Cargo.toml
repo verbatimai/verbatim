@@ -26,6 +26,13 @@ keyring = { version = "3", features = ["apple-native"] }
 tauri-plugin-store = "2"
 # Settings 1.2 — "Launch at login": a real macOS login item (LaunchAgent).
 tauri-plugin-autostart = "2"
+# Tiny blocking HTTP client (pure Rust; default features enable rustls TLS, so HTTPS and the
+# GitHub release redirect work with no system TLS dependency).
+# TOP-LEVEL, not in the macOS target table below (moved Aug 2026): it now has TWO consumers —
+# P3's wake-word model download (wake.rs `ensure_models`, macOS-only) and onboarding O2's key
+# verification (verify.rs `probe`, cross-platform). `mod verify;` is declared unconditionally in
+# main.rs, so a target-gated ureq would fail to resolve on any non-macOS target.
+ureq = "2"
 
 # Spike A — non-activating NSPanel overlay. macOS-only; keep it target-gated so the
 # widget still compiles on other platforms (which no-op the panel code below).
@@ -44,9 +51,6 @@ core-foundation = "0.10"
 # Pinned to "0.23" to match enigo 0.2.1's own core-graphics dependency (already resolved in
 # Cargo.lock) rather than introducing a third divergent version of the crate.
 core-graphics = "0.23"
-# P3 — wake word: download the openWakeWord ONNX models on first enable (wake.rs `ensure_models`).
-# ureq's default features enable rustls TLS (HTTPS + following the GitHub release redirect).
-ureq = "2"
 # P3 — wake word inference: ONNX Runtime (runs the 3 openWakeWord models). `download-binaries`
 # fetches a prebuilt ONNX Runtime shared lib at build time, so no system install is required.
 ort = { version = "2.0.0-rc.13", features = ["download-binaries"] }
