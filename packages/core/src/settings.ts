@@ -12,7 +12,7 @@ import { getSTTProvider } from "./providers/registry";
 import { getCorrectionProvider } from "./correction/registry";
 
 /** User-selectable STT vendors (demo/`fixture` is internal, not offered here). */
-export type SttVendor = "pyai" | "deepgram" | "openai";
+export type SttVendor = "pyai" | "deepgram" | "openai" | "nemotron";
 /**
  * User-selectable correction vendors (`mock` is internal, not offered here).
  * PyAI was REMOVED as a correction vendor (registry.ts) — it stays the STT + TTS

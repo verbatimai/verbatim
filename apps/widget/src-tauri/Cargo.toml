@@ -4,6 +4,11 @@ version = "1.0.0"
 edition = "2021"
 description = "Verbatim macOS widget (M3 spike)"
 
+[features]
+default = []
+# Enable NeMo-Speech.cpp FFI when NEMO_SPEECH_PREFIX is set at build time.
+nemotron = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

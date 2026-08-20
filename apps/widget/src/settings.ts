@@ -57,6 +57,12 @@ type AppConfig = {
   showRemoved?: boolean; // Widget redesign — fade (vs. instantly cut) removed spans during the reveal (default true)
   historyLimit?: number; // dictation history — how many recent entries to show: 10 | 20 | 50
   setupState?: string; // first-run onboarding re-entry state: "unseen" | "skipped" | "done"
+  asrModelPath?: string; // local Nemotron GGUF path ("" = default app data location)
+  asrStreamingMs?: number; // 160 | 560 | 1120 streaming latency preset (default 560)
+  asrUseMetal?: boolean; // Metal backend (default true on Apple Silicon)
+  asrVadModelPath?: string; // optional Silero VAD GGUF
+  asrVadOnset?: number;
+  asrVadOffset?: number;
 };
 
 // Mirrors packages/core's provider registries' `requiredKeys` and Rust's
@@ -155,7 +161,7 @@ function isEnglish(language: string): boolean {
 // kept in sync manually, same as VENDOR_ENV above. The internal `fixture`/`mock` ids are
 // deliberately absent: they aren't user-selectable, so a stored config naming one is a
 // fault to report, not a state to accept.
-const STT_REGISTERED = new Set(["pyai", "deepgram", "openai"]);
+const STT_REGISTERED = new Set(["pyai", "deepgram", "openai", "nemotron"]);
 const CORR_REGISTERED = new Set(["openai", "anthropic"]);
 
 /** One role's problems. Asking `hasKey[id]` alone (as this did) conflates two failures

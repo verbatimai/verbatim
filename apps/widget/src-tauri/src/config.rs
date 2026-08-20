@@ -16,7 +16,7 @@ use tauri::Emitter;
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AppConfig {
-    pub stt_provider: String,        // "pyai" | "deepgram" | "openai"
+    pub stt_provider: String,        // "pyai" | "deepgram" | "openai" | "nemotron"
     pub correction_provider: String, // "openai" | "anthropic" (PyAI removed as a correction vendor — it stays STT + TTS only)
     pub stt_model: String,           // optional per-vendor model override; "" = provider default
     pub correction_model: String,    // optional per-vendor model override; "" = provider default
@@ -52,6 +52,13 @@ pub struct AppConfig {
     pub show_removed: bool,          // Widget redesign — during the correction reveal, fade removed spans instead of collapsing them immediately (default true)
     pub history_limit: u32,          // dictation history — how many recent entries to show: 10 | 20 | 50 (default 20)
     pub setup_state: String,         // onboarding re-entry state: "unseen" | "skipped" | "done" (written by window::finish_onboarding)
+    // Local Nemotron ASR (NeMo-Speech.cpp + Metal). Used when stt_provider = "nemotron".
+    pub asr_model_path: String,      // GGUF path; "" = app_data/models/nemotron-speech-streaming-en-0.6b.q8_0.gguf
+    pub asr_streaming_ms: u32,         // 160 | 560 | 1120 — streaming chunk latency preset (default 560)
+    pub asr_use_metal: bool,         // Metal backend on Apple Silicon (default true)
+    pub asr_vad_model_path: String,  // optional Silero VAD GGUF; "" = endpointing without separate VAD model
+    pub asr_vad_onset: f32,          // VAD speech onset threshold (default 0.5)
+    pub asr_vad_offset: f32,         // VAD speech offset threshold (default 0.35)
 }
 
 impl Default for AppConfig {
@@ -93,6 +100,12 @@ impl Default for AppConfig {
             show_removed: true,
             history_limit: 20,
             setup_state: "unseen".into(),
+            asr_model_path: String::new(),
+            asr_streaming_ms: 560,
+            asr_use_metal: true,
+            asr_vad_model_path: String::new(),
+            asr_vad_onset: 0.5,
+            asr_vad_offset: 0.35,
         }
     }
 }

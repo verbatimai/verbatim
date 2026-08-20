@@ -35,6 +35,10 @@ fn inject_keys(app: &tauri::AppHandle, cmd: &mut std::process::Command) {
 }
 
 pub fn spawn_backend(app: &tauri::AppHandle) {
+    kill_backend();
+    #[cfg(debug_assertions)]
+    kill_processes_on_port(8787);
+
     #[cfg(debug_assertions)]
     let spawned: Result<std::process::Child, String> = {
         // Dev: run the workspace backend via npm from the repo root
@@ -84,4 +88,31 @@ pub fn kill_backend() {
 pub fn restart_backend(app: &tauri::AppHandle) {
     kill_backend();
     spawn_backend(app);
+}
+
+/// Dev-only: orphaned backend sidecars often keep :8787 after `tauri dev` reloads.
+#[cfg(debug_assertions)]
+fn kill_processes_on_port(port: u16) {
+    let Ok(out) = std::process::Command::new("lsof")
+        .args(["-ti", &format!(":{port}")])
+        .output()
+    else {
+        return;
+    };
+    let pids = String::from_utf8_lossy(&out.stdout);
+    for line in pids.lines() {
+        let pid = line.trim();
+        if pid.is_empty() {
+            continue;
+        }
+        if let Ok(n) = pid.parse::<i32>() {
+            if n == std::process::id() as i32 {
+                continue;
+            }
+            let _ = std::process::Command::new("kill")
+                .args(["-TERM", pid])
+                .status();
+            eprintln!("[backend] cleared stale process on :{port} (pid {pid})");
+        }
+    }
 }

@@ -66,6 +66,10 @@ mod fnkey;
 #[cfg(target_os = "macos")]
 mod wake;
 
+// Local Nemotron ASR — persistent NeMo-Speech.cpp worker (Metal on Apple Silicon).
+#[cfg(target_os = "macos")]
+mod asr;
+
 // Re-exports that keep the pre-split `crate::…` paths working for modules that use them.
 pub(crate) use config::read_config;
 pub(crate) use keys::KEYCHAIN_SERVICE;
@@ -111,6 +115,9 @@ fn main() {
             // vendor keys from the secret store into its env (no key crosses the webview;
             // no manual `npm run backend`).
             backend::spawn_backend(app.handle());
+
+            #[cfg(target_os = "macos")]
+            asr::init_at_launch(app.handle());
 
             #[cfg(desktop)]
             {
@@ -183,7 +190,17 @@ fn main() {
             window::finish_onboarding,
             window::show_onboarding_window,
             #[cfg(target_os = "macos")]
-            wake::wake_mic_status
+            wake::wake_mic_status,
+            #[cfg(target_os = "macos")]
+            asr::asr_get_metrics,
+            #[cfg(target_os = "macos")]
+            asr::asr_get_status,
+            #[cfg(target_os = "macos")]
+            asr::asr_start_native_session,
+            #[cfg(target_os = "macos")]
+            asr::asr_stop_native_session,
+            #[cfg(target_os = "macos")]
+            asr::asr_ipc_port
         ])
         .build(tauri::generate_context!())
         .expect("error while building the Verbatim widget")
