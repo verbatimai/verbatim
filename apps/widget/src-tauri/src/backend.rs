@@ -32,6 +32,18 @@ fn inject_keys(app: &tauri::AppHandle, cmd: &mut std::process::Command) {
             cmd.env(k, secret);
         }
     }
+    // Release only: a Finder-launched .app inherits cwd "/", so the sidecar's default
+    // LOG_FILE (resolve(cwd, "logs", "errors.log")) becomes an unwritable "/logs/errors.log".
+    // The write is swallowed by a try/catch, so nothing crashes — but every error banner
+    // would cite a path that was never written. Point it at the app's own log dir instead.
+    #[cfg(not(debug_assertions))]
+    {
+        use tauri::Manager;
+        if let Ok(dir) = app.path().app_log_dir() {
+            let _ = std::fs::create_dir_all(&dir);
+            cmd.env("PYAI_LOG_FILE", dir.join("errors.log"));
+        }
+    }
 }
 
 pub fn spawn_backend(app: &tauri::AppHandle) {

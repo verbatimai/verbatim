@@ -4,10 +4,16 @@
     "beforeBuildCommand": "npm run build && node ../../scripts/build-sidecar.mjs"
   },
   "bundle": {
-    "externalBin": ["binaries/verbatim-backend"],
+    "externalBin": [
+      "binaries/verbatim-backend"
+    ],
     "macOS": {
       "entitlements": "entitlements.plist",
       "minimumSystemVersion": "11.0"
-    }
+    },
+    "targets": [
+      "app",
+      "dmg"
+    ]
   }
 }
