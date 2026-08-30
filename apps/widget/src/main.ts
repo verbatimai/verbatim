@@ -298,6 +298,8 @@ let finalText = ""; // the last formatted output — always copyable, even if in
 let lastResult = ""; // survives reset(): the last dictation, recallable via the tray "Show Last Result"
 
 let ws: WebSocket | null = null;
+let useNativeAsr = false;
+let unlistenAsrLive: (() => void) | null = null;
 let audioCtx: AudioContext | null = null;
 let processor: ScriptProcessorNode | null = null;
 let micStream: MediaStream | null = null;
@@ -814,44 +816,75 @@ function toInt16(f32: Float32Array): Int16Array {
 
 async function startLive() {
   clearBanner();
+  let cfg: any = {};
   try {
-    // 3.1 — capture from the user's chosen input device (mic_device_id; "" = system
-    // default). Use `ideal` (not `exact`) so a removed/renamed device falls back to the
-    // system default instead of throwing OverconstrainedError → a false "No microphone".
-    const micId: string = (await invoke<any>("get_config").catch(() => ({}))).micDeviceId ?? "";
-    micStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        ...(micId ? { deviceId: { ideal: micId } } : {}),
-      },
-    });
-  } catch (e) {
-    // Only show the "access needed" banner for a REAL permission denial — otherwise we
-    // were wrongly claiming the mic was blocked when it wasn't.
-    pill.classList.remove("listening"); // no audio session actually started
-    const name = (e as any)?.name ?? "";
-    if (name === "NotAllowedError" || name === "SecurityError" || name === "PermissionDeniedError") {
-      setStatus("err", "mic blocked");
-      showBanner("err", "Microphone access needed — enable Verbatim (or your terminal, in dev) under Microphone, then quit & relaunch.", "mic");
-    } else if (name === "NotFoundError" || name === "OverconstrainedError") {
-      setStatus("err", "no mic"); showBanner("err", "No microphone found.");
-    } else {
-      setStatus("err", "mic error"); showBanner("err", "Microphone error: " + (name || String(e)));
+    cfg = await invoke<any>("get_config").catch(() => ({}));
+  } catch {}
+  useNativeAsr = cfg?.sttProvider === "nemotron";
+
+  if (!useNativeAsr) {
+    try {
+      // 3.1 — capture from the user's chosen input device (mic_device_id; "" = system
+      // default). Use `ideal` (not `exact`) so a removed/renamed device falls back to the
+      // system default instead of throwing OverconstrainedError → a false "No microphone".
+      const micId: string = cfg.micDeviceId ?? "";
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          ...(micId ? { deviceId: { ideal: micId } } : {}),
+        },
+      });
+    } catch (e) {
+      // Only show the "access needed" banner for a REAL permission denial — otherwise we
+      // were wrongly claiming the mic was blocked when it wasn't.
+      pill.classList.remove("listening"); // no audio session actually started
+      const name = (e as any)?.name ?? "";
+      if (name === "NotAllowedError" || name === "SecurityError" || name === "PermissionDeniedError") {
+        setStatus("err", "mic blocked");
+        showBanner("err", "Microphone access needed — enable Verbatim (or your terminal, in dev) under Microphone, then quit & relaunch.", "mic");
+      } else if (name === "NotFoundError" || name === "OverconstrainedError") {
+        setStatus("err", "no mic"); showBanner("err", "No microphone found.");
+      } else {
+        setStatus("err", "mic error"); showBanner("err", "Microphone error: " + (name || String(e)));
+      }
+      resetButtons();
+      return;
     }
-    resetButtons();
-    return;
   }
+
   // Mic works — make sure no stale permission banner lingers.
   clearBanner();
   void muteOthersForSession(); // silence system output while dictating (if enabled)
   reset();
   buttonsBusy();
-  // Phase 4.8: no key here — the Rust host injects the Keychain keys into the backend
-  // sidecar's env; the webview only sends the provider/language selection. P1 — the same
-  // audio path serves command mode; captureMode picks the start-frame mode.
   await connect(captureMode);
+
+  if (useNativeAsr) {
+    // Native cpal capture → persistent Rust ASR worker (lower latency, no webview audio path).
+    try {
+      unlistenAsrLive?.();
+      unlistenAsrLive = await listen<{ transcript?: string; active?: string }>("asr-live", (e) => {
+        if (cfgShowTranscript) renderLive({ type: "live", transcript: e.payload?.transcript ?? "", active: e.payload?.active ?? "" });
+      });
+      await invoke("asr_start_native_session");
+      setStatus("live", "listening (nemotron local)");
+    } catch (e) {
+      setStatus("err", "local asr");
+      showBanner("err", "Local ASR failed to start — ensure stt_provider=nemotron, the GGUF model is installed, and NeMo-Speech.cpp was built with Metal. " + String(e));
+      resetButtons();
+      return;
+    }
+    return;
+  }
+
+  if (!micStream) {
+    setStatus("err", "no mic");
+    showBanner("err", "No microphone found.");
+    resetButtons();
+    return;
+  }
   audioCtx = new AudioContext();
   const source = audioCtx.createMediaStreamSource(micStream);
   analyser = audioCtx.createAnalyser();
@@ -873,6 +906,12 @@ function teardownAudio() {
   processor?.disconnect(); processor = null;
   audioCtx?.close().catch(() => {}); audioCtx = null;
   micStream?.getTracks().forEach((t) => t.stop()); micStream = null;
+  if (useNativeAsr) {
+    void invoke("asr_stop_native_session").catch(() => {});
+    unlistenAsrLive?.();
+    unlistenAsrLive = null;
+    useNativeAsr = false;
+  }
   void restoreOthersAudio(); // un-mute system output if we muted it for this session
 }
 

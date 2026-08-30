@@ -19,6 +19,10 @@
   </p>
 </div>
 
+<p align="center">
+  <img src="docs/screenshot-hero.png" alt="Verbatim widget showing a live correction: 'eightpm no no make it ninepm' struck through and replaced with 'ninepm'" width="820" />
+</p>
+
 > **Project status:** Pre-1.0 and under active development. The macOS desktop app is
 > functionally complete (milestone M4) and daily-driver polish (M5) is in progress. There is
 > **no published binary yet** — you build and run from source. See [Status & roadmap](#status--roadmap).

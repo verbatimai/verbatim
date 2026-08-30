@@ -81,6 +81,15 @@ export const STT: Record<string, SttCap> = {
     languages: ALL_LANGS, // Whisper is broad
     broad: true,
   },
+  nemotron: {
+    label: "Nemotron (local)",
+    models: [
+      { id: "q8_0", label: "Streaming 0.6B Q8 (recommended)", recommended: true },
+    ],
+    supportsAutoDetect: false,
+    languages: ["en"],
+    broad: false,
+  },
 };
 
 type CorrectionCap = {
