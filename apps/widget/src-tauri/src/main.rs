@@ -162,6 +162,8 @@ fn main() {
             lists::snip_list,
             lists::snip_add,
             lists::snip_delete,
+            lists::glossary_get,
+            lists::glossary_save,
             history::history_list,
             history::history_delete,
             history::history_clear,
