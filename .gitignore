@@ -33,6 +33,8 @@ venv/
 # ---- Tauri / Rust ----
 target/
 apps/widget/src-tauri/target/
+# Machine-local Cargo env (e.g. NEMO_SPEECH_PREFIX for local ASR dev)
+apps/widget/src-tauri/.cargo/config.toml
 
 # ---- Playwright e2e ----
 test-results/

@@ -9,7 +9,8 @@
     "build": "tsc && vite build",
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
-    "start": "tauri dev --features nemotron"
+    "start": "tauri dev",
+    "start:nemotron": "tauri dev --features nemotron"
   },
   "dependencies": {
     "@tauri-apps/api": "^2"

@@ -18,6 +18,8 @@
     "backend": "npm run start --workspace @verbatim/backend",
     "web": "npm run dev --workspace @verbatim/web",
     "widget": "node scripts/widget.mjs",
+    "widget:nemotron": "npm run start:nemotron --workspace @verbatim/widget",
+    "setup:lfs": "git lfs install && git lfs pull",
     "meetings": "npm run meetings --workspace @verbatim/backend"
   },
   "devDependencies": {

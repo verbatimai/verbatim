@@ -32,6 +32,7 @@
 mod backend;
 mod command;
 mod config;
+mod download;
 mod history;
 mod hotkey;
 mod inject;
@@ -200,7 +201,11 @@ fn main() {
             #[cfg(target_os = "macos")]
             asr::asr_stop_native_session,
             #[cfg(target_os = "macos")]
-            asr::asr_ipc_port
+            asr::asr_ipc_port,
+            #[cfg(target_os = "macos")]
+            asr::asr_get_download_status,
+            #[cfg(target_os = "macos")]
+            asr::asr_download_model
         ])
         .build(tauri::generate_context!())
         .expect("error while building the Verbatim widget")

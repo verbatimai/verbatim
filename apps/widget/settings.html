@@ -256,6 +256,30 @@
                 <select id="sttModel"></select>
               </div>
             </div>
+            <div class="set-row" id="nemotronLocalRow" style="display: none">
+              <div class="meta">
+                <h3>Local model</h3>
+                <p>
+                  Uses the Nemotron weights bundled in this repo (~600 MB, Git LFS).
+                  No Hugging Face account needed — run <code>git lfs pull</code> after clone.
+                </p>
+                <p class="hint" id="asrDownloadStatus"></p>
+                <progress
+                  id="asrDownloadProgress"
+                  max="100"
+                  value="0"
+                  style="display: none; width: 100%; margin-top: 8px"
+                ></progress>
+              </div>
+              <div class="control-col align-end">
+                <label class="switch" title="Copy bundled model into app data on start (optional cache)">
+                  <input type="checkbox" id="asrAutoDownload" /><span></span>
+                </label>
+                <button type="button" class="btn ghost" id="asrDownloadNow">
+                  Copy to app data
+                </button>
+              </div>
+            </div>
             <div class="set-row">
               <div class="meta">
                 <h3>Language</h3>

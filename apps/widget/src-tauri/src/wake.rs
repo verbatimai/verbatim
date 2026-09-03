@@ -98,25 +98,13 @@ fn ensure_models(app: &AppHandle, model: &str) -> Result<std::path::PathBuf, Str
         }
         let url = format!("{MODEL_BASE_URL}/{name}");
         eprintln!("[wake] downloading model {name} …");
-        download_file(&url, &dest)?;
+        crate::download::download_file(&url, &dest)?;
         eprintln!("[wake] downloaded {name}");
     }
     Ok(dir)
 }
 
-/// Blocking download to a `.part` temp then atomic rename, so a partial download is never seen
-/// as a valid model. Uses `ureq` (rustls TLS on by default; follows the GitHub release redirect).
-fn download_file(url: &str, dest: &std::path::Path) -> Result<(), String> {
-    let resp = ureq::get(url).call().map_err(|e| format!("GET {url}: {e}"))?;
-    let tmp = dest.with_extension("part");
-    let mut reader = resp.into_reader();
-    let mut file =
-        std::fs::File::create(&tmp).map_err(|e| format!("create {}: {e}", tmp.display()))?;
-    std::io::copy(&mut reader, &mut file).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    file.sync_all().ok();
-    std::fs::rename(&tmp, dest).map_err(|e| format!("rename into {}: {e}", dest.display()))?;
-    Ok(())
-}
+// download_file lives in crate::download (shared with Nemotron ASR model fetch).
 
 // ───────────────────────────────── shared / module state ────────────────────────────────
 /// The listener thread is live. Mirrors fnkey's RUNNING.

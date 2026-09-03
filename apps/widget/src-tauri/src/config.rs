@@ -59,6 +59,7 @@ pub struct AppConfig {
     pub asr_vad_model_path: String,  // optional Silero VAD GGUF; "" = endpointing without separate VAD model
     pub asr_vad_onset: f32,          // VAD speech onset threshold (default 0.5)
     pub asr_vad_offset: f32,         // VAD speech offset threshold (default 0.35)
+    pub asr_auto_download_model: bool, // copy bundled GGUF into app data on start (default false — use repo copy directly)
 }
 
 impl Default for AppConfig {
@@ -106,6 +107,7 @@ impl Default for AppConfig {
             asr_vad_model_path: String::new(),
             asr_vad_onset: 0.5,
             asr_vad_offset: 0.35,
+            asr_auto_download_model: false,
         }
     }
 }
@@ -212,6 +214,11 @@ pub fn set_config(app: tauri::AppHandle, patch: serde_json::Value) -> Result<App
     #[cfg(target_os = "macos")]
     if next.dock_icon != old.dock_icon {
         let _ = app.set_activation_policy(crate::window::desired_activation_policy(next.dock_icon));
+    }
+
+    #[cfg(target_os = "macos")]
+    if next.stt_provider != old.stt_provider {
+        crate::asr::reinit_if_needed(&app, &old.stt_provider, &next.stt_provider);
     }
 
     let _ = app.emit("config-changed", &next);

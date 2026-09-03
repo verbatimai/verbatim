@@ -36,6 +36,7 @@
 - [How it works](#how-it-works)
 - [Providers](#providers)
 - [Requirements](#requirements)
+- [Installation](#installation)
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
 - [Usage](#usage)
@@ -108,6 +109,7 @@ reads the `STT_PROVIDER` / `CORRECTION_PROVIDER` environment variables.
 | **Deepgram** | ✅ (streaming) | — | `DEEPGRAM_API_KEY` |
 | **OpenAI** | ✅ | ✅ | `OPENAI_API_KEY` |
 | **Anthropic** | — | ✅ | `ANTHROPIC_API_KEY` |
+| **Nemotron** (optional, local) | ✅ (on-device, Apple Silicon) | — | No API key — model bundled in repo ([Git LFS](models/nemotron/README.md)) |
 
 > **One key can be enough — but not every key covers both roles.** OpenAI is the only single
 > key that does. PyAI and Deepgram give you working dictation with self-correction switched
@@ -120,26 +122,47 @@ reads the `STT_PROVIDER` / `CORRECTION_PROVIDER` environment variables.
 
 ## Requirements
 
-**To run the web demo (no microphone or key required):**
+### Web demo (browser)
 
-- **Node.js 20 or newer** (22 recommended)
+| Requirement | Notes |
+|---|---|
+| **Node.js 20+** | 22 recommended |
+| **macOS / Linux / Windows** | Any OS with Node |
 
-**To run the macOS desktop widget:**
+No API key needed for **Demo (no mic)** mode. Live dictation in the browser needs a vendor key (see [Configuration](#configuration)).
 
-- **macOS** — the desktop app is macOS-only in this release
-  <br/>`TODO: Maintainer input required — minimum supported macOS version`
-- **Node.js 20+**
-- **Rust** (stable toolchain via [rustup](https://rustup.rs)) — the widget is built with
-  [Tauri v2](https://tauri.app)
-- **Xcode Command Line Tools** (`xcode-select --install`) for the native build
-- macOS **Accessibility** and **Microphone** permissions granted to the app at first run
-- **[Bun](https://bun.sh)** — only needed to build the packaged release sidecar binary
-  (`npm run build --workspace @verbatim/widget` for a full bundle); not needed for `npm run widget` dev
+### macOS desktop widget (recommended)
 
-**For live dictation** (either target), you also need at least one vendor API key — see
-[Configuration](#configuration).
+| Requirement | Notes |
+|---|---|
+| **macOS 11.0+** | Desktop app is macOS-only in this release |
+| **Node.js 20+** | |
+| **Rust** (stable) | Install via [rustup](https://rustup.rs) |
+| **Xcode Command Line Tools** | `xcode-select --install` |
+| **Vendor API key** | For cloud STT (PyAI, Deepgram, or OpenAI) — set in onboarding or Settings |
+| **Accessibility + Microphone** | macOS prompts on first dictation |
 
-## Quick start
+First widget build compiles Rust and may take several minutes. Later runs are fast.
+
+**Not needed for day-to-day dev:** [Bun](https://bun.sh) (only for packaged release builds), Git LFS (only if you use local Nemotron STT).
+
+### Optional: local on-device STT (Nemotron)
+
+Only if you want speech-to-text to run **entirely on your Mac** with no cloud transcription API:
+
+| Requirement | Notes |
+|---|---|
+| **Apple Silicon Mac** | Metal backend |
+| **Git LFS** | Fetches the bundled GGUF weights (~667 MB) — [install Git LFS](https://git-lfs.com) |
+| **NeMo-Speech.cpp** | Built separately and linked at compile time — see [Local Nemotron setup](#macos-desktop-widget-local-nemotron-stt) |
+
+Cloud STT (the default) does **not** need Git LFS, NeMo, or the bundled model.
+
+---
+
+## Installation
+
+From the repo root:
 
 ```bash
 git clone https://github.com/verbatimai/verbatim.git
@@ -147,27 +170,80 @@ cd verbatim
 npm install
 ```
 
+**If you plan to use local Nemotron STT**, also fetch the bundled model weights:
+
+```bash
+npm run setup:lfs
+# equivalent to: git lfs install && git lfs pull
+```
+
+Skip `setup:lfs` if you only use cloud providers (PyAI / Deepgram / OpenAI).
+
+**macOS widget only** — one-time native toolchain:
+
+```bash
+# Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# Xcode Command Line Tools (if not already installed)
+xcode-select --install
+```
+
+---
+
+## Quick start
+
 ### Web demo (browser)
 
 ```bash
 npm run dev
 ```
 
-Open **http://localhost:5173** and click **Demo (no mic)** to see the full flow — live
-transcript, the "what was removed" diff, and the formatted output — with no microphone or key.
-For live dictation in the browser, add a key (see below) and click **Start dictation**.
+Open **http://localhost:5173** and click **Demo (no mic)** — no microphone or API key required.
 
-### macOS desktop widget
+For live dictation: add a key to `.env` (see [Configuration](#configuration)) or use the in-browser key field, then click **Start dictation**.
+
+### macOS desktop widget (cloud STT — default)
 
 ```bash
 npm run widget
 ```
 
-The widget launches as a menu-bar app with a floating overlay. The app owns and supervises
-its own backend and injects your keys into it — there is no separate backend process to start.
+This starts the menu-bar app with cloud speech-to-text. No NeMo build, no Git LFS, and no bundled model required.
 
-**On a fresh install a "Welcome to Verbatim" window opens by itself** (it appears only while
-no vendor key is saved and you haven't dismissed it) and covers setup in three screens:
+1. Complete **Welcome to Verbatim** onboarding (paste an API key) or **Set up later** and add a key in **Settings (⚙)**.
+2. Grant **Microphone** and **Accessibility** when prompted (Accessibility is needed to type into other apps; without it, text is copied to the clipboard).
+3. Focus a text field in any app, press **⌥Space**, dictate, and press **Stop** — corrected text is injected into that field.
+
+**Demo mode** in the overlay works without a key or mic setup for trying the UI flow.
+
+### macOS desktop widget (local Nemotron STT)
+
+For fully on-device transcription, complete [Installation](#installation) including `npm run setup:lfs`, then build [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp):
+
+```bash
+git clone https://github.com/NVIDIA/NeMo-Speech.cpp
+cd NeMo-Speech.cpp
+./scripts/install.sh --source --backend metal --prefix $HOME/nemo-speech
+```
+
+Run the widget with the Nemotron feature linked:
+
+```bash
+export NEMO_SPEECH_PREFIX=$HOME/nemo-speech
+npm run widget:nemotron
+```
+
+In **Settings → Speech-to-text**, choose **Nemotron (local)**. The app loads the GGUF from `models/nemotron/` in this repo — no Hugging Face account.
+
+Full details: [`docs/architecture/local-asr-nemotron.md`](docs/architecture/local-asr-nemotron.md) and [`models/nemotron/README.md`](models/nemotron/README.md).
+
+---
+
+### First-run onboarding (desktop widget)
+
+**On a fresh install a "Welcome to Verbatim" window opens by itself** (only while no vendor key is saved and you haven't dismissed it):
 
 1. **Connect** — paste **one** API key. The vendor is detected from the key's shape and shown
    as an editable chip you can override, then checked against that vendor before anything is
@@ -196,11 +272,6 @@ the next launch. To pick it up again, use **Finish setup…** in the menu-bar me
 Once you're set up, press **⌥Space** (or whatever hotkey you configured) to toggle dictation;
 focus a field in another app before you stop, and the corrected text is injected there.
 
-> The first-run flow landed on **18 Aug 2026**. It is typecheck-clean and reviewed, but the
-> Rust half has **not been compiled or run on a Mac yet** — expect rough edges on the very
-> first build, and see [`docs/onboarding/review.md`](docs/onboarding/review.md) for the known
-> open items.
-
 ## Configuration
 
 ### API keys
@@ -222,7 +293,7 @@ Relevant environment variables (see [`.env.example`](.env.example) for the full 
 
 | Variable | Purpose | Values / default |
 |---|---|---|
-| `STT_PROVIDER` | Speech-to-text provider | `pyai` (default) · `deepgram` · `openai` |
+| `STT_PROVIDER` | Speech-to-text provider | `pyai` (default) · `deepgram` · `openai` · `nemotron` (local, macOS) |
 | `CORRECTION_PROVIDER` | Correction provider | `openai` (default) · `anthropic` |
 | `PYAI_API_KEY` | PyAI key (BYOK) | — |
 | `DEEPGRAM_API_KEY` | Deepgram key (BYOK) | — |
@@ -263,6 +334,8 @@ verbatim/
 │  ├─ backend/         Local pipeline bridge; the desktop app spawns it as a
 │  │                   key-injected sidecar (also runnable standalone for the web demo)
 │  └─ web/             Vite browser demo UI
+├─ models/
+│  └─ nemotron/        Bundled Nemotron GGUF weights (Git LFS) for local STT
 ├─ docs/
 │  ├─ product/         Product plan, roadmap, milestone tasks, status
 │  └─ architecture/    Code map, vendor APIs, macOS injection, release/signing
@@ -276,18 +349,40 @@ Start with [`docs/product/roadmap.md`](docs/product/roadmap.md) for the mileston
 
 ## Development
 
-```bash
-npm install            # installs all workspaces
-npm run dev            # web demo: backend + browser app on http://localhost:5173
-npm run widget         # macOS desktop widget (owns its own backend)
-npm test               # core unit/integration tests (Vitest)
-npm run test:e2e       # Playwright end-to-end (run `npx playwright install chromium` first)
-npm run typecheck      # type-check all workspaces
-npm run pipeline       # run the headless core pipeline from the CLI
-```
+### Commands
+
+| Command | What it does |
+|---|---|
+| `npm install` | Install all workspace dependencies |
+| `npm run setup:lfs` | Fetch bundled Nemotron model (Git LFS) — local STT only |
+| `npm run dev` | Web demo at http://localhost:5173 |
+| `npm run widget` | macOS widget with **cloud STT** (default; no NeMo build) |
+| `npm run widget:nemotron` | macOS widget with **local Nemotron STT** (requires NeMo-Speech.cpp + `NEMO_SPEECH_PREFIX`) |
+| `npm test` | Core unit/integration tests (Vitest) |
+| `npm run test:e2e` | Playwright e2e (`npx playwright install chromium` first) |
+| `npm run typecheck` | Type-check all workspaces |
+| `npm run pipeline` | Headless core pipeline from the CLI |
+| `npm run meetings` | Experimental meetings backend (see [Experimental](#experimental)) |
+
+### Local Nemotron dev notes
+
+- Set `NEMO_SPEECH_PREFIX` to your NeMo-Speech.cpp install prefix (e.g. `$HOME/nemo-speech`).
+- Optional: copy `apps/widget/src-tauri/.cargo/config.toml.example` → `.cargo/config.toml` and set your prefix there (file is git-ignored).
+- Model weights are read from `models/nemotron/` in the repo after `npm run setup:lfs`.
 
 Troubleshooting for the web demo (dev-server reachability, mic permissions, ports) lives in
 [`docs/troubleshooting.md`](docs/troubleshooting.md).
+
+### Common issues
+
+| Problem | Fix |
+|---|---|
+| Widget Rust build fails looking for NeMo | Use `npm run widget` (cloud STT) instead of `widget:nemotron`, or build NeMo-Speech.cpp and set `NEMO_SPEECH_PREFIX` |
+| `Bundled Nemotron model not found` | Run `npm run setup:lfs` from the repo root |
+| Git clone shows a tiny `.gguf` pointer file | Git LFS not pulled — run `git lfs install && git lfs pull` |
+| First `npm run widget` is slow | Normal — Rust/Tauri cold compile; subsequent runs are faster |
+| Text doesn't inject into other apps | Grant **Accessibility** in System Settings → Privacy & Security |
+| `cargo: command not found` | Install Rust: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 
 > **Native (Rust) code** under `apps/widget/src-tauri` must be built and verified on macOS;
 > it cannot be compiled in a non-macOS environment.

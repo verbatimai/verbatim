@@ -3,14 +3,18 @@
 // launch the widget here (no separate backend process, no key in the renderer).
 // Usage: npm run widget   (from the repo root)
 //
-// Demo mode needs no mic/key. For live dictation, enter a key in Settings (⚙) — or, for
-// standalone dev, put PYAI_API_KEY in a .env at the repo root (the backend loads it).
+// Uses cloud STT by default (PyAI/Deepgram/OpenAI). For local on-device STT, see
+// docs/architecture/local-asr-nemotron.md and run: npm run widget:nemotron
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const env = {
   ...process.env,
+  VERBATIM_ROOT: repoRoot,
   // rustup installs here; npm scripts may not inherit a login shell PATH.
   PATH: [join(homedir(), ".cargo", "bin"), process.env.PATH].filter(Boolean).join(":"),
 };

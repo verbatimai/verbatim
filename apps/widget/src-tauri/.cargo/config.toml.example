@@ -1,0 +1,11 @@
+# Optional local override for NeMo-Speech.cpp builds (local ASR only).
+#
+# Copy and edit when developing with --features nemotron:
+#
+#   cp .cargo/config.toml.example .cargo/config.toml
+#
+# Or export in your shell instead (recommended):
+#   export NEMO_SPEECH_PREFIX=$HOME/nemo-speech
+
+[env]
+NEMO_SPEECH_PREFIX = "/path/to/nemo-speech"

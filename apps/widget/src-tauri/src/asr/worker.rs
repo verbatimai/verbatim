@@ -2,6 +2,7 @@
 
 use super::ffi::{self, Engine, LiveStream, SAMPLE_RATE};
 use super::metrics::MetricsCollector;
+use super::models;
 use super::stabilizer::TranscriptStabilizer;
 use crate::config::AppConfig;
 use serde::{Deserialize, Serialize};
@@ -54,7 +55,7 @@ pub struct AsrWorkerConfig {
 
 impl AsrWorkerConfig {
     pub fn from_app(app: &AppHandle, cfg: &AppConfig) -> Self {
-        let model_path = resolve_model_path(app, cfg);
+        let model_path = models::resolve_model_path(app, cfg);
         Self {
             model_path,
             streaming_ms: cfg.asr_streaming_ms,
@@ -65,38 +66,6 @@ impl AsrWorkerConfig {
             language: cfg.language.clone(),
         }
     }
-}
-
-/// Resolve GGUF path: explicit setting → Tauri app_data/models → legacy download dir.
-fn resolve_model_path(app: &AppHandle, cfg: &AppConfig) -> String {
-    const MODEL_FILE: &str = "nemotron-speech-streaming-en-0.6b.q8_0.gguf";
-
-    if !cfg.asr_model_path.is_empty() {
-        return cfg.asr_model_path.clone();
-    }
-
-    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-    if let Ok(d) = app.path().app_data_dir() {
-        candidates.push(d.join("models").join(MODEL_FILE));
-    }
-    if let Ok(home) = std::env::var("HOME") {
-        candidates.push(
-            std::path::PathBuf::from(home)
-                .join("Library/Application Support/verbatim/models")
-                .join(MODEL_FILE),
-        );
-    }
-
-    for path in &candidates {
-        if path.is_file() {
-            return path.to_string_lossy().into();
-        }
-    }
-
-    candidates
-        .first()
-        .map(|p| p.to_string_lossy().into())
-        .unwrap_or_else(|| format!("models/{MODEL_FILE}"))
 }
 
 pub struct AsrWorker {

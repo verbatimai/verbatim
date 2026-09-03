@@ -2,6 +2,19 @@
 
 Fully local speech-to-text on Apple Silicon using NVIDIA Nemotron Speech Streaming 0.6B (Q8 GGUF) via [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp).
 
+## Model weights (bundled — no Hugging Face)
+
+The GGUF file lives in the repo under `models/nemotron/` and is tracked with **Git LFS**:
+
+```bash
+git lfs install   # once per machine
+git lfs pull      # after every clone
+```
+
+No Hugging Face token or account is required for contributors or users who clone the repo.
+
+See [`models/nemotron/README.md`](../../models/nemotron/README.md) for maintainer notes and license.
+
 ## Architecture
 
 ```
@@ -28,37 +41,31 @@ cd NeMo-Speech.cpp
 ./scripts/install.sh --source --backend metal --prefix $HOME/nemo-speech
 ```
 
-Download the Q8 baseline model:
-
-```bash
-pip install -U huggingface_hub
-hf download nvidia/nemotron-speech-streaming-en-0.6b \
-  nemotron-speech-streaming-en-0.6b.q8_0.gguf \
-  --local-dir ~/Library/Application\ Support/co.saaslabs.verbatim.widget/models
-```
-
-Optional Silero VAD (recommended for trailing-word protection):
-
-```bash
-python3 convert_model.py silero --outfile ~/Library/Application\ Support/verbatim/models/vad.gguf
-```
-
 Build the widget with the SDK linked:
 
 ```bash
 export NEMO_SPEECH_PREFIX=$HOME/nemo-speech
 cd apps/widget
-cargo build --features nemotron
+npm run start:nemotron   # or: cargo build --features nemotron
 ```
 
 Without `NEMO_SPEECH_PREFIX`, the app compiles a stub ASR that reports linkage instructions at runtime.
+
+Optional Silero VAD (recommended for trailing-word protection) — follow the
+[NeMo-Speech.cpp VAD docs](https://github.com/NVIDIA/NeMo-Speech.cpp) and place
+the converted model at:
+
+```bash
+~/Library/Application\ Support/co.saaslabs.verbatim.widget/models/vad.gguf
+```
 
 ## Settings
 
 | Field | Default | Description |
 |-------|---------|-------------|
 | `sttProvider` | `nemotron` | Enables local ASR path |
-| `asrModelPath` | app data `models/*.q8_0.gguf` | GGUF model path (mmap) |
+| `asrAutoDownloadModel` | `false` | Copy bundled GGUF into app data on start (optional cache) |
+| `asrModelPath` | app data `models/*.q8_0.gguf` | GGUF path override; "" = bundled repo copy or app data |
 | `asrStreamingMs` | `560` | Streaming preset: `160`, `560`, or `1120` |
 | `asrUseMetal` | `true` | Metal GPU backend |
 | `asrVadOnset` | `0.5` | VAD speech onset threshold |

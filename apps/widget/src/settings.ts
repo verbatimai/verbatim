@@ -63,6 +63,7 @@ type AppConfig = {
   asrVadModelPath?: string; // optional Silero VAD GGUF
   asrVadOnset?: number;
   asrVadOffset?: number;
+  asrAutoDownloadModel?: boolean; // download Nemotron GGUF on start when missing (default true)
 };
 
 // Mirrors packages/core's provider registries' `requiredKeys` and Rust's
@@ -140,6 +141,20 @@ const wakeWordHandlerEl = $<HTMLSelectElement>("wakeWordHandler");
 const wakeWordThresholdEl = $<HTMLInputElement>("wakeWordThreshold");
 const wakeWordGreetingEl = $<HTMLInputElement>("wakeWordGreeting");
 const ttsProviderEl = $<HTMLSelectElement>("ttsProvider");
+const nemotronLocalRowEl = $<HTMLElement>("nemotronLocalRow");
+const asrAutoDownloadEl = $<HTMLInputElement>("asrAutoDownload");
+const asrDownloadNowEl = $<HTMLButtonElement>("asrDownloadNow");
+const asrDownloadStatusEl = $<HTMLElement>("asrDownloadStatus");
+const asrDownloadProgressEl = $<HTMLProgressElement>("asrDownloadProgress");
+
+type AsrDownloadStatus = {
+  state: string;
+  progress: number;
+  bytesDownloaded: number;
+  bytesTotal?: number;
+  modelPath: string;
+  error?: string;
+};
 
 let config: AppConfig = {
   sttProvider: "pyai",
@@ -384,6 +399,97 @@ function initProviderControls() {
 
   void refreshSttCapabilities();
   refreshCorrectionModels();
+  updateNemotronLocalRow();
+}
+
+function formatBytes(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)} GB`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)} MB`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)} KB`;
+  return `${n} B`;
+}
+
+function renderAsrDownloadStatus(status: AsrDownloadStatus) {
+  if (!asrDownloadStatusEl) return;
+  if (status.state === "downloading") {
+    const total = status.bytesTotal ? ` / ${formatBytes(status.bytesTotal)}` : "";
+    asrDownloadStatusEl.textContent = `Copying… ${Math.round(status.progress)}% (${formatBytes(status.bytesDownloaded)}${total})`;
+    if (asrDownloadProgressEl) {
+      asrDownloadProgressEl.style.display = "block";
+      asrDownloadProgressEl.value = status.progress;
+    }
+    if (asrDownloadNowEl) asrDownloadNowEl.disabled = true;
+    return;
+  }
+  if (asrDownloadProgressEl) {
+    asrDownloadProgressEl.style.display = "none";
+    asrDownloadProgressEl.value = 0;
+  }
+  if (asrDownloadNowEl) asrDownloadNowEl.disabled = false;
+  if (status.state === "ready") {
+    asrDownloadStatusEl.textContent = "Model ready.";
+    return;
+  }
+  if (status.state === "error") {
+    asrDownloadStatusEl.textContent = status.error ?? "Install failed.";
+    return;
+  }
+  asrDownloadStatusEl.textContent = bundledMissingHint();
+}
+
+function bundledMissingHint(): string {
+  return "Bundled model not found — run: git lfs install && git lfs pull";
+}
+
+async function refreshAsrDownloadStatus() {
+  if (config.sttProvider !== "nemotron") return;
+  try {
+    const status = await invoke<AsrDownloadStatus>("asr_get_download_status");
+    renderAsrDownloadStatus(status);
+  } catch {
+    /* macOS-only command */
+  }
+}
+
+function updateNemotronLocalRow() {
+  const show = config.sttProvider === "nemotron";
+  if (nemotronLocalRowEl) nemotronLocalRowEl.style.display = show ? "" : "none";
+  if (!show) return;
+  if (asrAutoDownloadEl) asrAutoDownloadEl.checked = config.asrAutoDownloadModel !== false;
+  void refreshAsrDownloadStatus();
+}
+
+function initNemotronLocal() {
+  updateNemotronLocalRow();
+}
+
+let nemotronLocalListenersReady = false;
+function initNemotronLocalListeners() {
+  if (nemotronLocalListenersReady) return;
+  nemotronLocalListenersReady = true;
+  if (asrAutoDownloadEl) {
+    asrAutoDownloadEl.onchange = async () => {
+      await patchConfig({ asrAutoDownloadModel: asrAutoDownloadEl.checked });
+    };
+  }
+  if (asrDownloadNowEl) {
+    asrDownloadNowEl.onclick = async () => {
+      asrDownloadNowEl.disabled = true;
+      try {
+        const status = await invoke<AsrDownloadStatus>("asr_download_model");
+        renderAsrDownloadStatus(status);
+      } catch (e) {
+        if (asrDownloadStatusEl) {
+          asrDownloadStatusEl.textContent = String(e);
+        }
+        asrDownloadNowEl.disabled = false;
+      }
+    };
+  }
+  void listen<AsrDownloadStatus>("asr-download-progress", (e) => {
+    if (config.sttProvider !== "nemotron") return;
+    renderAsrDownloadStatus(e.payload);
+  });
 }
 
 // Repopulate the STT model + language selects and reconcile auto-detect whenever
@@ -1135,6 +1241,7 @@ function refreshControls() {
   initHistoryLimit();
   initAutoDetect();
   initTelemetry();
+  initNemotronLocal();
   if (micEnumerated) syncMicSelection(); else void initMicDevice();
   applyThemeUI(currentTheme());
   refreshHotkeyUI();
@@ -1188,6 +1295,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   initHistoryLimit();
   initAutoDetect();
   initTelemetry();
+  initNemotronLocalListeners();
+  initNemotronLocal();
   initReset();
   refreshHotkeyUI();
   refreshPasteLastUI();
