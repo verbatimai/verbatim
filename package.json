@@ -23,6 +23,6 @@
     "meetings": "npm run meetings --workspace @verbatim/backend"
   },
   "devDependencies": {
-    "@playwright/test": "^1.47.0"
+    "@playwright/test": "^1.63.0"
   }
 }
