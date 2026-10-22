@@ -13,7 +13,7 @@
     "start:nemotron": "tauri dev --features nemotron"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2"
+    "@tauri-apps/api": "^2.12.4"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
